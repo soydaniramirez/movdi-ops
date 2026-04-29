@@ -1,0 +1,1973 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MOVDI · ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0a0a;
+  --bg-1:#101010;
+  --bg-2:#171717;
+  --bg-3:#1f1f1f;
+  --line:#262626;
+  --line-2:#333;
+  --txt:#f5f3ef;
+  --txt-2:#a8a39a;
+  --txt-3:#6b6760;
+  --acc:#ff4612;
+  --acc-soft:rgba(255,70,18,.12);
+  --ok:#7bc47f;
+  --warn:#e8b04a;
+  --bad:#ff4612;
+  --shadow:0 1px 0 rgba(255,255,255,.02) inset, 0 8px 24px rgba(0,0,0,.4);
+  --display:'Barlow',sans-serif;
+  --mono:'DM Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg);
+  color:var(--txt);
+  font-family:var(--display);
+  font-weight:400;
+  font-size:14px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  letter-spacing:.005em;
+}
+button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit;background:none;border:none;outline:none}
+button{cursor:pointer}
+::selection{background:var(--acc);color:#fff}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:var(--bg-1)}
+::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:0}
+::-webkit-scrollbar-thumb:hover{background:#444}
+
+/* ---------- LOGIN ---------- */
+#screen-login{
+  position:fixed;inset:0;z-index:999;
+  background:var(--bg);
+  display:flex;flex-direction:column;
+  overflow-y:auto;
+}
+.login-bar{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:24px 40px;border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand-mark{
+  font-family:var(--display);font-weight:800;letter-spacing:-.04em;
+  font-size:22px;color:var(--txt);
+}
+.brand-mark span{color:var(--acc)}
+.brand-sub{font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.15em}
+.login-meta{font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.15em}
+.login-hero{
+  padding:60px 40px 40px;max-width:1400px;margin:0 auto;width:100%;
+}
+.login-eyebrow{
+  font-family:var(--mono);font-size:11px;color:var(--acc);
+  text-transform:uppercase;letter-spacing:.2em;margin-bottom:18px;
+}
+.login-title{
+  font-family:var(--display);font-weight:300;
+  font-size:clamp(40px,6vw,72px);line-height:.95;letter-spacing:-.03em;
+  margin-bottom:20px;
+}
+.login-title b{font-weight:700;color:var(--txt)}
+.login-title em{font-style:italic;color:var(--txt-2);font-weight:300}
+.login-desc{
+  max-width:560px;color:var(--txt-2);font-size:15px;line-height:1.6;
+}
+.login-section{padding:0 40px 80px;max-width:1400px;margin:0 auto;width:100%}
+.login-section-head{
+  display:flex;align-items:center;gap:14px;
+  margin:36px 0 20px;
+}
+.login-section-head h3{
+  font-family:var(--mono);font-size:11px;font-weight:500;
+  text-transform:uppercase;letter-spacing:.2em;color:var(--txt-3);
+}
+.login-section-head .ln{flex:1;height:1px;background:var(--line)}
+.login-section-head .ct{
+  font-family:var(--mono);font-size:11px;color:var(--txt-3);
+}
+#pgrid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+  gap:1px;background:var(--line);
+  border:1px solid var(--line);
+}
+.pcard{
+  background:var(--bg);
+  padding:22px 20px;
+  cursor:pointer;
+  transition:background .15s ease;
+  position:relative;
+  display:flex;flex-direction:column;gap:8px;
+  min-height:120px;
+}
+.pcard:hover{background:var(--bg-2)}
+.pcard.sel{background:var(--bg-2);box-shadow:inset 3px 0 0 var(--acc)}
+.pcard .pavatar{
+  width:36px;height:36px;border-radius:50%;
+  background:var(--bg-3);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:12px;color:var(--txt-2);
+  margin-bottom:4px;
+}
+.pcard.sel .pavatar{background:var(--acc);color:#fff}
+.pcard .pname{font-weight:600;font-size:15px;letter-spacing:-.01em}
+.pcard .prol{font-size:12px;color:var(--txt-3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em}
+.pcard .plock{position:absolute;top:14px;right:14px;font-size:11px;color:var(--acc)}
+.pcard .pbadge{
+  font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.15em;
+  color:var(--txt-3);margin-top:auto;
+}
+.pcard.sel .pbadge{color:var(--acc)}
+.login-action{
+  margin-top:32px;display:flex;justify-content:flex-end;gap:12px;align-items:center;
+}
+.login-hint{font-family:var(--mono);font-size:11px;color:var(--txt-3);margin-right:auto}
+.btn{
+  font-family:var(--display);font-weight:500;
+  padding:11px 22px;
+  border:1px solid var(--line-2);
+  background:var(--bg-2);
+  color:var(--txt);
+  letter-spacing:.01em;
+  transition:all .15s ease;
+  display:inline-flex;align-items:center;gap:8px;
+}
+.btn:hover{background:var(--bg-3);border-color:#444}
+.btn.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn.primary:hover{background:#ff5928;border-color:#ff5928}
+.btn.primary:disabled,.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.ghost{background:transparent;border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--line-2);background:var(--bg-1)}
+.btn.danger{color:var(--acc);border-color:transparent;background:transparent}
+.btn.danger:hover{background:var(--acc-soft)}
+.btn.sm{padding:6px 12px;font-size:12px}
+.btn.xs{padding:4px 9px;font-size:11px;font-family:var(--mono)}
+
+/* ---------- APP SHELL ---------- */
+#screen-app{display:none;min-height:100vh;flex-direction:column}
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 28px;border-bottom:1px solid var(--line);
+  background:var(--bg);
+  position:sticky;top:0;z-index:50;
+}
+.topbar-left{display:flex;align-items:center;gap:28px}
+.user-pill{
+  display:flex;align-items:center;gap:10px;
+  padding:6px 12px 6px 6px;
+  border:1px solid var(--line);background:var(--bg-1);
+}
+.user-pill .av{
+  width:28px;height:28px;border-radius:50%;
+  background:var(--acc);color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:11px;font-weight:500;
+}
+.user-pill .un{font-weight:600;font-size:13px}
+.user-pill .ur{font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--line);padding:0 28px;background:var(--bg)}
+.tab{
+  padding:14px 18px;
+  font-family:var(--mono);font-size:11px;
+  text-transform:uppercase;letter-spacing:.15em;
+  color:var(--txt-3);
+  border-bottom:2px solid transparent;
+  transition:all .15s ease;
+  background:transparent;
+  display:flex;align-items:center;gap:6px;
+}
+.tab:hover{color:var(--txt-2)}
+.tab.active{color:var(--txt);border-bottom-color:var(--acc)}
+.tab .tcount{
+  background:var(--bg-2);color:var(--txt-2);
+  padding:1px 6px;font-size:10px;
+  font-family:var(--mono);
+}
+.tab.active .tcount{background:var(--acc-soft);color:var(--acc)}
+
+/* ---------- LAYOUT MAIN ---------- */
+.main{
+  display:grid;
+  grid-template-columns:1fr 320px;
+  flex:1;min-height:0;
+}
+.main.no-side{grid-template-columns:1fr}
+.content{padding:28px;min-width:0;overflow-x:auto}
+.side{
+  border-left:1px solid var(--line);
+  background:var(--bg-1);
+  padding:24px 22px;
+  display:flex;flex-direction:column;gap:28px;
+  overflow-y:auto;
+}
+
+/* ---------- KPIs ---------- */
+.kpis{
+  display:grid;grid-template-columns:repeat(4,1fr);
+  gap:1px;background:var(--line);
+  border:1px solid var(--line);
+  margin-bottom:28px;
+}
+.kpi{
+  background:var(--bg);padding:20px 22px;
+  display:flex;flex-direction:column;gap:6px;
+}
+.kpi .klab{
+  font-family:var(--mono);font-size:10px;
+  text-transform:uppercase;letter-spacing:.15em;color:var(--txt-3);
+}
+.kpi .kval{
+  font-family:var(--display);font-weight:300;
+  font-size:42px;line-height:1;letter-spacing:-.03em;
+}
+.kpi.alert .kval{color:var(--acc)}
+.kpi.warn .kval{color:var(--warn)}
+
+/* ---------- SECTION ---------- */
+.section-head{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:18px;gap:16px;flex-wrap:wrap;
+}
+.section-head h2{
+  font-family:var(--display);font-weight:600;
+  font-size:22px;letter-spacing:-.02em;
+}
+.section-head .sub{
+  font-family:var(--mono);font-size:11px;color:var(--txt-3);
+  text-transform:uppercase;letter-spacing:.15em;
+}
+.toolbar{
+  display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  margin-bottom:18px;
+}
+.chip{
+  padding:6px 12px;
+  border:1px solid var(--line);background:var(--bg-1);
+  font-family:var(--mono);font-size:11px;
+  text-transform:uppercase;letter-spacing:.1em;
+  color:var(--txt-2);
+  transition:all .15s ease;
+}
+.chip:hover{border-color:var(--line-2);color:var(--txt)}
+.chip.active{background:var(--txt);color:var(--bg);border-color:var(--txt)}
+.chip.alert.active{background:var(--acc);border-color:var(--acc);color:#fff}
+.chip.warn.active{background:var(--warn);border-color:var(--warn);color:var(--bg)}
+.spacer{flex:1}
+
+/* ---------- TABLE ---------- */
+.tbl{
+  width:100%;border-collapse:collapse;
+  background:var(--bg);
+  border:1px solid var(--line);
+  font-size:13px;
+}
+.tbl thead th{
+  text-align:left;
+  padding:12px 14px;
+  font-family:var(--mono);font-size:10px;
+  text-transform:uppercase;letter-spacing:.15em;
+  color:var(--txt-3);font-weight:500;
+  border-bottom:1px solid var(--line);
+  background:var(--bg-1);
+  white-space:nowrap;
+}
+.tbl tbody td{
+  padding:14px;
+  border-bottom:1px solid var(--line);
+  vertical-align:middle;
+}
+.tbl tbody tr:hover{background:var(--bg-1)}
+.tbl tbody tr:last-child td{border-bottom:none}
+.tbl .tname{font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px}
+.tbl .tdesc{color:var(--txt-3);font-size:12px;margin-top:2px;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tbl .recur-icon{color:var(--acc);font-size:11px}
+.empty{
+  padding:60px 20px;text-align:center;
+  border:1px dashed var(--line);
+  background:var(--bg-1);
+}
+.empty h4{font-weight:500;margin-bottom:6px;color:var(--txt-2)}
+.empty p{color:var(--txt-3);font-size:13px}
+
+/* tags */
+.tag{
+  display:inline-flex;align-items:center;
+  padding:3px 9px;font-family:var(--mono);font-size:10px;
+  text-transform:uppercase;letter-spacing:.1em;
+  border:1px solid var(--line-2);
+}
+.tag.area-imkt{color:#f9b572;border-color:rgba(249,181,114,.3)}
+.tag.area-pm{color:#a4d4a8;border-color:rgba(164,212,168,.3)}
+.tag.area-legal{color:#c8a4d4;border-color:rgba(200,164,212,.3)}
+.tag.area-admi{color:#a4c4d4;border-color:rgba(164,196,212,.3)}
+.tag.area-ventas{color:#d4c4a4;border-color:rgba(212,196,164,.3)}
+.tag.area-digital{color:#d4a4c4;border-color:rgba(212,164,196,.3)}
+.tag.area-rh{color:#ff4612;border-color:rgba(255,70,18,.4)}
+.tag.area-heads{color:var(--txt);border-color:var(--txt-2);background:var(--bg-2)}
+.tag.prio-alta{color:var(--acc);border-color:rgba(255,70,18,.4)}
+.tag.prio-media{color:var(--warn);border-color:rgba(232,176,74,.3)}
+.tag.prio-baja{color:var(--txt-3)}
+
+/* status select */
+.status-sel{
+  font-family:var(--mono);font-size:10px;
+  text-transform:uppercase;letter-spacing:.1em;
+  padding:5px 8px;
+  border:1px solid var(--line-2);
+  background:var(--bg-1);
+  cursor:pointer;
+}
+.status-sel option{background:var(--bg-1);color:var(--txt)}
+.status-sel.s-pendiente{color:var(--txt-2)}
+.status-sel.s-proceso{color:var(--warn);border-color:rgba(232,176,74,.4)}
+.status-sel.s-entregado{color:var(--ok);border-color:rgba(123,196,127,.4)}
+
+/* date cell */
+.date-cell{font-family:var(--mono);font-size:12px;display:flex;flex-direction:column;gap:2px}
+.date-cell.vencida{color:var(--acc);font-weight:500}
+.date-cell.proxima{color:var(--warn)}
+.date-cell .dsub{font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em}
+.date-cell.vencida .dsub{color:var(--acc)}
+.date-cell.proxima .dsub{color:var(--warn)}
+
+/* row actions */
+.row-actions{display:flex;gap:4px;justify-content:flex-end}
+.icon-btn{
+  width:26px;height:26px;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--txt-3);
+  border:1px solid transparent;
+  font-size:13px;
+}
+.icon-btn:hover{color:var(--txt);border-color:var(--line-2);background:var(--bg-2)}
+.icon-btn.danger:hover{color:var(--acc);border-color:rgba(255,70,18,.3)}
+
+/* ---------- SIDE ---------- */
+.side h4{
+  font-family:var(--mono);font-size:10px;
+  text-transform:uppercase;letter-spacing:.2em;
+  color:var(--txt-3);font-weight:500;
+  margin-bottom:14px;
+  display:flex;align-items:center;gap:8px;
+}
+.side h4::after{content:'';flex:1;height:1px;background:var(--line)}
+.semaforo{display:flex;flex-direction:column;gap:2px}
+.sem-row{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 10px;
+  cursor:pointer;
+  transition:background .15s ease;
+  border-left:2px solid transparent;
+}
+.sem-row:hover{background:var(--bg-2)}
+.sem-row.active{background:var(--bg-2);border-left-color:var(--acc)}
+.sem-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.sem-dot.r{background:var(--acc);box-shadow:0 0 8px rgba(255,70,18,.5)}
+.sem-dot.y{background:var(--warn)}
+.sem-dot.g{background:var(--ok)}
+.sem-dot.x{background:var(--line-2)}
+.sem-name{flex:1;font-size:12px;font-weight:500}
+.sem-cnt{font-family:var(--mono);font-size:10px;color:var(--txt-3)}
+.side-card{
+  background:var(--bg);
+  border:1px solid var(--line);
+  padding:14px;
+}
+.side-card .scn{
+  font-family:var(--mono);font-size:10px;
+  text-transform:uppercase;letter-spacing:.15em;
+  color:var(--txt-3);margin-bottom:8px;
+}
+.side-card .scv{font-family:var(--display);font-weight:300;font-size:32px;line-height:1;letter-spacing:-.02em}
+.side-card .scs{font-family:var(--mono);font-size:11px;color:var(--txt-2);margin-top:6px}
+.side-card.alert{border-color:rgba(255,70,18,.3)}
+.side-card.alert .scv{color:var(--acc)}
+
+/* ---------- TODO ---------- */
+.todo-wrap{max-width:680px}
+.todo-form{
+  display:flex;gap:0;
+  border:1px solid var(--line);
+  margin-bottom:20px;
+  background:var(--bg-1);
+}
+.todo-form input{
+  flex:1;padding:14px 16px;font-size:14px;
+}
+.todo-form button{
+  padding:0 22px;background:var(--acc);color:#fff;
+  font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.15em;
+}
+.todo-list{display:flex;flex-direction:column;gap:1px;background:var(--line);border:1px solid var(--line)}
+.todo-item{
+  display:flex;align-items:center;gap:14px;
+  padding:14px 16px;background:var(--bg);
+  transition:background .15s ease;
+}
+.todo-item:hover{background:var(--bg-1)}
+.todo-check{
+  width:18px;height:18px;
+  border:1.5px solid var(--line-2);
+  cursor:pointer;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .15s ease;
+}
+.todo-check:hover{border-color:var(--acc)}
+.todo-item.done .todo-check{background:var(--acc);border-color:var(--acc)}
+.todo-item.done .todo-check::after{content:'✓';color:#fff;font-size:12px;font-weight:bold}
+.todo-text{flex:1;font-size:14px}
+.todo-item.done .todo-text{text-decoration:line-through;color:var(--txt-3)}
+.todo-del{color:var(--txt-3);font-size:14px;padding:4px 8px;opacity:0;transition:opacity .15s}
+.todo-item:hover .todo-del{opacity:1}
+.todo-del:hover{color:var(--acc)}
+
+/* ---------- TEAM GRID ---------- */
+.team-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line);
+}
+.team-card{
+  background:var(--bg);padding:18px;
+  display:flex;flex-direction:column;gap:8px;
+  position:relative;
+}
+.team-card .tcav{
+  width:40px;height:40px;border-radius:50%;
+  background:var(--bg-3);color:var(--txt-2);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:13px;
+}
+.team-card.head .tcav{background:var(--acc);color:#fff}
+.team-card.ceo .tcav{background:var(--txt);color:var(--bg)}
+.team-card .tcn{font-weight:600;font-size:15px}
+.team-card .tcr{font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.05em}
+.team-card .tca{display:flex;gap:4px;flex-wrap:wrap;margin-top:auto}
+.team-card .tcact{position:absolute;top:14px;right:14px;display:flex;gap:2px;opacity:0;transition:opacity .15s}
+.team-card:hover .tcact{opacity:1}
+
+/* ---------- MODAL ---------- */
+.ov{
+  position:fixed;inset:0;z-index:1100;
+  background:rgba(0,0,0,.7);
+  backdrop-filter:blur(4px);
+  display:none;align-items:center;justify-content:center;
+  padding:20px;
+}
+.ov.show{display:flex}
+.modal{
+  background:var(--bg);
+  border:1px solid var(--line);
+  width:100%;max-width:520px;
+  max-height:90vh;overflow-y:auto;
+  box-shadow:var(--shadow);
+}
+.modal.wide{max-width:680px}
+.modal-head{
+  padding:20px 24px;
+  border-bottom:1px solid var(--line);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.modal-head h3{
+  font-family:var(--display);font-weight:600;
+  font-size:18px;letter-spacing:-.01em;
+}
+.modal-head .mh-sub{
+  font-family:var(--mono);font-size:10px;
+  text-transform:uppercase;letter-spacing:.2em;
+  color:var(--txt-3);margin-top:2px;
+}
+.modal-x{
+  width:30px;height:30px;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--txt-3);font-size:18px;
+}
+.modal-x:hover{color:var(--txt)}
+.modal-body{padding:24px}
+.modal-foot{
+  padding:16px 24px;
+  border-top:1px solid var(--line);
+  display:flex;justify-content:flex-end;gap:10px;
+  background:var(--bg-1);
+}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.field label{
+  font-family:var(--mono);font-size:10px;
+  text-transform:uppercase;letter-spacing:.15em;
+  color:var(--txt-3);
+}
+.field input,.field select,.field textarea{
+  padding:10px 12px;
+  background:var(--bg-1);
+  border:1px solid var(--line);
+  font-size:14px;
+  transition:border-color .15s ease;
+  width:100%;
+}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--acc)}
+.field textarea{resize:vertical;min-height:70px;font-family:inherit}
+.field select option{background:var(--bg-1)}
+
+/* password lock screen */
+.lock-pane{
+  text-align:center;padding:60px 20px;
+  border:1px dashed var(--line);
+  background:var(--bg-1);
+  max-width:480px;margin:40px auto;
+}
+.lock-pane .lkico{font-size:32px;color:var(--acc);margin-bottom:14px}
+.lock-pane h3{font-family:var(--display);font-weight:600;font-size:22px;margin-bottom:8px;letter-spacing:-.01em}
+.lock-pane p{color:var(--txt-3);font-size:13px;margin-bottom:20px}
+
+/* recur icon inline */
+.inline-icon{font-size:11px;color:var(--acc);margin-left:6px}
+
+/* responsive */
+@media (max-width:1100px){
+  .main{grid-template-columns:1fr}
+  .side{border-left:none;border-top:1px solid var(--line)}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:640px){
+  .login-bar{padding:18px 20px}
+  .login-hero,.login-section{padding-left:20px;padding-right:20px}
+  .topbar{padding:14px 18px}
+  .tabs{padding:0 12px;overflow-x:auto}
+  .tab{padding:14px 12px}
+  .content{padding:18px}
+  .kpis{grid-template-columns:1fr 1fr}
+  .field-row{grid-template-columns:1fr}
+  .tbl{font-size:12px}
+  .tbl thead th,.tbl tbody td{padding:10px 8px}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="screen-login">
+  <div class="login-bar">
+    <div class="brand">
+      <div class="brand-mark">MOVDI<span>·</span>ops</div>
+      <div class="brand-sub">v1.0 / sistema interno</div>
+    </div>
+    <div class="login-meta" id="login-clock">—</div>
+  </div>
+  <div class="login-hero">
+    <div class="login-eyebrow">/ acceso interno</div>
+    <h1 class="login-title">centro de <em>operaciones</em><br><b>MOVDI</b></h1>
+    <p class="login-desc">sistema interno de gestión de peticiones, tareas operativas y seguimiento de equipo. selecciona tu nombre para entrar.</p>
+  </div>
+  <div class="login-section">
+    <div class="login-section-head">
+      <h3>equipo</h3>
+      <span class="ln"></span>
+      <span class="ct" id="login-count">—</span>
+    </div>
+    <div id="pgrid"></div>
+    <div class="login-action">
+      <span class="login-hint" id="login-hint">elige una persona para continuar</span>
+      <button class="btn primary" id="btn-enter" disabled>entrar →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="screen-app">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="brand">
+        <div class="brand-mark">MOVDI<span>·</span>ops</div>
+      </div>
+      <div class="user-pill" id="user-pill"></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span class="login-meta" id="app-date">—</span>
+      <button class="btn ghost sm" onclick="cerrarSesion()">salir</button>
+    </div>
+  </div>
+  <div class="tabs" id="tabs"></div>
+  <div class="main" id="main">
+    <div class="content" id="content"></div>
+    <div class="side" id="side"></div>
+  </div>
+</div>
+
+<!-- ============ MODALS ============ -->
+<!-- Password modal RH (login) -->
+<div class="ov" id="ov-rh-login">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div>
+        <h3>acceso restringido</h3>
+        <div class="mh-sub">recursos humanos</div>
+      </div>
+      <button class="modal-x" onclick="cerrarRhLogin()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--txt-3);margin-bottom:18px;font-size:13px">esta cuenta requiere contraseña adicional para acceder al panel de recursos humanos.</p>
+      <div class="field">
+        <label>contraseña RH</label>
+        <input type="password" id="rh-login-pass" onkeydown="if(event.key==='Enter')validarRhLogin()" placeholder="••••••••">
+      </div>
+      <div id="rh-login-err" style="color:var(--acc);font-family:var(--mono);font-size:11px;display:none">contraseña incorrecta</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="cerrarRhLogin()">cancelar</button>
+      <button class="btn primary" onclick="validarRhLogin()">acceder</button>
+    </div>
+  </div>
+</div>
+
+<!-- Password modal Heads tab -->
+<div class="ov" id="ov-heads-pass">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div>
+        <h3>zona heads</h3>
+        <div class="mh-sub">acceso restringido / dirección</div>
+      </div>
+      <button class="modal-x" onclick="cerrarHeadsPass()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>contraseña heads</label>
+        <input type="password" id="heads-pass-input" onkeydown="if(event.key==='Enter')validarHeadsPass()" placeholder="••••••••">
+      </div>
+      <div id="heads-pass-err" style="color:var(--acc);font-family:var(--mono);font-size:11px;display:none">contraseña incorrecta</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="cerrarHeadsPass()">cancelar</button>
+      <button class="btn primary" onclick="validarHeadsPass()">desbloquear</button>
+    </div>
+  </div>
+</div>
+
+<!-- Password modal RH tab privado -->
+<div class="ov" id="ov-rhtab-pass">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div>
+        <h3>RH · privado</h3>
+        <div class="mh-sub">peticiones confidenciales</div>
+      </div>
+      <button class="modal-x" onclick="cerrarRhTabPass()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>contraseña</label>
+        <input type="password" id="rhtab-pass-input" onkeydown="if(event.key==='Enter')validarRhTabPass()" placeholder="••••••••">
+      </div>
+      <div id="rhtab-pass-err" style="color:var(--acc);font-family:var(--mono);font-size:11px;display:none">contraseña incorrecta</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="cerrarRhTabPass()">cancelar</button>
+      <button class="btn primary" onclick="validarRhTabPass()">desbloquear</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Nueva petición -->
+<div class="ov" id="ov-peticion" onclick="cerrarPeticion()">
+  <div class="modal wide" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div>
+        <h3 id="pet-title">nueva petición</h3>
+        <div class="mh-sub" id="pet-zone-label">zona general</div>
+      </div>
+      <button class="modal-x" onclick="cerrarPeticion()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>nombre de la petición</label>
+        <input type="text" id="pet-nombre" placeholder="ej: revisar contrato lara campos">
+      </div>
+      <div class="field">
+        <label>descripción</label>
+        <textarea id="pet-desc" placeholder="contexto, links, detalles..."></textarea>
+      </div>
+      <div class="field-row">
+        <div class="field" id="pet-area-field">
+          <label>área destino</label>
+          <select id="pet-area" onchange="actualizarParaQuien()">
+            <option value="imkt">IMKT — influencer marketing</option>
+            <option value="pm">P. Managers</option>
+            <option value="legal">Legal</option>
+            <option value="admi">Admi</option>
+            <option value="ventas">Ventas</option>
+            <option value="digital">Digital / Tiendas</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>para quién</label>
+          <select id="pet-para"></select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>fecha límite</label>
+          <input type="date" id="pet-fecha">
+        </div>
+        <div class="field">
+          <label>prioridad</label>
+          <select id="pet-prio">
+            <option value="media">media</option>
+            <option value="alta">alta</option>
+            <option value="baja">baja</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="cerrarPeticion()">cancelar</button>
+      <button class="btn primary" onclick="guardarPeticion()">crear petición</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Persona (agregar/editar) -->
+<div class="ov" id="ov-persona" onclick="cerrarPersona()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div>
+        <h3 id="per-title">agregar persona</h3>
+        <div class="mh-sub">gestión de equipo</div>
+      </div>
+      <button class="modal-x" onclick="cerrarPersona()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field-row">
+        <div class="field">
+          <label>nombre</label>
+          <input type="text" id="per-nombre">
+        </div>
+        <div class="field">
+          <label>apellido</label>
+          <input type="text" id="per-apellido">
+        </div>
+      </div>
+      <div class="field">
+        <label>rol</label>
+        <input type="text" id="per-rol" placeholder="ej: ejecutiva cuentas/PM">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>área principal</label>
+          <select id="per-area">
+            <option value="imkt">IMKT</option>
+            <option value="pm">P. Managers</option>
+            <option value="legal">Legal</option>
+            <option value="admi">Admi</option>
+            <option value="ventas">Ventas</option>
+            <option value="digital">Digital</option>
+            <option value="rh">RH</option>
+            <option value="heads">Heads</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>nivel de acceso</label>
+          <select id="per-nivel">
+            <option value="ejecutivo">ejecutivo</option>
+            <option value="head">head de área</option>
+            <option value="ceo">ceo / dirección</option>
+            <option value="rh">RH (con contraseña)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="cerrarPersona()">cancelar</button>
+      <button class="btn primary" onclick="guardarPersona()">guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Recurrente -->
+<div class="ov" id="ov-recur" onclick="cerrarRecur()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div>
+        <h3>nueva tarea recurrente</h3>
+        <div class="mh-sub">↻ se genera automáticamente</div>
+      </div>
+      <button class="modal-x" onclick="cerrarRecur()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>nombre</label>
+        <input type="text" id="rec-nombre" placeholder="ej: reporte mensual de campañas">
+      </div>
+      <div class="field">
+        <label>descripción</label>
+        <textarea id="rec-desc"></textarea>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>área</label>
+          <select id="rec-area" onchange="actualizarRecPara()">
+            <option value="imkt">IMKT</option>
+            <option value="pm">P. Managers</option>
+            <option value="legal">Legal</option>
+            <option value="admi">Admi</option>
+            <option value="ventas">Ventas</option>
+            <option value="digital">Digital</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>para quién</label>
+          <select id="rec-para"></select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>frecuencia</label>
+          <select id="rec-frec" onchange="toggleRecDia()">
+            <option value="semanal">semanal</option>
+            <option value="quincenal">quincenal</option>
+            <option value="mensual">mensual</option>
+          </select>
+        </div>
+        <div class="field" id="rec-dia-field">
+          <label id="rec-dia-label">día de la semana</label>
+          <select id="rec-dia"></select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="cerrarRecur()">cancelar</button>
+      <button class="btn primary" onclick="guardarRecur()">crear recurrente</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   MOVDI · ops · SISTEMA DE GESTIÓN INTERNA
+   Single-file. Datos en memoria. Listo para migrar a Supabase.
+   ============================================================ */
+
+// ---------- CONSTANTES ----------
+const RH_PASS = 'recursosmovdi2026';
+const HEADS_PASS = 'heads2026';
+
+// ---------- DATOS BASE (PERSONAS) ----------
+// TODO Supabase: tabla `personas`
+let PERSONAS = [
+  // Dirección
+  {id:'p01', nombre:'Dani', apellido:'Ramírez', rol:'CEO / Co-Founder', nivel:'ceo', areas:['heads','imkt','pm','legal','admi','ventas','digital','rh']},
+  {id:'p02', nombre:'Emmanuel', apellido:'Romero', rol:'Co-Founder', nivel:'head', areas:['heads']},
+  // Heads
+  {id:'p03', nombre:'Fernanda', apellido:'Hurtado', rol:'Head IMKT', nivel:'head', areas:['imkt']},
+  {id:'p04', nombre:'Montserrat', apellido:'Gómez', rol:'Head Personal Managers', nivel:'head', areas:['pm']},
+  // Ejecutivos
+  {id:'p05', nombre:'Gloria', apellido:'Rivera', rol:'Ejecutiva Cuentas/PM', nivel:'ejecutivo', areas:['pm']},
+  {id:'p06', nombre:'Demian', apellido:'Camacho', rol:'Ejecutivo Cuentas/PM', nivel:'ejecutivo', areas:['imkt','pm']},
+  {id:'p07', nombre:'Sofía', apellido:'Terreros', rol:'Ejecutiva Cuentas/PM', nivel:'ejecutivo', areas:['pm']},
+  {id:'p08', nombre:'Zazil', apellido:'Recinos', rol:'Ejecutiva Cuentas/PM', nivel:'ejecutivo', areas:['pm']},
+  {id:'p09', nombre:'Isaac', apellido:'Camacho', rol:'Personal Manager', nivel:'ejecutivo', areas:['pm']},
+  {id:'p10', nombre:'Leonardo', apellido:'Valdez', rol:'Ejecutivo IMKT/PM', nivel:'ejecutivo', areas:['imkt','pm']},
+  {id:'p11', nombre:'Jimena', apellido:'Huerta', rol:'Trainee IMKT', nivel:'ejecutivo', areas:['imkt']},
+  {id:'p12', nombre:'Fátima', apellido:'Guerrero', rol:'Trainee PM', nivel:'ejecutivo', areas:['pm']},
+  {id:'p13', nombre:'Salvador', apellido:'Silva', rol:'Administrador', nivel:'ejecutivo', areas:['admi']},
+  {id:'p14', nombre:'Arylene', apellido:'Rodríguez', rol:'Legal', nivel:'ejecutivo', areas:['legal']},
+  {id:'p15', nombre:'Antonio', apellido:'Salas', rol:'Manager Ventas', nivel:'ejecutivo', areas:['ventas']},
+  {id:'p16', nombre:'Diana', apellido:'Becerra', rol:'Ejecutiva Tiendas Online', nivel:'ejecutivo', areas:['digital']},
+  {id:'p17', nombre:'Mariana', apellido:'Ríos', rol:'Ejecutiva Digital', nivel:'ejecutivo', areas:['digital']},
+  // RH
+  {id:'p18', nombre:'Sarai', apellido:'Ramírez', rol:'Administración / RH', nivel:'rh', areas:['admi','rh'], needsPass:true},
+  {id:'p19', nombre:'Diego', apellido:'Laguna', rol:'Recursos Humanos', nivel:'rh', areas:['rh'], needsPass:true},
+];
+
+// ---------- DB EN MEMORIA ----------
+// TODO Supabase: tabla `peticiones` (campo `zona`)
+const hoy = new Date();
+const dx = (offset)=>{const d=new Date(hoy);d.setDate(d.getDate()+offset);return d.toISOString().slice(0,10)};
+
+let DB = {
+  general: [
+    // Vencidas
+    {id:'t001', nombre:'Cierre de campaña Lego Friends', desc:'Reporte final con métricas de Lara Campos', creadoPor:'Dani', para:'Fernanda', area:'imkt', fecha:dx(-3), prioridad:'alta', estatus:'proceso', esRH:false},
+    {id:'t002', nombre:'Pago a creators septiembre', desc:'Confirmar transferencias a 12 creators', creadoPor:'Montserrat', para:'Salvador', area:'admi', fecha:dx(-2), prioridad:'alta', estatus:'pendiente', esRH:false},
+    // Esta semana
+    {id:'t003', nombre:'Propuesta Nestlé Q4', desc:'Cotizador + brief + mood', creadoPor:'Dani', para:'Demian', area:'imkt', fecha:dx(2), prioridad:'alta', estatus:'proceso', esRH:false},
+    {id:'t004', nombre:'Revisión contrato Adidas', desc:'Cláusulas de exclusividad', creadoPor:'Fernanda', para:'Arylene', area:'legal', fecha:dx(4), prioridad:'media', estatus:'pendiente', esRH:false},
+    {id:'t005', nombre:'Reporte engagement Mariana', desc:'Métricas mensuales en formato MOVDI', creadoPor:'Montserrat', para:'Sofía', area:'pm', fecha:dx(5), prioridad:'media', estatus:'pendiente', esRH:false},
+    // Más adelante
+    {id:'t006', nombre:'Onboarding nueva creator', desc:'Documentación + setup en sheets', creadoPor:'Montserrat', para:'Gloria', area:'pm', fecha:dx(12), prioridad:'baja', estatus:'pendiente', esRH:false},
+    {id:'t007', nombre:'Catálogo tienda Patty', desc:'Subir 24 productos', creadoPor:'Dani', para:'Diana', area:'digital', fecha:dx(8), prioridad:'media', estatus:'pendiente', esRH:false},
+    // RH (esRH:true)
+    {id:'t008', nombre:'Proceso disciplinario interno', desc:'Documentar y enviar formato a legal', creadoPor:'Sarai', para:'Arylene', area:'legal', fecha:dx(3), prioridad:'alta', estatus:'pendiente', esRH:true},
+    {id:'t009', nombre:'Reembolso viáticos producción', desc:'Llamado Lego Friends 2 días', creadoPor:'Diego', para:'Salvador', area:'admi', fecha:dx(6), prioridad:'media', estatus:'pendiente', esRH:true},
+    // Entregada
+    {id:'t010', nombre:'Brief campaña tequila', desc:'', creadoPor:'Fernanda', para:'Jimena', area:'imkt', fecha:dx(-5), prioridad:'media', estatus:'entregado', esRH:false},
+  ],
+  // TODO Supabase: tabla `peticiones` zona='heads'
+  heads: [
+    {id:'h001', nombre:'Plan estratégico 2026', desc:'Revisar OKRs propuestos para Q1', creadoPor:'Dani', para:'Emmanuel', fecha:dx(7), prioridad:'alta', estatus:'proceso'},
+    {id:'h002', nombre:'Reestructura comisiones IMKT', desc:'Propuesta nueva tabla + simulación', creadoPor:'Dani', para:'Fernanda', fecha:dx(5), prioridad:'alta', estatus:'pendiente'},
+    {id:'h003', nombre:'Plan retención talento', desc:'Análisis churn de creators últimos 6m', creadoPor:'Dani', para:'Montserrat', fecha:dx(10), prioridad:'media', estatus:'pendiente'},
+    {id:'h004', nombre:'Análisis margen clientes top', desc:'P&L por cliente Q3', creadoPor:'Emmanuel', para:'Dani', fecha:dx(4), prioridad:'media', estatus:'proceso'},
+  ]
+};
+
+// ---------- RECURRENTES ----------
+// TODO Supabase: tabla `recurrentes`
+let RECURRENTES = [
+  {id:'r001', nombre:'Reporte mensual cuenta', desc:'Reporte ejecutivo del mes para clientes', para:'Sofía', area:'pm', frecuencia:'mensual', diaMes:28, activa:true, creadoPor:'Montserrat'},
+  {id:'r002', nombre:'Reporte mensual cuenta', desc:'Reporte ejecutivo del mes para clientes', para:'Gloria', area:'pm', frecuencia:'mensual', diaMes:28, activa:true, creadoPor:'Montserrat'},
+  {id:'r003', nombre:'Reporte mensual cuenta', desc:'Reporte ejecutivo del mes para clientes', para:'Zazil', area:'pm', frecuencia:'mensual', diaMes:28, activa:true, creadoPor:'Montserrat'},
+  {id:'r004', nombre:'Seguimiento leads semanal', desc:'Pipeline ventas + outreach pendiente', para:'Leonardo', area:'imkt', frecuencia:'semanal', diaSemana:1, activa:true, creadoPor:'Fernanda'},
+  {id:'r005', nombre:'Revisión contratos vigentes', desc:'Auditoría semanal de contratos activos', para:'Arylene', area:'legal', frecuencia:'semanal', diaSemana:1, activa:true, creadoPor:'Dani'},
+];
+
+// ---------- TODOS PRIVADOS ----------
+// TODO Supabase: tabla `todos` (user_nombre) o localStorage
+let TODOS = {}; // {nombre: [{id, texto, hecho}]}
+
+// ---------- ESTADO APP ----------
+let USER = null;          // persona logueada
+let pendingLogin = null;  // persona seleccionada en login (antes de validar)
+let activeTab = 'general';
+let filtroActual = 'todas';   // 'todas' | 'vencidas' | 'semana' | área
+let personaFiltro = null;     // para tab "por persona"
+let editandoPersonaId = null;
+let headsUnlocked = false;
+let rhTabUnlocked = false;
+let editandoPeticionId = null;
+
+// ============================================================
+// HELPERS
+// ============================================================
+const $ = id => document.getElementById(id);
+const inicial = (n,a='') => (n[0]||'').toUpperCase() + (a[0]||'').toUpperCase();
+const fullName = p => `${p.nombre} ${p.apellido}`;
+const matchNombre = (campo, nombre) => {
+  if(!campo) return false;
+  return campo.toLowerCase().trim() === nombre.toLowerCase().trim();
+};
+const findPersona = nombre => PERSONAS.find(p => p.nombre.toLowerCase()===nombre.toLowerCase());
+const isAdmin = u => u && (u.nivel==='ceo' || u.nivel==='head');
+
+// fechas
+const fechaObj = s => { const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); };
+const diasHasta = s => Math.floor((fechaObj(s) - new Date(new Date().toDateString()))/86400000);
+const fechaCorta = s => {
+  const d = fechaObj(s);
+  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return `${d.getDate()} ${meses[d.getMonth()]}`;
+};
+const labelFecha = s => {
+  const d = diasHasta(s);
+  if(d < 0) return `vencida ${Math.abs(d)}d`;
+  if(d === 0) return 'hoy';
+  if(d === 1) return 'mañana';
+  if(d <= 7) return `en ${d}d`;
+  return fechaCorta(s);
+};
+const claseFecha = s => {
+  const d = diasHasta(s);
+  if(d < 0) return 'vencida';
+  if(d <= 7) return 'proxima';
+  return '';
+};
+
+const AREAS_LABEL = {
+  imkt:'IMKT', pm:'P.Mgrs', legal:'Legal', admi:'Admi',
+  ventas:'Ventas', digital:'Digital', rh:'RH', heads:'Heads'
+};
+
+// ============================================================
+// LOGIN
+// ============================================================
+function renderLogin(){
+  const grid = $('pgrid');
+  grid.innerHTML = PERSONAS.map(p => `
+    <div class="pcard${pendingLogin && pendingLogin.id===p.id ? ' sel':''}" data-id="${p.id}">
+      <div class="pavatar">${inicial(p.nombre,p.apellido)}</div>
+      ${p.needsPass ? '<div class="plock">🔒</div>' : ''}
+      <div class="pname">${fullName(p)}</div>
+      <div class="prol">${p.rol}</div>
+      <div class="pbadge">${p.nivel === 'ceo' ? '/ dirección' : p.nivel === 'head' ? '/ head' : p.nivel === 'rh' ? '/ recursos humanos' : '/ ejecutivo'}</div>
+    </div>
+  `).join('');
+  $('login-count').textContent = `${PERSONAS.length} personas`;
+
+  // Event delegation - limpiar listener previo
+  if(grid._loginHandler) grid.removeEventListener('click', grid._loginHandler);
+  grid._loginHandler = e => {
+    const card = e.target.closest('.pcard');
+    if(!card) return;
+    const id = card.dataset.id;
+    pendingLogin = PERSONAS.find(p => p.id === id);
+    $('btn-enter').disabled = false;
+    $('login-hint').textContent = pendingLogin.needsPass
+      ? `${pendingLogin.nombre} requiere contraseña RH`
+      : `entrar como ${fullName(pendingLogin)}`;
+    renderLogin(); // re-render para mostrar selección
+  };
+  grid.addEventListener('click', grid._loginHandler);
+
+  // reloj
+  const updClock = ()=>{
+    const d = new Date();
+    const dias = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'];
+    $('login-clock').textContent = `${dias[d.getDay()]} · ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  };
+  updClock();
+  if(!window._clockInt) window._clockInt = setInterval(updClock, 30000);
+}
+
+$('btn-enter').addEventListener('click', () => {
+  if(!pendingLogin) return;
+  if(pendingLogin.needsPass){
+    abrirRhLogin();
+  } else {
+    USER = pendingLogin;
+    iniciarApp();
+  }
+});
+
+function abrirRhLogin(){
+  $('ov-rh-login').classList.add('show');
+  $('rh-login-pass').value = '';
+  $('rh-login-err').style.display = 'none';
+  requestAnimationFrame(()=>$('rh-login-pass').focus());
+}
+function cerrarRhLogin(){ $('ov-rh-login').classList.remove('show'); }
+function validarRhLogin(){
+  if($('rh-login-pass').value === RH_PASS){
+    USER = pendingLogin;
+    cerrarRhLogin();
+    iniciarApp();
+  } else {
+    $('rh-login-err').style.display = 'block';
+  }
+}
+
+// ============================================================
+// APP INIT
+// ============================================================
+function iniciarApp(){
+  // Limpiar estado previo
+  personaFiltro = null;
+  filtroActual = 'todas';
+  headsUnlocked = false;
+  rhTabUnlocked = false;
+  editandoPersonaId = null;
+  editandoPeticionId = null;
+
+  // Generar recurrentes que toquen
+  generarRecurrentes();
+
+  $('screen-login').style.display = 'none';
+  $('screen-app').style.display = 'flex';
+
+  // user pill
+  $('user-pill').innerHTML = `
+    <div class="av">${inicial(USER.nombre, USER.apellido)}</div>
+    <div>
+      <div class="un">${fullName(USER)}</div>
+      <div class="ur">${USER.rol}</div>
+    </div>
+  `;
+  // fecha
+  const d = new Date();
+  const dias = ['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'];
+  $('app-date').textContent = `${dias[d.getDay()]} ${d.getDate()}/${d.getMonth()+1}`;
+
+  // tabs según nivel
+  activeTab = isAdmin(USER) ? 'general' : 'mis';
+  renderTabs();
+  renderActiveTab();
+}
+
+function cerrarSesion(){
+  USER = null;
+  pendingLogin = null;
+  $('screen-app').style.display = 'none';
+  $('screen-login').style.display = 'flex';
+  $('btn-enter').disabled = true;
+  $('login-hint').textContent = 'elige una persona para continuar';
+  renderLogin();
+}
+
+// ============================================================
+// TABS
+// ============================================================
+function renderTabs(){
+  let tabs = [];
+  if(isAdmin(USER)){
+    tabs = [
+      {id:'general', label:'general', count: countGeneral()},
+      {id:'porpersona', label:'por persona'},
+      {id:'recur', label:'↻ recurrentes'},
+      {id:'equipo', label:'equipo'},
+      {id:'todo', label:'mi to-do'},
+      {id:'heads', label:'🔒 heads'},
+    ];
+  } else {
+    tabs = [
+      {id:'mis', label:'mis peticiones', count: countMis()},
+      {id:'pedi', label:'lo que yo pedí'},
+      {id:'todo', label:'mi to-do privado'},
+    ];
+    if(USER.nombre==='Arylene' || USER.nombre==='Salvador'){
+      tabs.push({id:'rhpriv', label:'🔒 RH·privado'});
+    }
+  }
+  $('tabs').innerHTML = tabs.map(t => `
+    <button class="tab${activeTab===t.id?' active':''}" onclick="cambiarTab('${t.id}')">
+      ${t.label}
+      ${t.count!==undefined ? `<span class="tcount">${t.count}</span>` : ''}
+    </button>
+  `).join('');
+}
+
+function cambiarTab(id){
+  if(id==='heads' && !headsUnlocked){
+    abrirHeadsPass();
+    return;
+  }
+  if(id==='rhpriv' && !rhTabUnlocked){
+    abrirRhTabPass();
+    return;
+  }
+  activeTab = id;
+  personaFiltro = null;
+  filtroActual = 'todas';
+  renderTabs();
+  renderActiveTab();
+}
+
+function countGeneral(){ return DB.general.filter(t => !t.esRH || canSeeRH(t)).filter(t=>t.estatus!=='entregado').length; }
+function countMis(){
+  const userTasks = DB.general.filter(t => matchNombre(t.para, USER.nombre) && (!t.esRH || canSeeRH(t)) && t.estatus!=='entregado');
+  return userTasks.length;
+}
+
+// can see RH task?
+function canSeeRH(t){
+  if(!t.esRH) return true;
+  if(USER.nombre==='Dani' || USER.nombre==='Emmanuel') return true;
+  if(USER.nivel==='rh') return true;
+  if(matchNombre(t.para, USER.nombre)) return true;
+  return false;
+}
+
+// ============================================================
+// PASSWORDS (heads tab, rh tab)
+// ============================================================
+function abrirHeadsPass(){
+  $('ov-heads-pass').classList.add('show');
+  $('heads-pass-input').value = '';
+  $('heads-pass-err').style.display = 'none';
+  requestAnimationFrame(()=>$('heads-pass-input').focus());
+}
+function cerrarHeadsPass(){ $('ov-heads-pass').classList.remove('show'); }
+function validarHeadsPass(){
+  if($('heads-pass-input').value === HEADS_PASS){
+    headsUnlocked = true;
+    cerrarHeadsPass();
+    cambiarTab('heads');
+  } else {
+    $('heads-pass-err').style.display = 'block';
+  }
+}
+function abrirRhTabPass(){
+  $('ov-rhtab-pass').classList.add('show');
+  $('rhtab-pass-input').value = '';
+  $('rhtab-pass-err').style.display = 'none';
+  requestAnimationFrame(()=>$('rhtab-pass-input').focus());
+}
+function cerrarRhTabPass(){ $('ov-rhtab-pass').classList.remove('show'); }
+function validarRhTabPass(){
+  if($('rhtab-pass-input').value === RH_PASS){
+    rhTabUnlocked = true;
+    cerrarRhTabPass();
+    cambiarTab('rhpriv');
+  } else {
+    $('rhtab-pass-err').style.display = 'block';
+  }
+}
+
+// ============================================================
+// RENDER ACTIVE TAB (router)
+// ============================================================
+function renderActiveTab(){
+  const main = $('main');
+  const sideShow = isAdmin(USER) && (activeTab==='general' || activeTab==='porpersona');
+  main.classList.toggle('no-side', !sideShow);
+  $('side').style.display = sideShow ? 'flex' : 'none';
+
+  switch(activeTab){
+    case 'general': renderGeneral(); renderSide(); break;
+    case 'porpersona': renderPorPersona(); renderSide(); break;
+    case 'recur': renderRecurrentes(); break;
+    case 'equipo': renderEquipo(); break;
+    case 'todo': renderTodo(); break;
+    case 'heads': renderHeads(); break;
+    case 'mis': renderMis(); break;
+    case 'pedi': renderPedi(); break;
+    case 'rhpriv': renderRhPriv(); break;
+  }
+}
+
+// ============================================================
+// VISTA: GENERAL (admin)
+// ============================================================
+function renderGeneral(){
+  // Lista base: no-RH (a menos que pueda ver) + recurrentes generadas
+  let lista = DB.general.filter(t => !t.esRH);
+  // filtros
+  if(filtroActual === 'vencidas') lista = lista.filter(t => diasHasta(t.fecha) < 0 && t.estatus!=='entregado');
+  else if(filtroActual === 'semana') lista = lista.filter(t => { const d=diasHasta(t.fecha); return d>=0 && d<=7 && t.estatus!=='entregado'; });
+  else if(['imkt','pm','legal','admi'].includes(filtroActual)) lista = lista.filter(t => t.area === filtroActual);
+
+  const kpis = calcKpis(DB.general.filter(t=>!t.esRH));
+
+  $('content').innerHTML = `
+    ${renderKpis(kpis)}
+    <div class="section-head">
+      <div>
+        <h2>peticiones generales</h2>
+        <div class="sub">vista admin · todas las áreas</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost sm" onclick="limpiarEntregadas('general')">🗑 limpiar entregadas</button>
+        <button class="btn primary sm" onclick="abrirPeticion('general')">+ nueva petición</button>
+      </div>
+    </div>
+    <div class="toolbar">
+      <button class="chip${filtroActual==='todas'?' active':''}" onclick="setFiltro('todas')">todas</button>
+      <button class="chip alert${filtroActual==='vencidas'?' active':''}" onclick="setFiltro('vencidas')">vencidas</button>
+      <button class="chip warn${filtroActual==='semana'?' active':''}" onclick="setFiltro('semana')">esta semana</button>
+      <span style="width:1px;height:20px;background:var(--line);margin:0 4px"></span>
+      <button class="chip${filtroActual==='imkt'?' active':''}" onclick="setFiltro('imkt')">IMKT</button>
+      <button class="chip${filtroActual==='pm'?' active':''}" onclick="setFiltro('pm')">P.Mgrs</button>
+      <button class="chip${filtroActual==='legal'?' active':''}" onclick="setFiltro('legal')">Legal</button>
+      <button class="chip${filtroActual==='admi'?' active':''}" onclick="setFiltro('admi')">Admi</button>
+    </div>
+    ${renderTabla(lista)}
+  `;
+}
+
+function setFiltro(f){ filtroActual = f; renderActiveTab(); }
+
+function calcKpis(lista){
+  return {
+    vencidas: lista.filter(t => diasHasta(t.fecha)<0 && t.estatus!=='entregado').length,
+    semana:   lista.filter(t => { const d=diasHasta(t.fecha); return d>=0 && d<=7 && t.estatus!=='entregado'; }).length,
+    proceso:  lista.filter(t => t.estatus==='proceso').length,
+    entreg:   lista.filter(t => t.estatus==='entregado').length,
+  };
+}
+function renderKpis(k){
+  return `
+  <div class="kpis">
+    <div class="kpi alert"><div class="klab">vencidas</div><div class="kval">${k.vencidas}</div></div>
+    <div class="kpi warn"><div class="klab">esta semana</div><div class="kval">${k.semana}</div></div>
+    <div class="kpi"><div class="klab">en proceso</div><div class="kval">${k.proceso}</div></div>
+    <div class="kpi"><div class="klab">entregadas</div><div class="kval">${k.entreg}</div></div>
+  </div>`;
+}
+
+// Tabla genérica
+function renderTabla(lista, opts={}){
+  if(!lista.length) return `<div class="empty"><h4>sin peticiones</h4><p>no hay tareas que cumplan los filtros actuales</p></div>`;
+  // ordenar: vencidas primero, luego por fecha asc
+  lista = lista.slice().sort((a,b) => {
+    const ea = a.estatus==='entregado'?1:0, eb = b.estatus==='entregado'?1:0;
+    if(ea!==eb) return ea-eb;
+    return fechaObj(a.fecha)-fechaObj(b.fecha);
+  });
+  return `
+  <table class="tbl">
+    <thead><tr>
+      <th>petición</th>
+      <th>de → para</th>
+      <th>área</th>
+      <th>fecha</th>
+      <th>prio</th>
+      <th>estatus</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+      ${lista.map(t => renderFila(t, opts)).join('')}
+    </tbody>
+  </table>`;
+}
+
+function renderFila(t, opts={}){
+  const isRecur = t._recurOrigen;
+  const puedeConfirmar = USER && t.creadoPor === USER.nombre;
+  const esAsignado = matchNombre(t.para, USER.nombre);
+  const puedeEditar = puedeConfirmar || esAsignado || isAdmin(USER);
+  return `
+    <tr>
+      <td>
+        <div class="tname">
+          ${t.nombre}
+          ${isRecur ? '<span class="recur-icon">↻</span>' : ''}
+          ${t.esRH ? '<span class="tag area-rh" style="margin-left:4px">RH</span>' : ''}
+        </div>
+        ${t.desc ? `<div class="tdesc">${t.desc}</div>` : ''}
+      </td>
+      <td><span style="font-family:var(--mono);font-size:11px;color:var(--txt-3)">${t.creadoPor}</span> → <strong>${t.para}</strong></td>
+      <td><span class="tag area-${t.area||'general'}">${AREAS_LABEL[t.area]||t.area||'-'}</span></td>
+      <td><div class="date-cell ${claseFecha(t.fecha)}">${fechaCorta(t.fecha)}<span class="dsub">${labelFecha(t.fecha)}</span></div></td>
+      <td><span class="tag prio-${t.prioridad}">${t.prioridad}</span></td>
+      <td>${renderEstatusSelect(t)}</td>
+      <td>
+        <div class="row-actions">
+          ${puedeConfirmar && !isRecur ? `<button class="icon-btn danger" onclick="eliminarPeticion('${t.id}')" title="eliminar">✕</button>` : ''}
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+function renderEstatusSelect(t){
+  const puedeConfirmar = USER && t.creadoPor === USER.nombre;
+  const isRecur = t._recurOrigen;
+  // Recurrentes: solo el creador (de la recurrente) puede entregar
+  const opts = [
+    `<option value="pendiente"${t.estatus==='pendiente'?' selected':''}>pendiente</option>`,
+    `<option value="proceso"${t.estatus==='proceso'?' selected':''}>en proceso</option>`,
+  ];
+  if(puedeConfirmar) opts.push(`<option value="entregado"${t.estatus==='entregado'?' selected':''}>entregado ✓</option>`);
+  return `<select class="status-sel s-${t.estatus}" onchange="cambiarEstatus('${t.id}', this.value, ${isRecur?'true':'false'})">${opts.join('')}</select>`;
+}
+
+function cambiarEstatus(id, nuevo, esRecur){
+  let t;
+  if(esRecur){
+    // es una entrega de recurrente sintética
+    const r = RECURRENTES.find(r => 'rec-'+r.id+'-'+r._fechaActual === id || ('rec-'+r.id+'-'+r._fechaActual)===id);
+    if(nuevo==='entregado'){
+      // Validar: solo creador puede entregar
+      const recur = RECURRENTES.find(r => id.startsWith('rec-'+r.id+'-'));
+      if(recur && recur.creadoPor === USER.nombre){
+        marcarRecOk(id);
+      } else {
+        alert('solo quien creó la recurrente puede marcarla como entregada');
+        renderActiveTab();
+      }
+    } else {
+      // proceso/pendiente en recurrentes: registramos en DB.general como instancia
+      const recur = RECURRENTES.find(r => id.startsWith('rec-'+r.id+'-'));
+      if(recur){
+        const fechaR = id.split('-').slice(-3).join('-'); // recuperar yyyy-mm-dd del id
+        const ya = DB.general.find(x => x._origenRecur===recur.id && x.fecha===fechaR);
+        if(ya){ ya.estatus = nuevo; }
+        else {
+          DB.general.push({
+            id:'tr-'+Date.now(),
+            nombre: recur.nombre, desc: recur.desc, creadoPor: recur.creadoPor,
+            para: recur.para, area: recur.area, fecha: fechaR, prioridad:'media',
+            estatus: nuevo, esRH:false, _origenRecur: recur.id
+          });
+        }
+      }
+    }
+    renderActiveTab();
+    return;
+  }
+
+  t = DB.general.find(x=>x.id===id) || DB.heads.find(x=>x.id===id);
+  if(!t) return;
+
+  // Validar reglas
+  if(nuevo === 'entregado'){
+    const puedeConfirmar = t.creadoPor === USER.nombre;
+    if(!puedeConfirmar){
+      alert('solo el creador de la petición puede marcarla como entregada');
+      renderActiveTab();
+      return;
+    }
+  }
+  t.estatus = nuevo;
+  renderActiveTab();
+}
+
+function marcarRecOk(id){
+  const recur = RECURRENTES.find(r => id.startsWith('rec-'+r.id+'-'));
+  if(!recur) return;
+  const fechaR = id.split('-').slice(-3).join('-');
+  // Buscar instancia o crearla como entregada
+  let inst = DB.general.find(x => x._origenRecur===recur.id && x.fecha===fechaR);
+  if(!inst){
+    inst = {
+      id:'tr-'+Date.now(),
+      nombre: recur.nombre, desc: recur.desc, creadoPor: recur.creadoPor,
+      para: recur.para, area: recur.area, fecha: fechaR, prioridad:'media',
+      estatus:'entregado', esRH:false, _origenRecur: recur.id
+    };
+    DB.general.push(inst);
+  } else {
+    inst.estatus = 'entregado';
+  }
+  renderActiveTab();
+}
+
+function eliminarPeticion(id){
+  if(!confirm('¿eliminar esta petición?')) return;
+  DB.general = DB.general.filter(t => t.id !== id);
+  DB.heads   = DB.heads.filter(t => t.id !== id);
+  renderActiveTab();
+}
+
+function limpiarEntregadas(scope){
+  if(!confirm('¿borrar todas las peticiones marcadas como entregadas?')) return;
+  if(scope === 'general'){
+    DB.general = DB.general.filter(t => t.estatus !== 'entregado');
+  } else if(scope === 'pedi'){
+    DB.general = DB.general.filter(t => !(t.creadoPor===USER.nombre && t.estatus==='entregado'));
+  }
+  renderActiveTab();
+}
+
+// ============================================================
+// VISTA: POR PERSONA (admin)
+// ============================================================
+function renderPorPersona(){
+  const personas = PERSONAS.filter(p => p.nivel === 'ejecutivo' || p.nivel === 'rh' || p.nivel === 'head');
+  const persona = personaFiltro
+    ? PERSONAS.find(p => p.nombre === personaFiltro)
+    : personas[0];
+  if(!persona){ $('content').innerHTML = '<div class="empty"><h4>sin personas</h4></div>'; return; }
+  const tareas = DB.general.filter(t => matchNombre(t.para, persona.nombre) && canSeeRH(t));
+  // + recurrentes generadas para esa persona
+  const recurInst = obtenerInstanciasRecur(persona.nombre);
+  const todas = [...tareas, ...recurInst];
+  const k = calcKpis(todas);
+  $('content').innerHTML = `
+    <div class="section-head">
+      <div>
+        <h2>${fullName(persona)}</h2>
+        <div class="sub">${persona.rol} · vista admin</div>
+      </div>
+    </div>
+    ${renderKpis(k)}
+    ${renderTabla(todas)}
+  `;
+}
+
+// ============================================================
+// VISTA: HEADS (admin con password)
+// ============================================================
+function renderHeads(){
+  let lista = DB.heads.slice();
+  // Dani/Emmanuel ven todas; Fernanda/Montserrat solo las suyas
+  if(!(USER.nombre==='Dani' || USER.nombre==='Emmanuel')){
+    lista = lista.filter(t => matchNombre(t.para, USER.nombre));
+  }
+  $('content').innerHTML = `
+    <div class="section-head">
+      <div>
+        <h2>zona heads <span class="tag area-heads">privado</span></h2>
+        <div class="sub">peticiones entre dirección · ${lista.length} activas</div>
+      </div>
+      <button class="btn primary sm" onclick="abrirPeticion('heads')">+ nueva petición heads</button>
+    </div>
+    ${renderTablaHeads(lista)}
+  `;
+}
+function renderTablaHeads(lista){
+  if(!lista.length) return `<div class="empty"><h4>sin peticiones heads</h4><p>esta zona es privada para dirección y heads</p></div>`;
+  lista = lista.slice().sort((a,b)=>fechaObj(a.fecha)-fechaObj(b.fecha));
+  return `
+  <table class="tbl">
+    <thead><tr>
+      <th>petición</th><th>de → para</th><th>fecha</th><th>prio</th><th>estatus</th><th></th>
+    </tr></thead>
+    <tbody>
+      ${lista.map(t => `
+        <tr>
+          <td><div class="tname">${t.nombre}</div>${t.desc?`<div class="tdesc">${t.desc}</div>`:''}</td>
+          <td><span style="font-family:var(--mono);font-size:11px;color:var(--txt-3)">${t.creadoPor}</span> → <strong>${t.para}</strong></td>
+          <td><div class="date-cell ${claseFecha(t.fecha)}">${fechaCorta(t.fecha)}<span class="dsub">${labelFecha(t.fecha)}</span></div></td>
+          <td><span class="tag prio-${t.prioridad}">${t.prioridad}</span></td>
+          <td>${renderEstatusSelect(t)}</td>
+          <td><div class="row-actions">${t.creadoPor===USER.nombre?`<button class="icon-btn danger" onclick="eliminarPeticion('${t.id}')">✕</button>`:''}</div></td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>`;
+}
+
+// ============================================================
+// VISTA: MIS PETICIONES (ejecutivo)
+// ============================================================
+function renderMis(){
+  const lista = DB.general.filter(t => matchNombre(t.para, USER.nombre) && canSeeRH(t) && !t.esRH);
+  const recurInst = obtenerInstanciasRecur(USER.nombre);
+  const todas = [...lista, ...recurInst];
+  const k = calcKpis(todas);
+  $('content').innerHTML = `
+    ${renderKpis(k)}
+    <div class="section-head">
+      <div>
+        <h2>mis peticiones</h2>
+        <div class="sub">tareas que otros me asignaron · puedo mover a "en proceso"</div>
+      </div>
+    </div>
+    ${renderTabla(todas)}
+  `;
+}
+
+// ============================================================
+// VISTA: LO QUE YO PEDÍ
+// ============================================================
+function renderPedi(){
+  const lista = DB.general.filter(t => t.creadoPor === USER.nombre);
+  const k = calcKpis(lista);
+  $('content').innerHTML = `
+    ${renderKpis(k)}
+    <div class="section-head">
+      <div>
+        <h2>lo que yo pedí</h2>
+        <div class="sub">peticiones que creé · puedo confirmar entregas</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost sm" onclick="limpiarEntregadas('pedi')">🗑 limpiar entregadas</button>
+        <button class="btn primary sm" onclick="abrirPeticion('general')">+ nueva petición</button>
+      </div>
+    </div>
+    ${renderTabla(lista)}
+  `;
+}
+
+// ============================================================
+// VISTA: RH PRIVADO (Arylene/Salvador)
+// ============================================================
+function renderRhPriv(){
+  const lista = DB.general.filter(t => t.esRH && matchNombre(t.para, USER.nombre));
+  $('content').innerHTML = `
+    <div class="section-head">
+      <div>
+        <h2>RH · privado <span class="tag area-rh">confidencial</span></h2>
+        <div class="sub">peticiones de RH asignadas a mí</div>
+      </div>
+    </div>
+    ${renderTabla(lista)}
+  `;
+}
+
+// ============================================================
+// VISTA: RECURRENTES (admin)
+// ============================================================
+function renderRecurrentes(){
+  $('content').innerHTML = `
+    <div class="section-head">
+      <div>
+        <h2>tareas recurrentes <span class="recur-icon" style="font-size:18px;margin-left:4px">↻</span></h2>
+        <div class="sub">se generan automáticamente · ${RECURRENTES.length} configuradas</div>
+      </div>
+      <button class="btn primary sm" onclick="abrirRecur()">+ nueva recurrente</button>
+    </div>
+    ${renderTablaRecur()}
+  `;
+}
+function renderTablaRecur(){
+  if(!RECURRENTES.length) return `<div class="empty"><h4>sin recurrentes</h4></div>`;
+  return `
+    <table class="tbl">
+      <thead><tr>
+        <th>tarea</th><th>para</th><th>frecuencia</th><th>próxima</th><th>creada por</th><th>estado</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${RECURRENTES.map(r => {
+          const prox = proximaFecha(r);
+          return `
+          <tr>
+            <td><div class="tname">${r.nombre}</div>${r.desc?`<div class="tdesc">${r.desc}</div>`:''}</td>
+            <td><strong>${r.para}</strong></td>
+            <td><span class="tag">${r.frecuencia}${r.frecuencia==='mensual'?` día ${r.diaMes}`:` ${diasNombres[r.diaSemana]}`}</span></td>
+            <td><div class="date-cell ${claseFecha(prox)}">${fechaCorta(prox)}<span class="dsub">${labelFecha(prox)}</span></div></td>
+            <td><span style="font-family:var(--mono);font-size:11px;color:var(--txt-3)">${r.creadoPor}</span></td>
+            <td><span class="tag" style="color:${r.activa?'var(--ok)':'var(--txt-3)'};border-color:${r.activa?'rgba(123,196,127,.3)':'var(--line-2)'}">${r.activa?'activa':'pausada'}</span></td>
+            <td><div class="row-actions"><button class="icon-btn" onclick="toggleRecur('${r.id}')" title="${r.activa?'pausar':'activar'}">${r.activa?'⏸':'▶'}</button>${r.creadoPor===USER.nombre?`<button class="icon-btn danger" onclick="eliminarRecur('${r.id}')">✕</button>`:''}</div></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+const diasNombres = ['dom','lun','mar','mié','jue','vie','sáb'];
+
+function toggleRecur(id){
+  const r = RECURRENTES.find(x=>x.id===id);
+  if(r){ r.activa = !r.activa; renderActiveTab(); }
+}
+function eliminarRecur(id){
+  if(!confirm('¿eliminar esta recurrente?')) return;
+  RECURRENTES = RECURRENTES.filter(r => r.id !== id);
+  renderActiveTab();
+}
+
+// ============================================================
+// MOTOR DE RECURRENTES
+// ============================================================
+function proximaFecha(r){
+  const hoy = new Date(new Date().toDateString());
+  if(r.frecuencia==='mensual'){
+    const d = new Date(hoy.getFullYear(), hoy.getMonth(), r.diaMes);
+    if(d < hoy) d.setMonth(d.getMonth()+1);
+    return d.toISOString().slice(0,10);
+  }
+  // semanal o quincenal
+  const d = new Date(hoy);
+  const diff = (r.diaSemana - hoy.getDay() + 7) % 7;
+  d.setDate(d.getDate() + (diff || (r.frecuencia==='semanal' ? 7 : 14)));
+  return d.toISOString().slice(0,10);
+}
+
+function generarRecurrentes(){
+  // marca _fechaActual en cada recurrente para que las vistas la usen
+  RECURRENTES.forEach(r => {
+    if(!r.activa) return;
+    r._fechaActual = proximaFecha(r);
+  });
+}
+
+function obtenerInstanciasRecur(nombre){
+  // Devuelve "tareas sintéticas" para mostrar en la tabla del usuario
+  const out = [];
+  RECURRENTES.forEach(r => {
+    if(!r.activa) return;
+    if(!matchNombre(r.para, nombre)) return;
+    const fechaR = r._fechaActual;
+    // ver si ya existe instancia en DB.general
+    const inst = DB.general.find(x => x._origenRecur===r.id && x.fecha===fechaR);
+    if(inst){
+      out.push({...inst, _recurOrigen:r.id});
+    } else {
+      out.push({
+        id:'rec-'+r.id+'-'+fechaR,
+        nombre: r.nombre, desc: r.desc, creadoPor: r.creadoPor,
+        para: r.para, area: r.area, fecha: fechaR, prioridad:'media',
+        estatus:'pendiente', esRH:false,
+        _recurOrigen: r.id
+      });
+    }
+  });
+  return out;
+}
+
+// ============================================================
+// VISTA: EQUIPO (admin)
+// ============================================================
+function renderEquipo(){
+  $('content').innerHTML = `
+    <div class="section-head">
+      <div>
+        <h2>equipo</h2>
+        <div class="sub">${PERSONAS.length} personas · gestión de accesos</div>
+      </div>
+      <button class="btn primary sm" onclick="abrirPersona()">+ agregar persona</button>
+    </div>
+    <div class="team-grid">
+      ${PERSONAS.map(p => `
+        <div class="team-card ${p.nivel}">
+          <div class="tcact">
+            <button class="icon-btn" onclick="abrirPersona('${p.id}')" title="editar">✏</button>
+            <button class="icon-btn danger" onclick="eliminarPersona('${p.id}')" title="eliminar">✕</button>
+          </div>
+          <div class="tcav">${inicial(p.nombre,p.apellido)}</div>
+          <div class="tcn">${fullName(p)}</div>
+          <div class="tcr">${p.rol}</div>
+          <div class="tca">
+            ${(p.areas||[]).map(a => `<span class="tag area-${a}">${AREAS_LABEL[a]||a}</span>`).join('')}
+            ${p.needsPass?'<span class="tag area-rh">🔒</span>':''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// ============================================================
+// VISTA: TODO (privado)
+// ============================================================
+function renderTodo(){
+  if(!TODOS[USER.nombre]) TODOS[USER.nombre] = [];
+  const lista = TODOS[USER.nombre];
+  $('content').innerHTML = `
+    <div class="section-head">
+      <div>
+        <h2>mi to-do privado</h2>
+        <div class="sub">solo tú lo ves · no se comparte</div>
+      </div>
+    </div>
+    <div class="todo-wrap">
+      <div class="todo-form">
+        <input type="text" id="todo-input" placeholder="agregar tarea..." onkeydown="if(event.key==='Enter')agregarTodo()">
+        <button onclick="agregarTodo()">añadir</button>
+      </div>
+      ${lista.length ? `<div class="todo-list">${lista.map(t => `
+        <div class="todo-item ${t.hecho?'done':''}">
+          <div class="todo-check" onclick="toggleTodo('${t.id}')"></div>
+          <div class="todo-text">${t.texto}</div>
+          <button class="todo-del" onclick="eliminarTodo('${t.id}')">✕</button>
+        </div>
+      `).join('')}</div>` : `<div class="empty"><h4>tu lista está vacía</h4><p>agrega tareas personales que solo tú podrás ver</p></div>`}
+    </div>
+  `;
+}
+function agregarTodo(){
+  const txt = $('todo-input').value.trim();
+  if(!txt) return;
+  if(!TODOS[USER.nombre]) TODOS[USER.nombre] = [];
+  TODOS[USER.nombre].unshift({id:'td-'+Date.now(), texto:txt, hecho:false});
+  renderActiveTab();
+}
+function toggleTodo(id){
+  const t = TODOS[USER.nombre].find(x=>x.id===id);
+  if(t){ t.hecho = !t.hecho; renderActiveTab(); }
+}
+function eliminarTodo(id){
+  TODOS[USER.nombre] = TODOS[USER.nombre].filter(t => t.id !== id);
+  renderActiveTab();
+}
+
+// ============================================================
+// SIDEBAR (semáforo)
+// ============================================================
+function renderSide(){
+  const personas = PERSONAS.filter(p => p.nivel==='ejecutivo' || p.nivel==='rh' || p.nivel==='head').filter(p => p.nombre !== USER.nombre || isAdmin(USER));
+  // calcular semáforo por persona
+  const sem = personas.map(p => {
+    const tareas = DB.general.filter(t => matchNombre(t.para, p.nombre) && t.estatus !== 'entregado' && canSeeRH(t));
+    const venc = tareas.filter(t => diasHasta(t.fecha) < 0).length;
+    const sem7 = tareas.filter(t => { const d=diasHasta(t.fecha); return d>=0 && d<=7; }).length;
+    let estado = 'x';
+    if(venc>0) estado = 'r';
+    else if(sem7>0) estado = 'y';
+    else if(tareas.length>0) estado = 'g';
+    return {p, total: tareas.length, estado};
+  }).sort((a,b)=>{
+    const ord = {r:0,y:1,g:2,x:3};
+    return ord[a.estado]-ord[b.estado] || b.total-a.total;
+  });
+
+  const headsResumen = `${DB.heads.filter(t => t.estatus !== 'entregado').length} activas`;
+  const showRH = USER.nombre==='Dani' || USER.nombre==='Emmanuel';
+  const rhCount = DB.general.filter(t => t.esRH && t.estatus !== 'entregado').length;
+
+  $('side').innerHTML = `
+    <div>
+      <h4>semáforo equipo</h4>
+      <div class="semaforo">
+        ${sem.map(s => `
+          <div class="sem-row${personaFiltro===s.p.nombre?' active':''}" onclick="verPersona('${s.p.nombre}')">
+            <div class="sem-dot ${s.estado}"></div>
+            <div class="sem-name">${fullName(s.p)}</div>
+            <div class="sem-cnt">${s.total}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    <div class="side-card">
+      <div class="scn">zona heads</div>
+      <div class="scv">${DB.heads.length}</div>
+      <div class="scs">${headsResumen}</div>
+    </div>
+    ${showRH ? `
+    <div class="side-card alert">
+      <div class="scn">zona RH (privada)</div>
+      <div class="scv">${rhCount}</div>
+      <div class="scs">peticiones confidenciales activas</div>
+    </div>` : ''}
+  `;
+}
+function verPersona(nombre){
+  personaFiltro = nombre;
+  activeTab = 'porpersona';
+  renderTabs();
+  renderActiveTab();
+}
+
+// ============================================================
+// MODAL: NUEVA PETICIÓN
+// ============================================================
+let zonaPeticion = 'general';
+function abrirPeticion(zona){
+  zonaPeticion = zona;
+  $('pet-title').textContent = zona==='heads' ? 'nueva petición heads' : 'nueva petición';
+  $('pet-zone-label').textContent = zona==='heads' ? 'zona heads · privada' : (USER.nivel==='rh' ? 'zona general · marcará como RH' : 'zona general');
+  $('pet-area-field').style.display = zona==='heads' ? 'none' : '';
+  $('pet-nombre').value = '';
+  $('pet-desc').value = '';
+  $('pet-fecha').value = dx(7);
+  $('pet-prio').value = 'media';
+  $('pet-area').value = USER.areas && USER.areas[0] && AREAS_LABEL[USER.areas[0]] ? USER.areas[0] : 'imkt';
+  actualizarParaQuien();
+  $('ov-peticion').classList.add('show');
+  requestAnimationFrame(()=>$('pet-nombre').focus());
+}
+function cerrarPeticion(){ $('ov-peticion').classList.remove('show'); }
+
+function actualizarParaQuien(){
+  const sel = $('pet-para');
+  let opts = [];
+  if(zonaPeticion === 'heads'){
+    // Solo heads/ceo
+    opts = PERSONAS.filter(p => p.nivel==='ceo' || p.nivel==='head').map(p =>
+      `<option value="${p.nombre}">${fullName(p)} · ${p.rol}</option>`);
+  } else {
+    const area = $('pet-area').value;
+    opts = PERSONAS.filter(p =>
+      (p.areas||[]).includes(area) && !p.needsPass && p.nivel !== 'ceo'
+    ).map(p => `<option value="${p.nombre}">${fullName(p)} · ${p.rol}</option>`);
+  }
+  sel.innerHTML = opts.length ? opts.join('') : '<option value="">— sin personas en esta área —</option>';
+}
+
+function guardarPeticion(){
+  const nombre = $('pet-nombre').value.trim();
+  if(!nombre){ alert('falta el nombre de la petición'); return; }
+  const para = $('pet-para').value;
+  if(!para){ alert('falta destinatario'); return; }
+  const desc = $('pet-desc').value.trim();
+  const fecha = $('pet-fecha').value || dx(7);
+  const prio = $('pet-prio').value;
+
+  if(zonaPeticion==='heads'){
+    DB.heads.push({
+      id:'h-'+Date.now(), nombre, desc, creadoPor: USER.nombre,
+      para, fecha, prioridad: prio, estatus:'pendiente'
+    });
+  } else {
+    const area = $('pet-area').value;
+    const esRH = USER.nivel === 'rh'; // si RH crea, marcar automáticamente
+    DB.general.push({
+      id:'t-'+Date.now(), nombre, desc, creadoPor: USER.nombre,
+      para, area, fecha, prioridad: prio, estatus:'pendiente', esRH
+    });
+  }
+  cerrarPeticion();
+  renderTabs();
+  renderActiveTab();
+}
+
+// ============================================================
+// MODAL: PERSONA (agregar/editar)
+// ============================================================
+function abrirPersona(id){
+  editandoPersonaId = id || null;
+  $('per-title').textContent = id ? 'editar persona' : 'agregar persona';
+  if(id){
+    const p = PERSONAS.find(x=>x.id===id);
+    $('per-nombre').value = p.nombre;
+    $('per-apellido').value = p.apellido;
+    $('per-rol').value = p.rol;
+    $('per-area').value = (p.areas&&p.areas[0])||'imkt';
+    $('per-nivel').value = p.nivel === 'rh' ? 'rh' : p.nivel;
+  } else {
+    $('per-nombre').value = ''; $('per-apellido').value = '';
+    $('per-rol').value = ''; $('per-area').value = 'imkt';
+    $('per-nivel').value = 'ejecutivo';
+  }
+  $('ov-persona').classList.add('show');
+  requestAnimationFrame(()=>$('per-nombre').focus());
+}
+function cerrarPersona(){ $('ov-persona').classList.remove('show'); }
+function guardarPersona(){
+  const nombre = $('per-nombre').value.trim();
+  const apellido = $('per-apellido').value.trim();
+  const rol = $('per-rol').value.trim();
+  if(!nombre || !apellido || !rol){ alert('completa nombre, apellido y rol'); return; }
+  const area = $('per-area').value;
+  const nivelSel = $('per-nivel').value;
+  const nivel = nivelSel==='rh' ? 'rh' : nivelSel;
+  const needsPass = nivelSel === 'rh';
+  if(editandoPersonaId){
+    const p = PERSONAS.find(x=>x.id===editandoPersonaId);
+    p.nombre = nombre; p.apellido = apellido; p.rol = rol;
+    p.areas = needsPass ? [...new Set([...(p.areas||[]), area, 'rh'])] : [area];
+    p.nivel = nivel; p.needsPass = needsPass;
+  } else {
+    PERSONAS.push({
+      id:'p-'+Date.now(), nombre, apellido, rol,
+      nivel, areas: needsPass ? [area,'rh'] : [area],
+      needsPass
+    });
+  }
+  cerrarPersona();
+  renderActiveTab();
+}
+function eliminarPersona(id){
+  if(!confirm('¿eliminar a esta persona del equipo?')) return;
+  PERSONAS = PERSONAS.filter(p => p.id !== id);
+  renderActiveTab();
+}
+
+// ============================================================
+// MODAL: RECURRENTE
+// ============================================================
+function abrirRecur(){
+  $('rec-nombre').value = '';
+  $('rec-desc').value = '';
+  $('rec-area').value = 'pm';
+  $('rec-frec').value = 'semanal';
+  toggleRecDia();
+  actualizarRecPara();
+  $('ov-recur').classList.add('show');
+  requestAnimationFrame(()=>$('rec-nombre').focus());
+}
+function cerrarRecur(){ $('ov-recur').classList.remove('show'); }
+function actualizarRecPara(){
+  const area = $('rec-area').value;
+  $('rec-para').innerHTML = PERSONAS.filter(p => (p.areas||[]).includes(area) && p.nivel!=='ceo')
+    .map(p => `<option value="${p.nombre}">${fullName(p)}</option>`).join('');
+}
+function toggleRecDia(){
+  const f = $('rec-frec').value;
+  const sel = $('rec-dia');
+  if(f==='mensual'){
+    $('rec-dia-label').textContent = 'día del mes';
+    sel.innerHTML = Array.from({length:28},(_,i)=>`<option value="${i+1}"${i+1===28?' selected':''}>${i+1}</option>`).join('');
+  } else {
+    $('rec-dia-label').textContent = 'día de la semana';
+    sel.innerHTML = ['lunes','martes','miércoles','jueves','viernes'].map((d,i)=>`<option value="${i+1}">${d}</option>`).join('');
+  }
+}
+function guardarRecur(){
+  const nombre = $('rec-nombre').value.trim();
+  if(!nombre){ alert('falta el nombre'); return; }
+  const r = {
+    id:'r-'+Date.now(),
+    nombre,
+    desc: $('rec-desc').value.trim(),
+    para: $('rec-para').value,
+    area: $('rec-area').value,
+    frecuencia: $('rec-frec').value,
+    activa:true,
+    creadoPor: USER.nombre
+  };
+  if(r.frecuencia==='mensual') r.diaMes = parseInt($('rec-dia').value);
+  else r.diaSemana = parseInt($('rec-dia').value);
+  RECURRENTES.push(r);
+  generarRecurrentes();
+  cerrarRecur();
+  renderActiveTab();
+}
+
+// ============================================================
+// INIT
+// ============================================================
+renderLogin();
+</script>
+</body>
+</html>
