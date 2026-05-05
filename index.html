@@ -534,6 +534,39 @@ button{cursor:pointer}
 /* recur icon inline */
 .inline-icon{font-size:11px;color:var(--acc);margin-left:6px}
 
+/* detalle de petición */
+.det-section{margin-bottom:22px}
+.det-section:last-child{margin-bottom:0}
+.det-label{
+  font-family:var(--mono);font-size:10px;
+  text-transform:uppercase;letter-spacing:.15em;
+  color:var(--txt-3);margin-bottom:6px;
+}
+.det-value{font-size:15px;line-height:1.55;color:var(--txt)}
+.det-desc{
+  background:var(--bg-1);
+  padding:14px 16px;
+  border:1px solid var(--line);
+  font-size:14px;line-height:1.65;
+  color:var(--txt);
+  white-space:pre-wrap;word-wrap:break-word;
+}
+.det-row{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:22px}
+.det-tags{display:flex;gap:6px;flex-wrap:wrap}
+.det-status-block{
+  background:var(--bg-1);
+  border:1px solid var(--line);
+  padding:14px 16px;
+  display:flex;flex-direction:column;gap:8px;
+}
+.det-status-block label{
+  font-family:var(--mono);font-size:10px;
+  text-transform:uppercase;letter-spacing:.15em;
+  color:var(--txt-3);
+}
+.det-clickable-row{cursor:pointer}
+.det-clickable-row:hover td{background:var(--bg-2) !important}
+
 /* responsive */
 @media (max-width:1100px){
   .main{grid-template-columns:1fr}
@@ -622,6 +655,25 @@ button{cursor:pointer}
     MOVDI<span style="color:var(--acc)">·</span>ops
   </div>
   <div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.2em;color:var(--txt-3)" id="loading-msg">cargando...</div>
+</div>
+
+<!-- ============ MODAL: detalle de petición ============ -->
+<div class="ov" id="ov-detalle" onclick="cerrarDetalle()">
+  <div class="modal wide" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div>
+        <h3 id="det-nombre">—</h3>
+        <div class="mh-sub" id="det-meta">—</div>
+      </div>
+      <button class="modal-x" onclick="cerrarDetalle()">✕</button>
+    </div>
+    <div class="modal-body" id="det-body">
+      <!-- contenido dinámico -->
+    </div>
+    <div class="modal-foot" id="det-foot">
+      <!-- acciones dinámicas -->
+    </div>
+  </div>
 </div>
 
 <!-- ============ MODAL: aviso de error/info ============ -->
@@ -1568,7 +1620,7 @@ function renderFila(t, opts = {}) {
   const isRecur = t._recurOrigen;
   const puedeConfirmar = USER && t.creadoPor === USER.nombre;
   return `
-    <tr>
+    <tr class="det-clickable-row" onclick="abrirDetalle('${t.id}', ${isRecur ? 'true' : 'false'})">
       <td>
         <div class="tname">
           ${t.nombre}
@@ -1581,8 +1633,8 @@ function renderFila(t, opts = {}) {
       <td><span class="tag area-${t.area || 'general'}">${AREAS_LABEL[t.area] || t.area || '-'}</span></td>
       <td><div class="date-cell ${claseFecha(t.fecha)}">${fechaCorta(t.fecha)}<span class="dsub">${labelFecha(t.fecha)}</span></div></td>
       <td><span class="tag prio-${t.prioridad}">${t.prioridad}</span></td>
-      <td>${renderEstatusSelect(t)}</td>
-      <td>
+      <td onclick="event.stopPropagation()">${renderEstatusSelect(t)}</td>
+      <td onclick="event.stopPropagation()">
         <div class="row-actions">
           ${puedeConfirmar && !isRecur ? `<button class="icon-btn danger" onclick="eliminarPeticion('${t.id}')" title="eliminar">✕</button>` : ''}
         </div>
@@ -1680,11 +1732,22 @@ async function limpiarEntregadas(scope) {
 // VISTA: POR PERSONA
 // ============================================================
 function renderPorPersona() {
-  const personas = PERSONAS.filter(p => p.nivel === 'ejecutivo' || p.nivel === 'rh' || p.nivel === 'head');
+  // Filtrar igual que el semáforo
+  let personas = PERSONAS.filter(p => p.nivel === 'ejecutivo' || p.nivel === 'rh' || p.nivel === 'head');
+  const esDireccion = USER.nombre === 'Dani' || USER.nombre === 'Emmanuel';
+  if (!esDireccion && USER.nivel === 'head') {
+    const misAreas = USER.areas || [];
+    personas = personas.filter(p => {
+      if (p.nivel === 'rh') return false;
+      if (p.nombre === 'Salvador' || p.nombre === 'Arylene') return false;
+      const sharesArea = (p.areas || []).some(a => misAreas.includes(a));
+      return sharesArea;
+    });
+  }
   const persona = personaFiltro
-    ? PERSONAS.find(p => p.nombre === personaFiltro)
+    ? personas.find(p => p.nombre === personaFiltro)
     : personas[0];
-  if (!persona) { $('content').innerHTML = '<div class="empty"><h4>sin personas</h4></div>'; return; }
+  if (!persona) { $('content').innerHTML = '<div class="empty"><h4>sin personas</h4><p>no hay personas en tu área para mostrar</p></div>'; return; }
   const tareas = DB.general.filter(t => matchNombre(t.para, persona.nombre) && canSeeRH(t));
   const recurInst = obtenerInstanciasRecur(persona.nombre);
   const todas = [...tareas, ...recurInst];
@@ -1728,13 +1791,13 @@ function renderTablaHeads(lista) {
     <thead><tr><th>petición</th><th>de → para</th><th>fecha</th><th>prio</th><th>estatus</th><th></th></tr></thead>
     <tbody>
       ${lista.map(t => `
-        <tr>
+        <tr class="det-clickable-row" onclick="abrirDetalle('${t.id}', false)">
           <td><div class="tname">${t.nombre}</div>${t.desc ? `<div class="tdesc">${t.desc}</div>` : ''}</td>
           <td><span style="font-family:var(--mono);font-size:11px;color:var(--txt-3)">${t.creadoPor}</span> → <strong>${t.para}</strong></td>
           <td><div class="date-cell ${claseFecha(t.fecha)}">${fechaCorta(t.fecha)}<span class="dsub">${labelFecha(t.fecha)}</span></div></td>
           <td><span class="tag prio-${t.prioridad}">${t.prioridad}</span></td>
-          <td>${renderEstatusSelect(t)}</td>
-          <td><div class="row-actions">${t.creadoPor === USER.nombre ? `<button class="icon-btn danger" onclick="eliminarPeticion('${t.id}')">✕</button>` : ''}</div></td>
+          <td onclick="event.stopPropagation()">${renderEstatusSelect(t)}</td>
+          <td onclick="event.stopPropagation()"><div class="row-actions">${t.creadoPor === USER.nombre ? `<button class="icon-btn danger" onclick="eliminarPeticion('${t.id}')">✕</button>` : ''}</div></td>
         </tr>
       `).join('')}
     </tbody>
@@ -1948,7 +2011,33 @@ async function eliminarTodo(id) {
 // SIDEBAR (semáforo)
 // ============================================================
 function renderSide() {
-  const personas = PERSONAS.filter(p => p.nivel === 'ejecutivo' || p.nivel === 'rh' || p.nivel === 'head').filter(p => p.nombre !== USER.nombre || isAdmin(USER));
+  // Filtrar según el nivel del usuario:
+  // - Dani / Emmanuel (CEO + co-founder) → ven a TODOS
+  // - Otros heads (Fer, Monse) → ven SOLO personas de su área principal
+  // - Ejecutivos no llegan aquí (no tienen sidebar)
+  let personas = PERSONAS.filter(p => p.nivel === 'ejecutivo' || p.nivel === 'rh' || p.nivel === 'head');
+
+  const esDireccion = USER.nombre === 'Dani' || USER.nombre === 'Emmanuel';
+  if (!esDireccion && USER.nivel === 'head') {
+    // Filtrar por áreas del head
+    const misAreas = USER.areas || [];
+    personas = personas.filter(p => {
+      // Excluir gente de RH/Admi/Legal del semáforo de heads de área
+      if (p.nivel === 'rh') return false;
+      if (p.nombre === 'Salvador' || p.nombre === 'Arylene') return false;
+      // Solo incluir personas que comparten al menos un área con el head
+      const sharesArea = (p.areas || []).some(a => misAreas.includes(a));
+      return sharesArea;
+    });
+  }
+
+  // Excluirme a mí mismo si no soy dirección (para no verme en mi propio semáforo)
+  personas = personas.filter(p => p.nombre !== USER.nombre || isAdmin(USER) === false ? p.nombre !== USER.nombre : true);
+  // Pero dirección sí puede verse a sí misma en el semáforo
+  if (esDireccion) {
+    personas = PERSONAS.filter(p => p.nivel === 'ejecutivo' || p.nivel === 'rh' || p.nivel === 'head');
+  }
+
   const sem = personas.map(p => {
     const tareas = DB.general.filter(t => matchNombre(t.para, p.nombre) && t.estatus !== 'entregado' && canSeeRH(t));
     const venc = tareas.filter(t => diasHasta(t.fecha) < 0).length;
@@ -1962,20 +2051,27 @@ function renderSide() {
     const ord = { r: 0, y: 1, g: 2, x: 3 };
     return ord[a.estado] - ord[b.estado] || b.total - a.total;
   });
+
   const headsResumen = `${DB.heads.filter(t => t.estatus !== 'entregado').length} activas`;
-  const showRH = USER.nombre === 'Dani' || USER.nombre === 'Emmanuel';
+  const showRH = esDireccion;
   const rhCount = DB.general.filter(t => t.esRH && t.estatus !== 'entregado').length;
+
+  // Título del semáforo dinámico
+  const semTitulo = esDireccion ? 'semáforo equipo' :
+    USER.nivel === 'head' ? `semáforo · ${(USER.areas || []).map(a => AREAS_LABEL[a] || a).join(', ')}` :
+      'semáforo equipo';
+
   $('side').innerHTML = `
     <div>
-      <h4>semáforo equipo</h4>
+      <h4>${semTitulo}</h4>
       <div class="semaforo">
-        ${sem.map(s => `
+        ${sem.length ? sem.map(s => `
           <div class="sem-row${personaFiltro === s.p.nombre ? ' active' : ''}" onclick="verPersona('${s.p.nombre}')">
             <div class="sem-dot ${s.estado}"></div>
             <div class="sem-name">${fullName(s.p)}</div>
             <div class="sem-cnt">${s.total}</div>
           </div>
-        `).join('')}
+        `).join('') : '<div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);padding:10px">— sin personas en tu área —</div>'}
       </div>
     </div>
     <div class="side-card">
@@ -1996,6 +2092,131 @@ function verPersona(nombre) {
   activeTab = 'porpersona';
   renderTabs();
   renderActiveTab();
+}
+
+// ============================================================
+// MODAL: DETALLE DE PETICIÓN
+// ============================================================
+function abrirDetalle(id, esRecur) {
+  let t;
+  if (esRecur) {
+    // Buscar la petición sintética generada por recurrente
+    const allInst = [...obtenerInstanciasRecur(USER.nombre)];
+    // También buscar instancias para otras personas si admin
+    if (isAdmin(USER)) {
+      PERSONAS.forEach(p => {
+        if (p.nombre !== USER.nombre) allInst.push(...obtenerInstanciasRecur(p.nombre));
+      });
+    }
+    t = allInst.find(x => x.id === id);
+  } else {
+    t = DB.general.find(x => x.id === id) || DB.heads.find(x => x.id === id);
+  }
+  if (!t) return;
+
+  const puedeConfirmar = USER && t.creadoPor === USER.nombre;
+  const esAsignado = matchNombre(t.para, USER.nombre);
+  const isRecur = !!t._recurOrigen;
+
+  $('det-nombre').textContent = t.nombre;
+  $('det-meta').textContent = isRecur 
+    ? `↻ recurrente · ${t.zona === 'heads' ? 'zona heads' : 'zona general'}`
+    : `${t.zona === 'heads' ? 'zona heads' : (t.esRH ? 'RH · confidencial' : 'zona general')}`;
+
+  // Body con todos los detalles
+  $('det-body').innerHTML = `
+    ${t.desc ? `
+      <div class="det-section">
+        <div class="det-label">descripción / contexto</div>
+        <div class="det-desc">${escapeHtml(t.desc)}</div>
+      </div>
+    ` : `
+      <div class="det-section">
+        <div class="det-label">descripción / contexto</div>
+        <div style="color:var(--txt-3);font-style:italic;font-size:13px">— sin descripción —</div>
+      </div>
+    `}
+    <div class="det-row">
+      <div class="det-section" style="margin:0">
+        <div class="det-label">creada por</div>
+        <div class="det-value"><strong>${t.creadoPor}</strong></div>
+      </div>
+      <div class="det-section" style="margin:0">
+        <div class="det-label">asignada a</div>
+        <div class="det-value"><strong>${t.para}</strong></div>
+      </div>
+    </div>
+    <div class="det-row">
+      <div class="det-section" style="margin:0">
+        <div class="det-label">fecha límite</div>
+        <div class="det-value">
+          <div class="date-cell ${claseFecha(t.fecha)}" style="display:inline-flex;flex-direction:row;gap:10px;align-items:baseline">
+            <span style="font-size:16px;font-weight:500">${fechaCorta(t.fecha)}</span>
+            <span class="dsub">${labelFecha(t.fecha)}</span>
+          </div>
+        </div>
+      </div>
+      <div class="det-section" style="margin:0">
+        <div class="det-label">prioridad</div>
+        <div class="det-tags"><span class="tag prio-${t.prioridad}">${t.prioridad}</span></div>
+      </div>
+    </div>
+    ${t.area ? `
+      <div class="det-section">
+        <div class="det-label">área</div>
+        <div class="det-tags"><span class="tag area-${t.area}">${AREAS_LABEL[t.area] || t.area}</span></div>
+      </div>
+    ` : ''}
+    <div class="det-status-block">
+      <label>cambiar estatus</label>
+      ${renderEstatusSelectDetalle(t, isRecur)}
+      ${!puedeConfirmar ? `<div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em;margin-top:4px">solo ${t.creadoPor} puede marcar como entregada</div>` : ''}
+    </div>
+  `;
+
+  // Foot con acciones
+  let actions = `<button class="btn ghost" onclick="cerrarDetalle()">cerrar</button>`;
+  if (puedeConfirmar && !isRecur) {
+    actions += `<button class="btn danger" onclick="eliminarPeticionDesdeDetalle('${t.id}')">eliminar</button>`;
+  }
+  $('det-foot').innerHTML = actions;
+
+  $('ov-detalle').classList.add('show');
+}
+
+function cerrarDetalle() {
+  $('ov-detalle').classList.remove('show');
+}
+
+function renderEstatusSelectDetalle(t, isRecur) {
+  const puedeConfirmar = USER && t.creadoPor === USER.nombre;
+  const opts = [
+    `<option value="pendiente"${t.estatus === 'pendiente' ? ' selected' : ''}>pendiente</option>`,
+    `<option value="proceso"${t.estatus === 'proceso' ? ' selected' : ''}>en proceso</option>`,
+  ];
+  if (puedeConfirmar) opts.push(`<option value="entregado"${t.estatus === 'entregado' ? ' selected' : ''}>entregado ✓</option>`);
+  return `<select class="status-sel s-${t.estatus}" style="font-size:13px;padding:8px 12px" onchange="cambiarEstatusDesdeDetalle('${t.id}', this.value, ${isRecur ? 'true' : 'false'})">${opts.join('')}</select>`;
+}
+
+async function cambiarEstatusDesdeDetalle(id, nuevo, esRecur) {
+  await cambiarEstatus(id, nuevo, esRecur);
+  cerrarDetalle();
+}
+
+async function eliminarPeticionDesdeDetalle(id) {
+  if (!confirm('¿eliminar esta petición?')) return;
+  const { error } = await sb.from('peticiones').delete().eq('id', id);
+  if (error) { showInfo('error', 'no se pudo eliminar: ' + error.message); return; }
+  DB.general = DB.general.filter(t => t.id !== id);
+  DB.heads = DB.heads.filter(t => t.id !== id);
+  cerrarDetalle();
+  renderActiveTab();
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // ============================================================
