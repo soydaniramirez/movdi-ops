@@ -1656,9 +1656,15 @@ function renderEstatusSelect(t) {
 
 async function cambiarEstatus(id, nuevo, esRecur) {
   if (esRecur) {
-    const recur = RECURRENTES.find(r => id.startsWith('rec-' + r.id + '-'));
+    // ID format: 'rec__<uuid>__<yyyy-mm-dd>'
+    if (!id.startsWith('rec__')) return;
+    const parts = id.substring(5).split('__'); // quita 'rec__' y separa por '__'
+    if (parts.length !== 2) return;
+    const recurId = parts[0];
+    const fechaR = parts[1];
+    const recur = RECURRENTES.find(r => r.id === recurId);
     if (!recur) return;
-    const fechaR = id.split('-').slice(-3).join('-');
+
     if (nuevo === 'entregado') {
       if (recur.creadoPor !== USER.nombre) {
         showInfo('no permitido', 'solo quien creó la recurrente puede marcarla entregada');
@@ -1670,7 +1676,12 @@ async function cambiarEstatus(id, nuevo, esRecur) {
     let inst = DB.general.find(x => x.origenRecur === recur.id && x.fecha === fechaR);
     if (inst) {
       const { error } = await sb.from('peticiones').update({ estatus: nuevo }).eq('id', inst.id);
-      if (!error) inst.estatus = nuevo;
+      if (error) {
+        showInfo('error', 'no se pudo actualizar: ' + error.message);
+        renderActiveTab();
+        return;
+      }
+      inst.estatus = nuevo;
     } else {
       const nueva = {
         zona: 'general',
@@ -1679,7 +1690,12 @@ async function cambiarEstatus(id, nuevo, esRecur) {
         estatus: nuevo, es_rh: false, origen_recur: recur.id
       };
       const { data, error } = await sb.from('peticiones').insert(nueva).select().single();
-      if (!error && data) DB.general.push(mapPeticionRow(data));
+      if (error) {
+        showInfo('error', 'no se pudo crear instancia: ' + error.message);
+        renderActiveTab();
+        return;
+      }
+      if (data) DB.general.push(mapPeticionRow(data));
     }
     renderActiveTab();
     return;
@@ -1922,7 +1938,7 @@ function obtenerInstanciasRecur(nombre) {
       out.push({ ...inst, _recurOrigen: r.id });
     } else {
       out.push({
-        id: 'rec-' + r.id + '-' + fechaR,
+        id: 'rec__' + r.id + '__' + fechaR,
         nombre: r.nombre, desc: r.desc, creadoPor: r.creadoPor,
         para: r.para, area: r.area, fecha: fechaR, prioridad: 'media',
         estatus: 'pendiente', esRH: false, _recurOrigen: r.id
