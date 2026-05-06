@@ -508,6 +508,21 @@ button{cursor:pointer}
   text-transform:uppercase;letter-spacing:.15em;
   color:var(--txt-3);
 }
+/* Reset para labels de opciones (radio/checkbox dentro de un .field) */
+.field label.opt{
+  font-family:var(--font);font-size:13px;
+  text-transform:none;letter-spacing:normal;
+  color:var(--txt);
+  display:flex;align-items:center;gap:10px;cursor:pointer;
+  padding:6px 8px;border-radius:4px;
+  transition:background .12s;
+}
+.field label.opt:hover{background:rgba(255,255,255,.03)}
+.field label.opt input{width:auto;margin:0}
+.field label.opt span.opt-meta{
+  font-family:var(--mono);font-size:10px;
+  color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em;margin-left:auto
+}
 .field input,.field select,.field textarea{
   padding:10px 12px;
   background:var(--bg-1);
@@ -811,30 +826,30 @@ button{cursor:pointer}
       </div>
       <div class="field">
         <label>asignar a</label>
-        <div id="pet-modo-asig" style="display:flex;flex-direction:column;gap:6px;background:var(--bg-1);border:1px solid var(--line);padding:10px 12px">
-          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+        <div id="pet-modo-asig" style="display:flex;flex-direction:column;gap:2px;background:var(--bg-1);border:1px solid var(--line);padding:8px">
+          <label class="opt">
             <input type="radio" name="pet-modo" value="una" checked onchange="cambiarModoAsignacion()">
             <span>una persona</span>
           </label>
-          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+          <label class="opt">
             <input type="radio" name="pet-modo" value="varias" onchange="cambiarModoAsignacion()">
-            <span>varias personas (selección manual)</span>
+            <span>varias personas <span class="opt-meta">selección manual</span></span>
           </label>
-          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px" id="pet-modo-area-wrap">
+          <label class="opt" id="pet-modo-area-wrap">
             <input type="radio" name="pet-modo" value="area" onchange="cambiarModoAsignacion()">
             <span>un área completa</span>
           </label>
-          <label class="admin-only-modo" style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+          <label class="opt admin-only-modo">
             <input type="radio" name="pet-modo" value="heads" onchange="cambiarModoAsignacion()">
-            <span>solo heads</span>
+            <span>solo heads <span class="opt-meta">admin only</span></span>
           </label>
-          <label class="admin-only-modo" style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+          <label class="opt admin-only-modo">
             <input type="radio" name="pet-modo" value="ejecutivos" onchange="cambiarModoAsignacion()">
-            <span>solo ejecutivos</span>
+            <span>solo ejecutivos <span class="opt-meta">admin only</span></span>
           </label>
-          <label class="admin-only-modo" style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+          <label class="opt admin-only-modo">
             <input type="radio" name="pet-modo" value="todos" onchange="cambiarModoAsignacion()">
-            <span>todo el equipo</span>
+            <span>todo el equipo <span class="opt-meta">admin only</span></span>
           </label>
         </div>
       </div>
@@ -1051,7 +1066,34 @@ button{cursor:pointer}
         <label>descripción</label>
         <textarea id="rec-desc"></textarea>
       </div>
-      <div class="field-row">
+      <div class="field">
+        <label>asignar a</label>
+        <div id="rec-modo-asig" style="display:flex;flex-direction:column;gap:2px;background:var(--bg-1);border:1px solid var(--line);padding:8px">
+          <label class="opt">
+            <input type="radio" name="rec-modo" value="una" checked onchange="cambiarModoRecur()">
+            <span>una persona</span>
+          </label>
+          <label class="opt">
+            <input type="radio" name="rec-modo" value="varias" onchange="cambiarModoRecur()">
+            <span>varias personas <span class="opt-meta">selección manual</span></span>
+          </label>
+          <label class="opt">
+            <input type="radio" name="rec-modo" value="area" onchange="cambiarModoRecur()">
+            <span>un área completa</span>
+          </label>
+          <label class="opt admin-only-modo-rec">
+            <input type="radio" name="rec-modo" value="ejecutivos" onchange="cambiarModoRecur()">
+            <span>solo ejecutivos <span class="opt-meta">admin only</span></span>
+          </label>
+          <label class="opt admin-only-modo-rec">
+            <input type="radio" name="rec-modo" value="todos" onchange="cambiarModoRecur()">
+            <span>todo el equipo <span class="opt-meta">admin only</span></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Modo: una persona (default) -->
+      <div class="field-row" id="rec-bloque-una">
         <div class="field">
           <label>área</label>
           <select id="rec-area" onchange="actualizarRecPara()">
@@ -1067,6 +1109,29 @@ button{cursor:pointer}
           <label>para quién</label>
           <select id="rec-para"></select>
         </div>
+      </div>
+
+      <!-- Modo: varias personas -->
+      <div class="field" id="rec-bloque-varias" style="display:none">
+        <label>selecciona las personas</label>
+        <div id="rec-checkboxes-personas" style="display:flex;flex-direction:column;gap:2px;background:var(--bg-1);border:1px solid var(--line);padding:8px;max-height:240px;overflow-y:auto">
+          <!-- checkboxes dinámicos -->
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px"><span id="rec-varias-count">0</span> personas seleccionadas</div>
+      </div>
+
+      <!-- Modo: área -->
+      <div class="field" id="rec-bloque-area" style="display:none">
+        <label>área que recibe</label>
+        <select id="rec-area-grupo">
+          <option value="imkt">IMKT — influencer marketing</option>
+          <option value="pm">P. Managers</option>
+          <option value="legal">Legal</option>
+          <option value="admi">Admi</option>
+          <option value="ventas">Ventas</option>
+          <option value="digital">Digital</option>
+        </select>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px" id="rec-area-info">— se creará una recurrente para cada persona —</div>
       </div>
       <div class="field-row">
         <div class="field">
@@ -2759,9 +2824,9 @@ function renderCheckboxesPersonas() {
   ).sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   $('pet-checkboxes-personas').innerHTML = elegibles.map(p => `
-    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+    <label class="opt">
       <input type="checkbox" class="pet-persona-cb" value="${p.nombre}" onchange="actualizarConteoVarias()">
-      <span>${fullName(p)} <span style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em">${p.nivel}</span></span>
+      <span>${fullName(p)} <span class="opt-meta">${p.nivel}</span></span>
     </label>
   `).join('');
   actualizarConteoVarias();
@@ -2951,9 +3016,9 @@ function renderManagersCheckboxes(seleccionados) {
   $('per-managers').innerHTML = candidatos.length === 0
     ? '<div style="color:var(--txt-3);font-size:12px">no hay heads para asignar</div>'
     : candidatos.map(h => `
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
-        <input type="checkbox" value="${h.nombre}" ${seleccionados.includes(h.nombre) ? 'checked' : ''} style="cursor:pointer">
-        <span>${fullName(h)} <span style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em">${h.rol}</span></span>
+      <label class="opt">
+        <input type="checkbox" value="${h.nombre}" ${seleccionados.includes(h.nombre) ? 'checked' : ''}>
+        <span>${fullName(h)} <span class="opt-meta">${h.rol}</span></span>
       </label>
     `).join('');
 }
@@ -3009,17 +3074,77 @@ function abrirRecur() {
   $('rec-desc').value = '';
   $('rec-area').value = 'pm';
   $('rec-frec').value = 'semanal';
+
+  // Reset modo
+  document.querySelector('input[name="rec-modo"][value="una"]').checked = true;
+
+  // Mostrar/ocultar opciones admin only
+  const esAdmin = isAdmin(USER);
+  document.querySelectorAll('.admin-only-modo-rec').forEach(el => {
+    el.style.display = esAdmin ? 'flex' : 'none';
+  });
+
+  cambiarModoRecur();
   toggleRecDia();
   actualizarRecPara();
   $('ov-recur').classList.add('show');
   requestAnimationFrame(() => $('rec-nombre').focus());
 }
+
 function cerrarRecur() { $('ov-recur').classList.remove('show'); }
+
+function cambiarModoRecur() {
+  const modo = document.querySelector('input[name="rec-modo"]:checked')?.value || 'una';
+  $('rec-bloque-una').style.display = (modo === 'una') ? '' : 'none';
+  $('rec-bloque-varias').style.display = (modo === 'varias') ? '' : 'none';
+  $('rec-bloque-area').style.display = (modo === 'area') ? '' : 'none';
+
+  if (modo === 'varias') renderRecCheckboxesPersonas();
+  if (modo === 'area') actualizarRecAreaInfo();
+}
+
+function renderRecCheckboxesPersonas() {
+  const elegibles = PERSONAS.filter(p =>
+    p.nivel !== 'ceo' &&
+    !p.needsPass &&
+    p.nombre !== USER.nombre
+  ).sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+  $('rec-checkboxes-personas').innerHTML = elegibles.map(p => `
+    <label class="opt">
+      <input type="checkbox" class="rec-persona-cb" value="${p.nombre}" onchange="actualizarConteoRecVarias()">
+      <span>${fullName(p)} <span class="opt-meta">${p.nivel}</span></span>
+    </label>
+  `).join('');
+  actualizarConteoRecVarias();
+}
+
+function actualizarConteoRecVarias() {
+  const seleccionados = document.querySelectorAll('.rec-persona-cb:checked').length;
+  $('rec-varias-count').textContent = seleccionados;
+}
+
+function actualizarRecAreaInfo() {
+  const area = $('rec-area-grupo').value;
+  const personas = PERSONAS.filter(p =>
+    (p.areas || []).includes(area) &&
+    !p.needsPass &&
+    p.nivel !== 'ceo' &&
+    p.nombre !== USER.nombre
+  );
+  $('rec-area-info').textContent = `— se creará una recurrente para cada una de las ${personas.length} ${personas.length === 1 ? 'persona' : 'personas'} de ${AREAS_LABEL[area] || area} —`;
+}
+
+document.addEventListener('change', e => {
+  if (e.target && e.target.id === 'rec-area-grupo') actualizarRecAreaInfo();
+});
+
 function actualizarRecPara() {
   const area = $('rec-area').value;
   $('rec-para').innerHTML = PERSONAS.filter(p => (p.areas || []).includes(area) && p.nivel !== 'ceo')
     .map(p => `<option value="${p.nombre}">${fullName(p)}</option>`).join('');
 }
+
 function toggleRecDia() {
   const f = $('rec-frec').value;
   const sel = $('rec-dia');
@@ -3031,26 +3156,88 @@ function toggleRecDia() {
     sel.innerHTML = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes'].map((d, i) => `<option value="${i + 1}">${d}</option>`).join('');
   }
 }
+
 async function guardarRecur() {
   const nombre = $('rec-nombre').value.trim();
   if (!nombre) { showInfo('falta dato', 'el nombre es obligatorio'); return; }
-  const payload = {
-    nombre,
-    descripcion: $('rec-desc').value.trim(),
-    para: $('rec-para').value,
-    area: $('rec-area').value,
-    frecuencia: $('rec-frec').value,
-    activa: true,
-    creado_por: USER.nombre
-  };
-  if (payload.frecuencia === 'mensual') payload.dia_mes = parseInt($('rec-dia').value);
-  else payload.dia_semana = parseInt($('rec-dia').value);
-  const { data, error } = await sb.from('recurrentes').insert(payload).select().single();
+
+  const desc = $('rec-desc').value.trim();
+  const frecuencia = $('rec-frec').value;
+  const dia = parseInt($('rec-dia').value);
+
+  // Detectar modo de asignación
+  const modo = document.querySelector('input[name="rec-modo"]:checked')?.value || 'una';
+  let destinatarios = [];
+  let area = '';
+
+  if (modo === 'una') {
+    const para = $('rec-para').value;
+    if (!para) { showInfo('falta dato', 'falta destinatario'); return; }
+    destinatarios = [para];
+    area = $('rec-area').value;
+  } else if (modo === 'varias') {
+    destinatarios = Array.from(document.querySelectorAll('.rec-persona-cb:checked')).map(c => c.value);
+    if (destinatarios.length === 0) { showInfo('falta dato', 'selecciona al menos una persona'); return; }
+    area = USER.areas && USER.areas[0] ? USER.areas[0] : 'imkt';
+  } else if (modo === 'area') {
+    area = $('rec-area-grupo').value;
+    destinatarios = PERSONAS.filter(p =>
+      (p.areas || []).includes(area) &&
+      !p.needsPass &&
+      p.nivel !== 'ceo' &&
+      p.nombre !== USER.nombre
+    ).map(p => p.nombre);
+    if (destinatarios.length === 0) { showInfo('vacío', 'no hay personas en esa área'); return; }
+  } else if (modo === 'ejecutivos') {
+    destinatarios = PERSONAS.filter(p => p.nivel === 'ejecutivo' && p.nombre !== USER.nombre && !p.needsPass).map(p => p.nombre);
+    area = USER.areas && USER.areas[0] ? USER.areas[0] : 'imkt';
+  } else if (modo === 'todos') {
+    destinatarios = PERSONAS.filter(p =>
+      (p.nivel === 'ejecutivo' || p.nivel === 'head') &&
+      p.nombre !== USER.nombre &&
+      !p.needsPass
+    ).map(p => p.nombre);
+    area = USER.areas && USER.areas[0] ? USER.areas[0] : 'imkt';
+  }
+
+  // Confirmación si son más de 5
+  if (destinatarios.length > 5) {
+    if (!confirm(`vas a crear esta recurrente para ${destinatarios.length} personas. ¿confirmas?\n\n${destinatarios.join(', ')}\n\ncada una tendrá su propia recurrente independiente.`)) {
+      return;
+    }
+  }
+
+  // Construir payload (1 recurrente por persona, todas independientes)
+  const recurrentesAInsertar = destinatarios.map(para => {
+    const r = {
+      nombre,
+      descripcion: desc,
+      para,
+      area,
+      frecuencia,
+      activa: true,
+      creado_por: USER.nombre
+    };
+    if (frecuencia === 'mensual') r.dia_mes = dia;
+    else r.dia_semana = dia;
+    return r;
+  });
+
+  showLoading(destinatarios.length > 1 ? `creando recurrentes para ${destinatarios.length} personas...` : 'creando recurrente...');
+  const { data, error } = await sb.from('recurrentes').insert(recurrentesAInsertar).select();
+  hideLoading();
   if (error) { showInfo('error', error.message); return; }
-  RECURRENTES.push(mapRecurRow(data));
+
+  if (data) {
+    data.forEach(d => RECURRENTES.push(mapRecurRow(d)));
+  }
   generarRecurrentes();
   cerrarRecur();
   renderActiveTab();
+
+  if (destinatarios.length > 1) {
+    showInfo('recurrentes creadas ✓', `se creó "${nombre}" para ${destinatarios.length} personas`);
+  }
 }
 
 // ============================================================
