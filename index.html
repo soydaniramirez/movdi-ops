@@ -897,11 +897,19 @@ button{cursor:pointer}
         </div>
       </div>
       <div class="field">
-        <label>managers / responsables (quién la gestiona)</label>
+        <label>manager principal (responsable directo)</label>
+        <select id="per-manager-principal">
+          <option value="">— sin manager principal —</option>
+          <!-- opciones se generan dinámicamente -->
+        </select>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px">la persona a la que reporta directamente</div>
+      </div>
+      <div class="field">
+        <label>managers de apoyo (secundarios)</label>
         <div id="per-managers" style="display:flex;flex-direction:column;gap:6px;background:var(--bg-1);border:1px solid var(--line);padding:10px 12px">
           <!-- checkboxes se generan dinámicamente -->
         </div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px">los managers seleccionados verán a esta persona en su semáforo</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px">otros heads que también verán a esta persona en su semáforo (en sección "soy apoyo")</div>
       </div>
     </div>
     <div class="modal-foot">
@@ -1073,6 +1081,7 @@ const mapPersonaRow = r => ({
   nivel: r.nivel,
   areas: r.areas || [],
   managers: r.managers || [],
+  managerPrincipal: r.manager_principal || null,
   needsPass: r.needs_pass,
   email: r.email,
   authUserId: r.auth_user_id,
@@ -1791,7 +1800,7 @@ async function limpiarEntregadas(scope) {
 // VISTA: POR PERSONA
 // ============================================================
 function renderPorPersona() {
-  // Lógica nueva: usar campo `managers` en lugar de áreas
+  // Lógica nueva: incluir todas las personas donde soy principal o secundario
   const esDireccion = USER.nombre === 'Dani' || USER.nombre === 'Emmanuel';
   let personas;
 
@@ -1802,7 +1811,7 @@ function renderPorPersona() {
     );
   } else if (USER.nivel === 'head') {
     personas = PERSONAS.filter(p =>
-      (p.managers || []).includes(USER.nombre) &&
+      (p.managerPrincipal === USER.nombre || (p.managers || []).includes(USER.nombre)) &&
       p.nombre !== USER.nombre
     );
   } else {
@@ -1821,14 +1830,21 @@ function renderPorPersona() {
   const todas = [...tareas, ...recurInst];
   const k = calcKpis(todas);
 
-  // Indicar si la persona es compartida (más de 1 manager)
-  const esCompartida = (persona.managers || []).length > 1;
+  // Información de jerarquía
+  const principal = persona.managerPrincipal;
+  const secundarios = persona.managers || [];
+  const soyPrincipal = principal === USER.nombre;
+  const soyApoyo = secundarios.includes(USER.nombre) && !soyPrincipal;
+
+  let rolEtiqueta = '';
+  if (soyPrincipal) rolEtiqueta = '<span class="tag" style="margin-left:8px;font-size:9px">tu equipo directo</span>';
+  else if (soyApoyo) rolEtiqueta = '<span class="tag" style="margin-left:8px;font-size:9px;color:var(--warn);border-color:rgba(232,176,74,.3)">eres apoyo · principal: ' + principal + '</span>';
 
   $('content').innerHTML = `
     <div class="section-head">
       <div>
-        <h2>${fullName(persona)}${esCompartida ? ' <span class="tag" style="margin-left:8px;font-size:9px">compartida</span>' : ''}</h2>
-        <div class="sub">${persona.rol}${esCompartida ? ` · gestionada por: ${(persona.managers || []).join(', ')}` : ''}</div>
+        <h2>${fullName(persona)}${rolEtiqueta}</h2>
+        <div class="sub">${persona.rol}${principal ? ` · reporta a: ${principal}` : ''}${secundarios.length > 0 ? ` · apoyo: ${secundarios.join(', ')}` : ''}</div>
       </div>
     </div>
     ${renderKpis(k)}
@@ -2123,11 +2139,10 @@ async function eliminarTodo(id) {
 // SIDEBAR (semáforo)
 // ============================================================
 function renderSide() {
-  // Lógica nueva basada en el campo `managers`:
-  // - Dirección (Dani/Emmanuel) → ven a TODOS
-  // - Heads (Fer/Monse) → ven personas donde su nombre esté en `managers`
-  //   Sub-divididas en: equipo directo (solo yo) vs transversales (yo + otra head)
-  // - RH (Sarai/Diego) sigue siendo invisible para Heads de área
+  // Lógica nueva basada en manager_principal:
+  // - Dirección (Dani) → ven a TODOS, sub-grupos "mi equipo directo" + "resto del equipo"
+  // - Heads → "mi equipo directo" (donde son principal) + "soy apoyo" (donde son secundario)
+  // - RH (Sarai/Diego) sigue siendo invisible para Heads de área salvo dirección
 
   const esDireccion = USER.nombre === 'Dani' || USER.nombre === 'Emmanuel';
   let visibles;
@@ -2139,9 +2154,9 @@ function renderSide() {
       p.nombre !== USER.nombre
     );
   } else if (USER.nivel === 'head') {
-    // Ven personas donde su nombre está en managers
+    // Ven personas donde su nombre está en manager_principal o en managers (secundarios)
     visibles = PERSONAS.filter(p =>
-      (p.managers || []).includes(USER.nombre) &&
+      (p.managerPrincipal === USER.nombre || (p.managers || []).includes(USER.nombre)) &&
       p.nombre !== USER.nombre
     );
   } else {
@@ -2167,25 +2182,13 @@ function renderSide() {
     return ord[a.estado] - ord[b.estado] || b.total - a.total;
   };
 
-  // Agrupar para Heads (no aplica para dirección)
-  let semBlocks = []; // [{titulo, items}]
+  // Agrupar
+  let semBlocks = []; // [{titulo, items, sub}]
 
   if (esDireccion) {
-    // Una sola lista plana
-    semBlocks.push({
-      titulo: 'todo el equipo',
-      items: visibles.map(calcularSem).sort(ordenSem)
-    });
-  } else if (USER.nivel === 'head') {
-    // Dos sub-grupos: directos (solo yo en managers) vs transversales (yo + otra head)
-    const directos = visibles.filter(p => {
-      const mgrs = p.managers || [];
-      return mgrs.length === 1 && mgrs[0] === USER.nombre;
-    });
-    const transversales = visibles.filter(p => {
-      const mgrs = p.managers || [];
-      return mgrs.length > 1;
-    });
+    // Dani/Emmanuel: "mi equipo directo" (donde soy manager principal) + "resto del equipo"
+    const directos = visibles.filter(p => p.managerPrincipal === USER.nombre);
+    const resto = visibles.filter(p => p.managerPrincipal !== USER.nombre);
 
     if (directos.length > 0) {
       semBlocks.push({
@@ -2194,11 +2197,30 @@ function renderSide() {
         sub: `${directos.length} ${directos.length === 1 ? 'persona' : 'personas'}`
       });
     }
-    if (transversales.length > 0) {
+    if (resto.length > 0) {
       semBlocks.push({
-        titulo: 'transversales / compartidos',
-        items: transversales.map(calcularSem).sort(ordenSem),
-        sub: `${transversales.length} ${transversales.length === 1 ? 'persona' : 'personas'}`
+        titulo: 'resto del equipo',
+        items: resto.map(calcularSem).sort(ordenSem),
+        sub: `${resto.length}`
+      });
+    }
+  } else if (USER.nivel === 'head') {
+    // Heads: "mi equipo directo" (soy principal) + "soy apoyo" (estoy en secundarios)
+    const directos = visibles.filter(p => p.managerPrincipal === USER.nombre);
+    const apoyo = visibles.filter(p => p.managerPrincipal !== USER.nombre && (p.managers || []).includes(USER.nombre));
+
+    if (directos.length > 0) {
+      semBlocks.push({
+        titulo: 'mi equipo directo',
+        items: directos.map(calcularSem).sort(ordenSem),
+        sub: `${directos.length} ${directos.length === 1 ? 'persona' : 'personas'}`
+      });
+    }
+    if (apoyo.length > 0) {
+      semBlocks.push({
+        titulo: '🤝 soy apoyo',
+        items: apoyo.map(calcularSem).sort(ordenSem),
+        sub: `${apoyo.length}`
       });
     }
   }
@@ -2464,6 +2486,7 @@ function abrirPersona(id) {
   editandoPersonaId = id || null;
   $('per-title').textContent = id ? 'editar persona' : 'agregar persona';
   let managersActuales = [];
+  let principalActual = '';
   if (id) {
     const p = PERSONAS.find(x => x.id === id);
     $('per-nombre').value = p.nombre;
@@ -2472,23 +2495,33 @@ function abrirPersona(id) {
     $('per-area').value = (p.areas && p.areas[0]) || 'imkt';
     $('per-nivel').value = p.nivel === 'rh' ? 'rh' : p.nivel;
     managersActuales = p.managers || [];
+    principalActual = p.managerPrincipal || '';
   } else {
     $('per-nombre').value = ''; $('per-apellido').value = '';
     $('per-rol').value = ''; $('per-area').value = 'imkt';
     $('per-nivel').value = 'ejecutivo';
   }
-  // Renderizar checkboxes de managers (solo Heads disponibles como managers)
+  // Renderizar dropdown de manager principal
+  renderManagerPrincipalSelect(principalActual);
+  // Renderizar checkboxes de managers de apoyo
   renderManagersCheckboxes(managersActuales);
   $('ov-persona').classList.add('show');
   requestAnimationFrame(() => $('per-nombre').focus());
 }
 
+function renderManagerPrincipalSelect(seleccionado) {
+  // CEO + Heads pueden ser manager principal
+  const candidatos = PERSONAS.filter(p => p.nivel === 'ceo' || p.nivel === 'head');
+  $('per-manager-principal').innerHTML = '<option value="">— sin manager principal —</option>' +
+    candidatos.map(p => `<option value="${p.nombre}"${p.nombre === seleccionado ? ' selected' : ''}>${fullName(p)} · ${p.rol}</option>`).join('');
+}
+
 function renderManagersCheckboxes(seleccionados) {
-  // Solo Heads (no CEO ni ejecutivos) son managers válidos
-  const heads = PERSONAS.filter(p => p.nivel === 'head');
-  $('per-managers').innerHTML = heads.length === 0
+  // Solo Heads + CEO como managers de apoyo (excluyendo el seleccionado como principal evitamos confusión)
+  const candidatos = PERSONAS.filter(p => p.nivel === 'head' || p.nivel === 'ceo');
+  $('per-managers').innerHTML = candidatos.length === 0
     ? '<div style="color:var(--txt-3);font-size:12px">no hay heads para asignar</div>'
-    : heads.map(h => `
+    : candidatos.map(h => `
       <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
         <input type="checkbox" value="${h.nombre}" ${seleccionados.includes(h.nombre) ? 'checked' : ''} style="cursor:pointer">
         <span>${fullName(h)} <span style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em">${h.rol}</span></span>
@@ -2508,18 +2541,22 @@ async function guardarPersona() {
   const nivel = nivelSel === 'rh' ? 'rh' : nivelSel;
   const needs_pass = nivelSel === 'rh';
 
-  // Recoger managers seleccionados
-  const managersChecked = Array.from($('per-managers').querySelectorAll('input[type="checkbox"]:checked')).map(c => c.value);
+  // Manager principal (puede ser '' si no tiene)
+  const principalSel = $('per-manager-principal').value || null;
+
+  // Recoger managers de apoyo (excluir el principal si está marcado por error)
+  let managersChecked = Array.from($('per-managers').querySelectorAll('input[type="checkbox"]:checked')).map(c => c.value);
+  if (principalSel) managersChecked = managersChecked.filter(n => n !== principalSel);
 
   let payload;
   if (editandoPersonaId) {
     const p = PERSONAS.find(x => x.id === editandoPersonaId);
     const areas = needs_pass ? [...new Set([...(p.areas || []), area, 'rh'])] : [area];
-    payload = { nombre, apellido, rol, areas, nivel, needs_pass, managers: managersChecked };
+    payload = { nombre, apellido, rol, areas, nivel, needs_pass, managers: managersChecked, manager_principal: principalSel };
     const { error } = await sb.from('personas').update(payload).eq('id', editandoPersonaId);
     if (error) { showInfo('error', error.message); return; }
   } else {
-    payload = { nombre, apellido, rol, areas: needs_pass ? [area, 'rh'] : [area], nivel, needs_pass, managers: managersChecked };
+    payload = { nombre, apellido, rol, areas: needs_pass ? [area, 'rh'] : [area], nivel, needs_pass, managers: managersChecked, manager_principal: principalSel };
     const { error } = await sb.from('personas').insert(payload);
     if (error) { showInfo('error', error.message); return; }
   }
