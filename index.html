@@ -1853,7 +1853,7 @@ function renderGeneral() {
   let lista = DB.general.filter(t => !t.privada && !t.origenRecur);
   if (filtroActual === 'vencidas') lista = lista.filter(t => diasHasta(t.fecha) < 0 && t.estatus !== 'entregado');
   else if (filtroActual === 'semana') lista = lista.filter(t => { const d = diasHasta(t.fecha); return d >= 0 && d <= 7 && t.estatus !== 'entregado'; });
-  else if (['imkt', 'pm', 'legal', 'admi'].includes(filtroActual)) lista = lista.filter(t => t.area === filtroActual);
+  else if (['imkt', 'pm', 'legal', 'admi', 'ventas', 'digital', 'rh'].includes(filtroActual)) lista = lista.filter(t => t.area === filtroActual);
 
   const kpis = calcKpis(DB.general.filter(t => !t.privada && !t.origenRecur));
 
@@ -1878,6 +1878,9 @@ function renderGeneral() {
       <button class="chip${filtroActual === 'pm' ? ' active' : ''}" onclick="setFiltro('pm')">P.Mgrs</button>
       <button class="chip${filtroActual === 'legal' ? ' active' : ''}" onclick="setFiltro('legal')">Legal</button>
       <button class="chip${filtroActual === 'admi' ? ' active' : ''}" onclick="setFiltro('admi')">Admi</button>
+      <button class="chip${filtroActual === 'ventas' ? ' active' : ''}" onclick="setFiltro('ventas')">Ventas</button>
+      <button class="chip${filtroActual === 'digital' ? ' active' : ''}" onclick="setFiltro('digital')">Digital</button>
+      ${esDireccion(USER) || USER.nivel === 'rh' ? `<button class="chip${filtroActual === 'rh' ? ' active' : ''}" onclick="setFiltro('rh')">RH</button>` : ''}
     </div>
     ${renderTabla(lista)}
   `;
