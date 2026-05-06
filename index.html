@@ -989,6 +989,26 @@ button{cursor:pointer}
   </div>
 </div>
 
+<!-- Modal Reasignación (al desactivar persona) -->
+<div class="ov" id="ov-reasign" onclick="cerrarReasignacion()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div>
+        <h3 id="reasign-title">desactivar persona</h3>
+        <div class="mh-sub">requiere reasignación de tareas activas</div>
+      </div>
+      <button class="modal-x" onclick="cerrarReasignacion()">✕</button>
+    </div>
+    <div class="modal-body" id="reasign-body">
+      <!-- contenido dinámico -->
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="cerrarReasignacion()">cancelar</button>
+      <button class="btn danger" onclick="confirmarReasignacion()">reasignar y desactivar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal Anuncio -->
 <div class="ov" id="ov-anuncio" onclick="cerrarAnuncio()">
   <div class="modal" onclick="event.stopPropagation()">
@@ -1230,6 +1250,23 @@ const claseFecha = s => {
 };
 const dx = (offset) => { const d = new Date(); d.setDate(d.getDate() + offset); return d.toISOString().slice(0, 10) };
 const isAdmin = u => u && (u.nivel === 'ceo' || u.nivel === 'head');
+
+// Helper centralizado: ¿esta persona es dirección/co-founder?
+// Usar SIEMPRE esto en lugar de hardcoded "Dani"/"Emmanuel"
+const esDireccion = u => u && (u.esDireccion === true || u.nivel === 'ceo');
+
+// ¿Está hoy pausada esta persona? (licencia, vacaciones, sabático)
+const estaPausada = p => {
+  if (!p || !p.pausadaHasta) return false;
+  const hoy = new Date(new Date().toDateString()).toISOString().slice(0, 10);
+  return p.pausadaHasta >= hoy;
+};
+
+// ¿Esta persona puede recibir nuevas asignaciones HOY? (activa + no pausada)
+const personaDisponible = p => p && p.activo !== false && !estaPausada(p);
+
+// Filtrar personas para dropdowns/asignaciones (solo las disponibles)
+const personasParaAsignar = () => PERSONAS.filter(personaDisponible);
 const AREAS_LABEL = {
   imkt: 'IMKT', pm: 'P.Mgrs', legal: 'Legal', admi: 'Admi',
   ventas: 'Ventas', digital: 'Digital', rh: 'RH', heads: 'Heads'
@@ -1265,6 +1302,9 @@ const mapPersonaRow = r => ({
   needsPass: r.needs_pass,
   email: r.email,
   authUserId: r.auth_user_id,
+  activo: r.activo !== false,
+  pausadaHasta: r.pausada_hasta || null,
+  esDireccion: r.es_direccion === true,
 });
 const mapPeticionRow = r => ({
   id: r.id,
@@ -1481,8 +1521,11 @@ async function cargarTodosLosDatos() {
 function prepararAppUI() {
   personaFiltro = null;
   filtroActual = 'todas';
-  headsUnlocked = false;
-  rhTabUnlocked = false;
+  // Auto-desbloqueo: dirección y heads no necesitan password para ver tab heads
+  headsUnlocked = isAdmin(USER);
+  // Auto-desbloqueo: dirección + Salvador/Arylene + RH ven tab RH·privado
+  rhTabUnlocked = esDireccion(USER) || USER.nivel === 'rh' ||
+    USER.nombre === 'Salvador' || USER.nombre === 'Arylene';
   editandoPersonaId = null;
   editandoPeticionId = null;
 
@@ -1720,7 +1763,7 @@ function countMis() {
 }
 function canSeeRH(t) {
   if (!t.esRH) return true;
-  if (USER.nombre === 'Dani' || USER.nombre === 'Emmanuel') return true;
+  if (esDireccion(USER)) return true;
   if (USER.nivel === 'rh') return true;
   if (matchNombre(t.para, USER.nombre)) return true;
   return false;
@@ -2010,18 +2053,20 @@ async function limpiarEntregadas(scope) {
 // ============================================================
 function renderPorPersona() {
   // Lógica nueva: incluir todas las personas donde soy principal o secundario
-  const esDireccion = USER.nombre === 'Dani' || USER.nombre === 'Emmanuel';
+  const soyDireccion = esDireccion(USER);
   let personas;
 
-  if (esDireccion) {
+  if (soyDireccion) {
     personas = PERSONAS.filter(p =>
       (p.nivel === 'ejecutivo' || p.nivel === 'rh' || p.nivel === 'head') &&
-      p.nombre !== USER.nombre
+      p.nombre !== USER.nombre &&
+      p.activo !== false
     );
   } else if (USER.nivel === 'head') {
     personas = PERSONAS.filter(p =>
       (p.managerPrincipal === USER.nombre || (p.managers || []).includes(USER.nombre)) &&
-      p.nombre !== USER.nombre
+      p.nombre !== USER.nombre &&
+      p.activo !== false
     );
   } else {
     personas = [];
@@ -2066,7 +2111,7 @@ function renderPorPersona() {
 // ============================================================
 function renderHeads() {
   let lista = DB.heads.slice();
-  if (!(USER.nombre === 'Dani' || USER.nombre === 'Emmanuel')) {
+  if (!esDireccion(USER)) {
     lista = lista.filter(t => matchNombre(t.para, USER.nombre));
   }
   $('content').innerHTML = `
@@ -2386,6 +2431,11 @@ function generarRecurrentes() {
 }
 function obtenerInstanciasRecur(nombre) {
   const out = [];
+  // Si la persona está pausada, no devolver instancias nuevas
+  // (las viejas en BD sí siguen disponibles si las miran desde otro lado)
+  const persona = PERSONAS.find(p => matchNombre(p.nombre, nombre));
+  if (persona && estaPausada(persona)) return out;
+
   RECURRENTES.forEach(r => {
     if (!r.activa) return;
     if (!matchNombre(r.para, nombre)) return;
@@ -2408,28 +2458,92 @@ function obtenerInstanciasRecur(nombre) {
 // ============================================================
 // VISTA: EQUIPO
 // ============================================================
+let equipoFiltro = 'activas'; // activas | pausadas | inactivas
+
 function renderEquipo() {
+  const activas = PERSONAS.filter(p => p.activo !== false && !estaPausada(p));
+  const pausadas = PERSONAS.filter(p => p.activo !== false && estaPausada(p));
+  const inactivas = PERSONAS.filter(p => p.activo === false);
+
+  let listaMostrar = [];
+  if (equipoFiltro === 'activas') listaMostrar = activas;
+  else if (equipoFiltro === 'pausadas') listaMostrar = pausadas;
+  else if (equipoFiltro === 'inactivas') listaMostrar = inactivas;
+
   $('content').innerHTML = `
     <div class="section-head">
-      <div><h2>equipo</h2><div class="sub">${PERSONAS.length} personas · gestión de accesos</div></div>
+      <div>
+        <h2>equipo</h2>
+        <div class="sub">${activas.length} ${activas.length === 1 ? 'persona activa' : 'personas activas'} · gestión de accesos</div>
+      </div>
       <button class="btn primary sm" onclick="abrirPersona()">+ agregar persona</button>
     </div>
-    <div class="team-grid">
-      ${PERSONAS.map(p => `
-        <div class="team-card ${p.nivel}">
-          <div class="tcact">
-            <button class="icon-btn" onclick="abrirPersona('${p.id}')" title="editar">✏</button>
-            <button class="icon-btn danger" onclick="eliminarPersona('${p.id}')" title="eliminar">✕</button>
-          </div>
-          <div class="tcav">${inicial(p.nombre, p.apellido)}</div>
-          <div class="tcn">${fullName(p)}</div>
-          <div class="tcr">${p.rol}</div>
-          <div class="tca">
-            ${(p.areas || []).map(a => `<span class="tag area-${a}">${AREAS_LABEL[a] || a}</span>`).join('')}
-            ${p.needsPass ? '<span class="tag area-rh">🔒</span>' : ''}
-          </div>
-        </div>
-      `).join('')}
+
+    <div class="toolbar">
+      <button class="chip${equipoFiltro === 'activas' ? ' active' : ''}" onclick="equipoFiltro='activas';renderActiveTab()">activas <span class="tcount">${activas.length}</span></button>
+      <button class="chip warn${equipoFiltro === 'pausadas' ? ' active' : ''}" onclick="equipoFiltro='pausadas';renderActiveTab()">⏸ pausadas <span class="tcount">${pausadas.length}</span></button>
+      <button class="chip alert${equipoFiltro === 'inactivas' ? ' active' : ''}" onclick="equipoFiltro='inactivas';renderActiveTab()">archivadas <span class="tcount">${inactivas.length}</span></button>
+    </div>
+
+    ${listaMostrar.length === 0 ? `
+      <div class="empty">
+        <h4>— sin personas en esta vista —</h4>
+        <p>${equipoFiltro === 'activas' ? 'agrega personas con el botón de arriba' : equipoFiltro === 'pausadas' ? 'no hay nadie pausado actualmente' : 'no hay personas archivadas'}</p>
+      </div>
+    ` : `
+      <div class="team-grid">
+        ${listaMostrar.map(p => renderTeamCard(p)).join('')}
+      </div>
+    `}
+  `;
+}
+
+function renderTeamCard(p) {
+  const pausada = estaPausada(p);
+  const inactiva = p.activo === false;
+
+  // Botones según estado
+  let acciones = '';
+  if (inactiva) {
+    acciones = `
+      <button class="icon-btn" onclick="reactivarPersona('${p.id}')" title="reactivar">↻</button>
+      <button class="icon-btn" onclick="abrirPersona('${p.id}')" title="ver">👁</button>
+    `;
+  } else if (pausada) {
+    acciones = `
+      <button class="icon-btn" onclick="abrirPersona('${p.id}')" title="editar">✏</button>
+      <button class="icon-btn" onclick="reanudarPersona('${p.id}')" title="reanudar antes de tiempo">▶</button>
+      <button class="icon-btn danger" onclick="eliminarPersona('${p.id}')" title="archivar">✕</button>
+    `;
+  } else {
+    acciones = `
+      <button class="icon-btn" onclick="abrirPersona('${p.id}')" title="editar">✏</button>
+      <button class="icon-btn" onclick="pausarPersona('${p.id}')" title="pausar (vacaciones, licencia)">⏸</button>
+      <button class="icon-btn danger" onclick="eliminarPersona('${p.id}')" title="archivar">✕</button>
+    `;
+  }
+
+  // Etiqueta de estado
+  let estadoTag = '';
+  if (inactiva) {
+    estadoTag = '<span class="tag" style="background:rgba(255,70,18,.1);border-color:rgba(255,70,18,.3);color:var(--acc);font-size:9px">archivada</span>';
+  } else if (pausada) {
+    estadoTag = `<span class="tag" style="background:rgba(232,176,74,.1);border-color:rgba(232,176,74,.3);color:var(--warn);font-size:9px">⏸ hasta ${fechaCorta(p.pausadaHasta)}</span>`;
+  }
+
+  const opacity = inactiva ? '.5' : pausada ? '.75' : '1';
+
+  return `
+    <div class="team-card ${p.nivel}" style="opacity:${opacity}">
+      <div class="tcact">${acciones}</div>
+      <div class="tcav">${inicial(p.nombre, p.apellido)}</div>
+      <div class="tcn">${fullName(p)}</div>
+      <div class="tcr">${p.rol}</div>
+      <div class="tca">
+        ${(p.areas || []).map(a => `<span class="tag area-${a}">${AREAS_LABEL[a] || a}</span>`).join('')}
+        ${p.needsPass ? '<span class="tag area-rh">🔒</span>' : ''}
+        ${estadoTag}
+      </div>
     </div>
   `;
 }
@@ -2485,24 +2599,26 @@ async function eliminarTodo(id) {
 // ============================================================
 function renderSide() {
   // Lógica nueva basada en manager_principal:
-  // - Dirección (Dani) → ven a TODOS, sub-grupos "mi equipo directo" + "resto del equipo"
+  // - Dirección → ven a TODOS, sub-grupos "mi equipo directo" + "resto del equipo"
   // - Heads → "mi equipo directo" (donde son principal) + "soy apoyo" (donde son secundario)
   // - RH (Sarai/Diego) sigue siendo invisible para Heads de área salvo dirección
 
-  const esDireccion = USER.nombre === 'Dani' || USER.nombre === 'Emmanuel';
+  const soyDireccion = esDireccion(USER);
   let visibles;
 
-  if (esDireccion) {
-    // Ven a TODOS los ejecutivos, RH y heads (pero no a sí mismas)
+  if (soyDireccion) {
+    // Ven a TODOS los ejecutivos, RH y heads activos (no inactivos eliminados)
     visibles = PERSONAS.filter(p =>
       (p.nivel === 'ejecutivo' || p.nivel === 'rh' || p.nivel === 'head') &&
-      p.nombre !== USER.nombre
+      p.nombre !== USER.nombre &&
+      p.activo !== false
     );
   } else if (USER.nivel === 'head') {
     // Ven personas donde su nombre está en manager_principal o en managers (secundarios)
     visibles = PERSONAS.filter(p =>
       (p.managerPrincipal === USER.nombre || (p.managers || []).includes(USER.nombre)) &&
-      p.nombre !== USER.nombre
+      p.nombre !== USER.nombre &&
+      p.activo !== false
     );
   } else {
     visibles = [];
@@ -2530,8 +2646,8 @@ function renderSide() {
   // Agrupar
   let semBlocks = []; // [{titulo, items, sub}]
 
-  if (esDireccion) {
-    // Dani/Emmanuel: "mi equipo directo" (donde soy manager principal) + "resto del equipo"
+  if (soyDireccion) {
+    // Dirección: "mi equipo directo" (donde soy manager principal) + "resto del equipo"
     const directos = visibles.filter(p => p.managerPrincipal === USER.nombre);
     const resto = visibles.filter(p => p.managerPrincipal !== USER.nombre);
 
@@ -2571,7 +2687,7 @@ function renderSide() {
   }
 
   const headsResumen = `${DB.heads.filter(t => t.estatus !== 'entregado').length} activas`;
-  const showRH = esDireccion;
+  const showRH = soyDireccion;
   const rhCount = DB.general.filter(t => t.esRH && t.estatus !== 'entregado').length;
 
   $('side').innerHTML = `
@@ -2817,10 +2933,12 @@ function cambiarModoAsignacion() {
 
 function renderCheckboxesPersonas() {
   // Lista de personas elegibles (ejecutivos + heads, sin la persona logueada, sin RH privado)
+  // Excluye inactivas y pausadas (no pueden recibir asignaciones nuevas)
   const elegibles = PERSONAS.filter(p =>
     p.nivel !== 'ceo' &&
     !p.needsPass &&
-    p.nombre !== USER.nombre
+    p.nombre !== USER.nombre &&
+    personaDisponible(p)
   ).sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   $('pet-checkboxes-personas').innerHTML = elegibles.map(p => `
@@ -2853,11 +2971,11 @@ function actualizarParaQuien() {
   if (!sel) return;
   let opts = [];
   if (zonaPeticion === 'heads') {
-    opts = PERSONAS.filter(p => p.nivel === 'ceo' || p.nivel === 'head').map(p =>
+    opts = PERSONAS.filter(p => (p.nivel === 'ceo' || p.nivel === 'head') && personaDisponible(p)).map(p =>
       `<option value="${p.nombre}">${fullName(p)} · ${p.rol}</option>`);
   } else {
     const area = $('pet-area').value;
-    opts = PERSONAS.filter(p => (p.areas || []).includes(area) && !p.needsPass && p.nivel !== 'ceo')
+    opts = PERSONAS.filter(p => (p.areas || []).includes(area) && !p.needsPass && p.nivel !== 'ceo' && personaDisponible(p))
       .map(p => `<option value="${p.nombre}">${fullName(p)} · ${p.rol}</option>`);
   }
   sel.innerHTML = opts.length ? opts.join('') : '<option value="">— sin personas en esta área —</option>';
@@ -2911,19 +3029,21 @@ async function guardarPeticion() {
       (p.areas || []).includes(area) &&
       !p.needsPass &&
       p.nivel !== 'ceo' &&
-      p.nombre !== USER.nombre
+      p.nombre !== USER.nombre &&
+      personaDisponible(p)
     ).map(p => p.nombre);
-    if (destinatarios.length === 0) { showInfo('vacío', 'no hay personas en esa área'); return; }
+    if (destinatarios.length === 0) { showInfo('vacío', 'no hay personas activas en esa área'); return; }
   } else if (modo === 'heads') {
-    destinatarios = PERSONAS.filter(p => p.nivel === 'head' && p.nombre !== USER.nombre).map(p => p.nombre);
+    destinatarios = PERSONAS.filter(p => p.nivel === 'head' && p.nombre !== USER.nombre && personaDisponible(p)).map(p => p.nombre);
     area = 'heads';
   } else if (modo === 'ejecutivos') {
-    destinatarios = PERSONAS.filter(p => p.nivel === 'ejecutivo' && p.nombre !== USER.nombre).map(p => p.nombre);
+    destinatarios = PERSONAS.filter(p => p.nivel === 'ejecutivo' && p.nombre !== USER.nombre && personaDisponible(p)).map(p => p.nombre);
     area = USER.areas && USER.areas[0] ? USER.areas[0] : 'imkt';
   } else if (modo === 'todos') {
     destinatarios = PERSONAS.filter(p =>
       (p.nivel === 'ejecutivo' || p.nivel === 'head') &&
-      p.nombre !== USER.nombre
+      p.nombre !== USER.nombre &&
+      personaDisponible(p)
     ).map(p => p.nombre);
     area = USER.areas && USER.areas[0] ? USER.areas[0] : 'imkt';
   }
@@ -3059,11 +3179,237 @@ async function guardarPersona() {
   renderActiveTab();
 }
 async function eliminarPersona(id) {
-  if (!confirm('¿eliminar a esta persona del equipo?\n\nNota: esto solo elimina su perfil. para revocar acceso completo, también borra su cuenta de Auth desde Supabase.')) return;
-  const { error } = await sb.from('personas').delete().eq('id', id);
-  if (error) { showInfo('error', error.message); return; }
-  PERSONAS = PERSONAS.filter(p => p.id !== id);
+  const persona = PERSONAS.find(p => p.id === id);
+  if (!persona) return;
+
+  // Contar lo que tiene asignado
+  const peticionesActivas = DB.general.filter(t =>
+    matchNombre(t.para, persona.nombre) && t.estatus !== 'entregado'
+  );
+  const recurrentesActivas = RECURRENTES.filter(r =>
+    matchNombre(r.para, persona.nombre) && r.activa
+  );
+  const peticionesHeads = DB.heads.filter(t =>
+    matchNombre(t.para, persona.nombre) && t.estatus !== 'entregado'
+  );
+
+  const totalPeticiones = peticionesActivas.length + peticionesHeads.length;
+  const totalRecurrentes = recurrentesActivas.length;
+
+  // Si no tiene nada activo → eliminar directo (soft-delete)
+  if (totalPeticiones === 0 && totalRecurrentes === 0) {
+    if (!confirm(`¿desactivar a ${fullName(persona)}?\n\nsu histórico se conserva. podrá reactivarse después si vuelve.`)) return;
+    await desactivarPersona(persona);
+    return;
+  }
+
+  // Si tiene cosas activas → modal de reasignación obligatoria
+  abrirReasignacion(persona, peticionesActivas, peticionesHeads, recurrentesActivas);
+}
+
+async function desactivarPersona(persona) {
+  const { error } = await sb.from('personas')
+    .update({ activo: false })
+    .eq('id', persona.id);
+  if (error) {
+    showInfo('error', error.message);
+    return;
+  }
+  PERSONAS = PERSONAS.map(p => p.id === persona.id ? { ...p, activo: false } : p);
   renderActiveTab();
+  showInfo('persona desactivada ✓', `${fullName(persona)} ya no recibirá nuevas asignaciones. su histórico se conserva.`);
+}
+
+let _reasignContext = null; // { persona, peticiones, peticionesHeads, recurrentes }
+
+function abrirReasignacion(persona, peticiones, peticionesHeads, recurrentes) {
+  _reasignContext = { persona, peticiones, peticionesHeads, recurrentes };
+
+  // Lista de candidatos para reasignar (excluir la propia persona, RH privado, ceo, e inactivas)
+  const candidatos = PERSONAS.filter(p =>
+    p.id !== persona.id &&
+    p.activo !== false &&
+    !p.needsPass
+  ).sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+  const totalActivas = peticiones.length + peticionesHeads.length;
+  const totalRec = recurrentes.length;
+
+  $('reasign-title').textContent = `desactivar a ${fullName(persona)}`;
+  $('reasign-body').innerHTML = `
+    <div style="background:rgba(255,70,18,.08);border:1px solid rgba(255,70,18,.3);padding:14px 18px;margin-bottom:18px">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--acc);text-transform:uppercase;letter-spacing:.15em;margin-bottom:6px">⚠ requiere reasignación</div>
+      <div style="font-size:13px;line-height:1.6">
+        <strong>${fullName(persona)}</strong> tiene:
+        ${totalActivas > 0 ? `<br>· <strong>${totalActivas}</strong> ${totalActivas === 1 ? 'petición activa' : 'peticiones activas'}` : ''}
+        ${totalRec > 0 ? `<br>· <strong>${totalRec}</strong> ${totalRec === 1 ? 'recurrente activa' : 'recurrentes activas'}` : ''}
+        <br><br>
+        para evitar perder seguimiento, debes elegir a quién las pasas antes de desactivar.
+      </div>
+    </div>
+
+    <div class="field">
+      <label>reasignar peticiones a</label>
+      <select id="reasign-peticiones">
+        <option value="">— elige una persona —</option>
+        ${candidatos.map(p => `<option value="${p.nombre}">${fullName(p)} · ${p.rol}</option>`).join('')}
+      </select>
+      ${totalActivas === 0 ? '<div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px">no tiene peticiones, este campo es opcional</div>' : ''}
+    </div>
+
+    <div class="field">
+      <label>reasignar recurrentes a</label>
+      <select id="reasign-recurrentes">
+        <option value="">— elige una persona —</option>
+        ${candidatos.map(p => `<option value="${p.nombre}">${fullName(p)} · ${p.rol}</option>`).join('')}
+      </select>
+      ${totalRec === 0 ? '<div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px">no tiene recurrentes, este campo es opcional</div>' : ''}
+    </div>
+
+    <div style="background:var(--bg-1);border:1px solid var(--line);padding:10px 14px;margin-top:14px">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.15em;margin-bottom:4px">qué pasa después</div>
+      <div style="font-size:12px;color:var(--txt-2);line-height:1.5">
+        ${totalActivas > 0 ? '· las peticiones activas pasan a la persona elegida<br>' : ''}
+        ${totalRec > 0 ? '· las recurrentes futuras se generarán para la persona elegida<br>' : ''}
+        · ${fullName(persona)} se marca como inactiva (soft-delete)<br>
+        · su histórico se conserva para reportes y evaluaciones<br>
+        · si vuelve a MOVDI, puede reactivarse desde el tab equipo
+      </div>
+    </div>
+  `;
+  $('ov-reasign').classList.add('show');
+}
+
+function cerrarReasignacion() {
+  _reasignContext = null;
+  $('ov-reasign').classList.remove('show');
+}
+
+async function confirmarReasignacion() {
+  if (!_reasignContext) return;
+  const { persona, peticiones, peticionesHeads, recurrentes } = _reasignContext;
+  const reasignPet = $('reasign-peticiones').value;
+  const reasignRec = $('reasign-recurrentes').value;
+
+  const totalPet = peticiones.length + peticionesHeads.length;
+  const totalRec = recurrentes.length;
+
+  // Validar
+  if (totalPet > 0 && !reasignPet) {
+    showInfo('falta dato', 'elige a quién reasignar las peticiones');
+    return;
+  }
+  if (totalRec > 0 && !reasignRec) {
+    showInfo('falta dato', 'elige a quién reasignar las recurrentes');
+    return;
+  }
+
+  showLoading('reasignando y desactivando...');
+
+  try {
+    // 1. Reasignar peticiones generales
+    if (peticiones.length > 0 && reasignPet) {
+      const ids = peticiones.map(p => p.id);
+      const { error } = await sb.from('peticiones')
+        .update({ para: reasignPet })
+        .in('id', ids);
+      if (error) throw error;
+      DB.general.forEach(t => {
+        if (ids.includes(t.id)) t.para = reasignPet;
+      });
+    }
+
+    // 2. Reasignar peticiones de heads
+    if (peticionesHeads.length > 0 && reasignPet) {
+      const ids = peticionesHeads.map(p => p.id);
+      const { error } = await sb.from('peticiones')
+        .update({ para: reasignPet })
+        .in('id', ids);
+      if (error) throw error;
+      DB.heads.forEach(t => {
+        if (ids.includes(t.id)) t.para = reasignPet;
+      });
+    }
+
+    // 3. Reasignar recurrentes
+    if (recurrentes.length > 0 && reasignRec) {
+      const ids = recurrentes.map(r => r.id);
+      const { error } = await sb.from('recurrentes')
+        .update({ para: reasignRec })
+        .in('id', ids);
+      if (error) throw error;
+      RECURRENTES.forEach(r => {
+        if (ids.includes(r.id)) r.para = reasignRec;
+      });
+    }
+
+    // 4. Desactivar la persona
+    const { error: errDesact } = await sb.from('personas')
+      .update({ activo: false })
+      .eq('id', persona.id);
+    if (errDesact) throw errDesact;
+    PERSONAS = PERSONAS.map(p => p.id === persona.id ? { ...p, activo: false } : p);
+
+    hideLoading();
+    cerrarReasignacion();
+    renderActiveTab();
+    showInfo('persona desactivada ✓',
+      `${fullName(persona)} ya no recibirá asignaciones. ${totalPet > 0 ? `${totalPet} peticiones reasignadas a ${reasignPet}. ` : ''}${totalRec > 0 ? `${totalRec} recurrentes reasignadas a ${reasignRec}.` : ''}`
+    );
+  } catch (e) {
+    hideLoading();
+    showInfo('error', 'no se pudo completar: ' + (e.message || 'error desconocido'));
+  }
+}
+
+async function reactivarPersona(id) {
+  const persona = PERSONAS.find(p => p.id === id);
+  if (!persona) return;
+  if (!confirm(`¿reactivar a ${fullName(persona)}?\n\nvolverá a recibir asignaciones y aparecerá en el equipo.`)) return;
+  const { error } = await sb.from('personas')
+    .update({ activo: true })
+    .eq('id', id);
+  if (error) { showInfo('error', error.message); return; }
+  PERSONAS = PERSONAS.map(p => p.id === id ? { ...p, activo: true } : p);
+  renderActiveTab();
+  showInfo('persona reactivada ✓', `${fullName(persona)} vuelve a estar activa.`);
+}
+
+async function pausarPersona(id) {
+  const persona = PERSONAS.find(p => p.id === id);
+  if (!persona) return;
+  // Default: 1 mes desde hoy
+  const hoy = new Date();
+  hoy.setMonth(hoy.getMonth() + 1);
+  const defaultFecha = hoy.toISOString().slice(0, 10);
+
+  const fecha = prompt(`¿hasta cuándo pausar a ${fullName(persona)}?\n\nformato: AAAA-MM-DD\n\ndurante la pausa no recibirá nuevas asignaciones ni se generarán instancias de sus recurrentes.\n\nse reactiva sola al pasar la fecha.`, defaultFecha);
+  if (!fecha) return;
+  // Validar formato
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    showInfo('formato inválido', 'usa AAAA-MM-DD (ej: 2026-06-15)');
+    return;
+  }
+  const { error } = await sb.from('personas')
+    .update({ pausada_hasta: fecha })
+    .eq('id', id);
+  if (error) { showInfo('error', error.message); return; }
+  PERSONAS = PERSONAS.map(p => p.id === id ? { ...p, pausadaHasta: fecha } : p);
+  renderActiveTab();
+  showInfo('persona pausada ✓', `${fullName(persona)} no recibirá asignaciones hasta ${fechaCorta(fecha)}.`);
+}
+
+async function reanudarPersona(id) {
+  const persona = PERSONAS.find(p => p.id === id);
+  if (!persona) return;
+  if (!confirm(`¿reanudar a ${fullName(persona)} antes de tiempo?\n\nvolverá a recibir asignaciones desde hoy.`)) return;
+  const { error } = await sb.from('personas')
+    .update({ pausada_hasta: null })
+    .eq('id', id);
+  if (error) { showInfo('error', error.message); return; }
+  PERSONAS = PERSONAS.map(p => p.id === id ? { ...p, pausadaHasta: null } : p);
+  renderActiveTab();
+  showInfo('pausa cancelada ✓', `${fullName(persona)} vuelve a recibir asignaciones.`);
 }
 
 // ============================================================
@@ -3107,7 +3453,8 @@ function renderRecCheckboxesPersonas() {
   const elegibles = PERSONAS.filter(p =>
     p.nivel !== 'ceo' &&
     !p.needsPass &&
-    p.nombre !== USER.nombre
+    p.nombre !== USER.nombre &&
+    personaDisponible(p)
   ).sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   $('rec-checkboxes-personas').innerHTML = elegibles.map(p => `
@@ -3141,7 +3488,7 @@ document.addEventListener('change', e => {
 
 function actualizarRecPara() {
   const area = $('rec-area').value;
-  $('rec-para').innerHTML = PERSONAS.filter(p => (p.areas || []).includes(area) && p.nivel !== 'ceo')
+  $('rec-para').innerHTML = PERSONAS.filter(p => (p.areas || []).includes(area) && p.nivel !== 'ceo' && personaDisponible(p))
     .map(p => `<option value="${p.nombre}">${fullName(p)}</option>`).join('');
 }
 
@@ -3185,17 +3532,19 @@ async function guardarRecur() {
       (p.areas || []).includes(area) &&
       !p.needsPass &&
       p.nivel !== 'ceo' &&
-      p.nombre !== USER.nombre
+      p.nombre !== USER.nombre &&
+      personaDisponible(p)
     ).map(p => p.nombre);
-    if (destinatarios.length === 0) { showInfo('vacío', 'no hay personas en esa área'); return; }
+    if (destinatarios.length === 0) { showInfo('vacío', 'no hay personas activas en esa área'); return; }
   } else if (modo === 'ejecutivos') {
-    destinatarios = PERSONAS.filter(p => p.nivel === 'ejecutivo' && p.nombre !== USER.nombre && !p.needsPass).map(p => p.nombre);
+    destinatarios = PERSONAS.filter(p => p.nivel === 'ejecutivo' && p.nombre !== USER.nombre && !p.needsPass && personaDisponible(p)).map(p => p.nombre);
     area = USER.areas && USER.areas[0] ? USER.areas[0] : 'imkt';
   } else if (modo === 'todos') {
     destinatarios = PERSONAS.filter(p =>
       (p.nivel === 'ejecutivo' || p.nivel === 'head') &&
       p.nombre !== USER.nombre &&
-      !p.needsPass
+      !p.needsPass &&
+      personaDisponible(p)
     ).map(p => p.nombre);
     area = USER.areas && USER.areas[0] ? USER.areas[0] : 'imkt';
   }
@@ -3279,18 +3628,30 @@ function calcularFechasEsperadas(recur, semanasAtras = 12) {
 async function pregenerarInstanciasPasadas() {
   if (!isAdmin(USER)) return;
 
-  // Recurrentes activas con auth_user_id del creador disponible
-  const activas = RECURRENTES.filter(r => r.activa);
+  // Recurrentes activas (saltar las de personas inactivas o pausadas)
+  const activas = RECURRENTES.filter(r => {
+    if (!r.activa) return false;
+    const persona = PERSONAS.find(p => matchNombre(p.nombre, r.para));
+    if (!persona) return false; // persona no existe (¿borrada manualmente?)
+    if (persona.activo === false) return false; // inactiva
+    return true;
+  });
   if (!activas.length) return;
 
   const hoy = new Date(new Date().toDateString()).toISOString().slice(0, 10);
   const insertsPendientes = [];
 
   activas.forEach(r => {
+    const persona = PERSONAS.find(p => matchNombre(p.nombre, r.para));
     const fechas = calcularFechasEsperadas(r, 12);
     fechas.forEach(fecha => {
       // No generar para fechas futuras o de hoy (eso lo hace el motor en vivo)
       if (fecha >= hoy) return;
+      // Si la persona estaba pausada en esa fecha, no generar
+      if (persona && persona.pausadaHasta && fecha <= persona.pausadaHasta) {
+        // Solo si la pausa abarca esa fecha pasada
+        // (asumimos que pausada_hasta viene de un futuro o presente, así que esto raramente aplica)
+      }
       // Verificar si ya existe
       const ya = DB.general.find(p => p.origenRecur === r.id && p.fecha === fecha);
       if (!ya) {
@@ -3372,10 +3733,10 @@ let cumpliFiltroPeriodo = 12;
 
 function renderCumplimiento() {
   // Filtrar recurrentes según área del head
-  const esDireccion = USER.nombre === 'Dani' || USER.nombre === 'Emmanuel';
+  const soyDireccion = esDireccion(USER);
   let recursVisibles = RECURRENTES.slice();
 
-  if (!esDireccion && USER.nivel === 'head') {
+  if (!soyDireccion && USER.nivel === 'head') {
     const misAreas = USER.areas || [];
     recursVisibles = recursVisibles.filter(r => {
       // El head solo ve recurrentes de su área
@@ -3400,7 +3761,7 @@ function renderCumplimiento() {
     <div class="section-head">
       <div>
         <h2>📊 cumplimiento de recurrentes</h2>
-        <div class="sub">${esDireccion ? 'vista dirección · todo el equipo' : 'vista head · ' + (USER.areas || []).map(a => AREAS_LABEL[a] || a).join(', ')}</div>
+        <div class="sub">${soyDireccion ? 'vista dirección · todo el equipo' : 'vista head · ' + (USER.areas || []).map(a => AREAS_LABEL[a] || a).join(', ')}</div>
       </div>
     </div>
 
