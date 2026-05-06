@@ -1313,7 +1313,7 @@ const mapPersonaRow = r => ({
   needsPass: r.needs_pass,
   email: r.email,
   authUserId: r.auth_user_id,
-  activo: r.activo !== false,
+  activo: r.activo === false ? false : true,
   pausadaHasta: r.pausada_hasta || null,
   esDireccion: r.es_direccion === true,
 });
@@ -1455,7 +1455,7 @@ async function cargarPersonasParaLogin() {
   // (RLS lo permite a usuarios autenticados, pero también podemos tener una vista pública)
   // Como fallback, si no hay sesión usamos los datos básicos hardcoded
   try {
-    const { data, error } = await sb.from('personas').select('id, nombre, apellido, rol, nivel, areas, needs_pass, email').order('nivel');
+    const { data, error } = await sb.from('personas').select('id, nombre, apellido, rol, nivel, areas, needs_pass, email, activo, pausada_hasta, es_direccion').order('nivel');
     if (error) {
       console.warn('No se pudo leer personas sin auth, usando lista mínima');
       throw error;
