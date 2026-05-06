@@ -809,7 +809,38 @@ button{cursor:pointer}
         <label>descripción</label>
         <textarea id="pet-desc" placeholder="contexto, links, detalles..."></textarea>
       </div>
-      <div class="field-row">
+      <div class="field">
+        <label>asignar a</label>
+        <div id="pet-modo-asig" style="display:flex;flex-direction:column;gap:6px;background:var(--bg-1);border:1px solid var(--line);padding:10px 12px">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+            <input type="radio" name="pet-modo" value="una" checked onchange="cambiarModoAsignacion()">
+            <span>una persona</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+            <input type="radio" name="pet-modo" value="varias" onchange="cambiarModoAsignacion()">
+            <span>varias personas (selección manual)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px" id="pet-modo-area-wrap">
+            <input type="radio" name="pet-modo" value="area" onchange="cambiarModoAsignacion()">
+            <span>un área completa</span>
+          </label>
+          <label class="admin-only-modo" style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+            <input type="radio" name="pet-modo" value="heads" onchange="cambiarModoAsignacion()">
+            <span>solo heads</span>
+          </label>
+          <label class="admin-only-modo" style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+            <input type="radio" name="pet-modo" value="ejecutivos" onchange="cambiarModoAsignacion()">
+            <span>solo ejecutivos</span>
+          </label>
+          <label class="admin-only-modo" style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+            <input type="radio" name="pet-modo" value="todos" onchange="cambiarModoAsignacion()">
+            <span>todo el equipo</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Modo: una persona (default) -->
+      <div class="field-row" id="pet-bloque-una">
         <div class="field" id="pet-area-field">
           <label>área destino</label>
           <select id="pet-area" onchange="actualizarParaQuien()">
@@ -825,6 +856,29 @@ button{cursor:pointer}
           <label>para quién</label>
           <select id="pet-para"></select>
         </div>
+      </div>
+
+      <!-- Modo: varias personas (checkboxes) -->
+      <div class="field" id="pet-bloque-varias" style="display:none">
+        <label>selecciona las personas</label>
+        <div id="pet-checkboxes-personas" style="display:flex;flex-direction:column;gap:6px;background:var(--bg-1);border:1px solid var(--line);padding:10px 12px;max-height:240px;overflow-y:auto">
+          <!-- checkboxes dinámicos -->
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px"><span id="pet-varias-count">0</span> personas seleccionadas</div>
+      </div>
+
+      <!-- Modo: área -->
+      <div class="field" id="pet-bloque-area" style="display:none">
+        <label>área que va a recibir</label>
+        <select id="pet-area-grupo">
+          <option value="imkt">IMKT — influencer marketing</option>
+          <option value="pm">P. Managers</option>
+          <option value="legal">Legal</option>
+          <option value="admi">Admi</option>
+          <option value="ventas">Ventas</option>
+          <option value="digital">Digital / Tiendas</option>
+        </select>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px" id="pet-area-info">— se asignará a todas las personas de esa área —</div>
       </div>
       <div class="field-row">
         <div class="field">
@@ -1160,6 +1214,7 @@ const mapPeticionRow = r => ({
   estatus: r.estatus,
   esRH: r.es_rh,
   origenRecur: r.origen_recur,
+  grupoId: r.grupo_id,
 });
 const mapRecurRow = r => ({
   id: r.id,
@@ -2036,6 +2091,36 @@ function renderKpisExtended(k, recurPend) {
 function renderPedi() {
   // Excluir instancias de recurrentes (las gestiona el tab de recurrentes)
   const lista = DB.general.filter(t => t.creadoPor === USER.nombre && !t.origenRecur);
+
+  // Separar peticiones individuales vs grupales
+  const individuales = lista.filter(t => !t.grupoId);
+  const grupales = lista.filter(t => t.grupoId);
+
+  // Agrupar las grupales por grupo_id
+  const gruposMap = {};
+  grupales.forEach(t => {
+    if (!gruposMap[t.grupoId]) gruposMap[t.grupoId] = [];
+    gruposMap[t.grupoId].push(t);
+  });
+  const grupos = Object.values(gruposMap).map(items => {
+    const primera = items[0];
+    const entregadas = items.filter(x => x.estatus === 'entregado').length;
+    const total = items.length;
+    return {
+      grupoId: primera.grupoId,
+      nombre: primera.nombre,
+      desc: primera.desc,
+      fecha: primera.fecha,
+      prioridad: primera.prioridad,
+      area: primera.area,
+      esRH: primera.esRH,
+      items,
+      entregadas,
+      total,
+      porcentaje: Math.round((entregadas / total) * 100)
+    };
+  }).sort((a, b) => fechaObj(a.fecha) - fechaObj(b.fecha));
+
   const k = calcKpis(lista);
   $('content').innerHTML = `
     ${renderKpis(k)}
@@ -2046,8 +2131,114 @@ function renderPedi() {
         <button class="btn primary sm" onclick="abrirPeticion('general')">+ nueva petición</button>
       </div>
     </div>
-    ${renderTabla(lista)}
+
+    ${grupos.length > 0 ? `
+      <div style="margin-bottom:32px">
+        <h3 style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.2em;color:var(--txt-3);margin-bottom:14px;display:flex;align-items:center;gap:10px">
+          <span>📦 peticiones múltiples</span>
+          <span style="flex:1;height:1px;background:var(--line)"></span>
+          <span>${grupos.length} ${grupos.length === 1 ? 'grupo' : 'grupos'}</span>
+        </h3>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${grupos.map(g => renderGrupoPedi(g)).join('')}
+        </div>
+      </div>
+    ` : ''}
+
+    ${individuales.length > 0 ? `
+      <div>
+        ${grupos.length > 0 ? `
+          <h3 style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.2em;color:var(--txt-3);margin-bottom:14px;display:flex;align-items:center;gap:10px">
+            <span>peticiones individuales</span>
+            <span style="flex:1;height:1px;background:var(--line)"></span>
+            <span>${individuales.length}</span>
+          </h3>
+        ` : ''}
+        ${renderTabla(individuales)}
+      </div>
+    ` : (grupos.length === 0 ? `<div class="empty"><h4>sin peticiones</h4><p>crea la primera con el botón de arriba</p></div>` : '')}
   `;
+}
+
+function renderGrupoPedi(g) {
+  const colorBarra = g.porcentaje >= 100 ? 'var(--ok)' : g.porcentaje >= 50 ? 'var(--warn)' : 'var(--acc)';
+  const expandido = window._gruposExpandidos && window._gruposExpandidos[g.grupoId];
+
+  return `
+    <div style="background:var(--bg-1);border:1px solid var(--line);overflow:hidden">
+      <div onclick="toggleGrupoPedi('${g.grupoId}')" style="cursor:pointer;padding:14px 18px;display:grid;grid-template-columns:auto 1fr auto auto;gap:14px;align-items:center;border-left:3px solid var(--acc)">
+        <div style="font-size:18px">📦</div>
+        <div>
+          <div style="font-weight:600;font-size:14px;margin-bottom:2px">${g.nombre}</div>
+          <div style="font-size:12px;color:var(--txt-2)">${g.desc || '—'}</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+            <div style="flex:1;max-width:180px;height:6px;background:var(--bg);border:1px solid var(--line)">
+              <div style="height:100%;width:${g.porcentaje}%;background:${colorBarra}"></div>
+            </div>
+            <span style="font-family:var(--mono);font-size:11px;color:var(--txt-3)">${g.entregadas}/${g.total} entregadas</span>
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:var(--mono);font-size:11px;color:var(--txt-2)">${fechaCorta(g.fecha)}</div>
+          <span class="tag prio-${g.prioridad}" style="margin-top:4px;display:inline-block">${g.prioridad}</span>
+        </div>
+        <div style="font-family:var(--mono);font-size:14px;color:var(--txt-3)">${expandido ? '▲' : '▼'}</div>
+      </div>
+      ${expandido ? `
+        <div style="background:var(--bg);border-top:1px solid var(--line)">
+          <table class="tbl" style="margin:0">
+            <thead><tr>
+              <th>persona</th>
+              <th>estatus</th>
+              <th>fecha</th>
+              <th></th>
+            </tr></thead>
+            <tbody>
+              ${g.items.map(t => `
+                <tr class="det-clickable-row" onclick="abrirDetalle('${t.id}')">
+                  <td><strong>${t.para}</strong></td>
+                  <td>${t.estatus === 'entregado' ? '<span style="color:var(--ok)">✅ entregado</span>' : t.estatus === 'proceso' ? '<span style="color:var(--warn)">⚠ en proceso</span>' : '<span style="color:var(--txt-3)">○ pendiente</span>'}</td>
+                  <td><span class="tdate">${fechaCorta(t.fecha)}</span></td>
+                  <td style="text-align:right">
+                    <button class="icon-btn danger" onclick="event.stopPropagation();eliminarPeticionIndividual('${t.id}')" title="eliminar solo a ${t.para}">✕</button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div style="padding:10px 18px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn ghost sm" onclick="event.stopPropagation();eliminarGrupoCompleto('${g.grupoId}')">🗑 eliminar todo el grupo</button>
+          </div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function toggleGrupoPedi(grupoId) {
+  if (!window._gruposExpandidos) window._gruposExpandidos = {};
+  window._gruposExpandidos[grupoId] = !window._gruposExpandidos[grupoId];
+  renderActiveTab();
+}
+
+async function eliminarPeticionIndividual(id) {
+  const t = DB.general.find(x => x.id === id);
+  if (!t) return;
+  if (!confirm(`¿eliminar la asignación a ${t.para}?\n\nse eliminará solo esta asignación. el resto del grupo no se verá afectado.`)) return;
+  const { error } = await sb.from('peticiones').delete().eq('id', id);
+  if (error) { showInfo('error', error.message); return; }
+  DB.general = DB.general.filter(x => x.id !== id);
+  renderActiveTab();
+}
+
+async function eliminarGrupoCompleto(grupoId) {
+  const items = DB.general.filter(t => t.grupoId === grupoId);
+  if (items.length === 0) return;
+  if (!confirm(`¿eliminar todas las ${items.length} asignaciones de "${items[0].nombre}"?\n\nesta acción no se puede deshacer.`)) return;
+  const { error } = await sb.from('peticiones').delete().eq('grupo_id', grupoId);
+  if (error) { showInfo('error', error.message); return; }
+  DB.general = DB.general.filter(t => t.grupoId !== grupoId);
+  renderActiveTab();
 }
 
 function renderRhPriv() {
@@ -2514,20 +2705,87 @@ function abrirPeticion(zona) {
   zonaPeticion = zona;
   $('pet-title').textContent = zona === 'heads' ? 'nueva petición heads' : 'nueva petición';
   $('pet-zone-label').textContent = zona === 'heads' ? 'zona heads · privada' : (USER.nivel === 'rh' ? 'zona general · marcará como RH' : 'zona general');
-  $('pet-area-field').style.display = zona === 'heads' ? 'none' : '';
   $('pet-nombre').value = '';
   $('pet-desc').value = '';
   $('pet-fecha').value = dx(7);
   $('pet-prio').value = 'media';
   $('pet-area').value = USER.areas && USER.areas[0] && AREAS_LABEL[USER.areas[0]] ? USER.areas[0] : 'imkt';
+
+  // Reset modo de asignación
+  document.querySelector('input[name="pet-modo"][value="una"]').checked = true;
+
+  // Mostrar/ocultar opciones de asignación según permisos del usuario
+  const esAdminOHead = isAdmin(USER);
+  document.querySelectorAll('.admin-only-modo').forEach(el => {
+    el.style.display = esAdminOHead ? 'flex' : 'none';
+  });
+
+  // Si es zona heads, ocultar el modo de asignación múltiple (solo 1 a 1)
+  $('pet-modo-asig').style.display = zona === 'heads' ? 'none' : '';
+
+  cambiarModoAsignacion();
   actualizarParaQuien();
   $('ov-peticion').classList.add('show');
   requestAnimationFrame(() => $('pet-nombre').focus());
 }
+
 function cerrarPeticion() { $('ov-peticion').classList.remove('show'); }
+
+function cambiarModoAsignacion() {
+  const modo = document.querySelector('input[name="pet-modo"]:checked')?.value || 'una';
+
+  // Mostrar bloque correspondiente
+  $('pet-bloque-una').style.display = (modo === 'una') ? '' : 'none';
+  $('pet-bloque-varias').style.display = (modo === 'varias') ? '' : 'none';
+  $('pet-bloque-area').style.display = (modo === 'area') ? '' : 'none';
+
+  // Si es modo "varias", cargar checkboxes
+  if (modo === 'varias') {
+    renderCheckboxesPersonas();
+  }
+
+  // Si es modo "area", actualizar info
+  if (modo === 'area') {
+    actualizarInfoArea();
+  }
+}
+
+function renderCheckboxesPersonas() {
+  // Lista de personas elegibles (ejecutivos + heads, sin la persona logueada, sin RH privado)
+  const elegibles = PERSONAS.filter(p =>
+    p.nivel !== 'ceo' &&
+    !p.needsPass &&
+    p.nombre !== USER.nombre
+  ).sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+  $('pet-checkboxes-personas').innerHTML = elegibles.map(p => `
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+      <input type="checkbox" class="pet-persona-cb" value="${p.nombre}" onchange="actualizarConteoVarias()">
+      <span>${fullName(p)} <span style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em">${p.nivel}</span></span>
+    </label>
+  `).join('');
+  actualizarConteoVarias();
+}
+
+function actualizarConteoVarias() {
+  const seleccionados = document.querySelectorAll('.pet-persona-cb:checked').length;
+  $('pet-varias-count').textContent = seleccionados;
+}
+
+function actualizarInfoArea() {
+  const area = $('pet-area-grupo').value;
+  const personas = PERSONAS.filter(p =>
+    (p.areas || []).includes(area) &&
+    !p.needsPass &&
+    p.nivel !== 'ceo' &&
+    p.nombre !== USER.nombre
+  );
+  $('pet-area-info').textContent = `— se asignará a ${personas.length} ${personas.length === 1 ? 'persona' : 'personas'} de ${AREAS_LABEL[area] || area} —`;
+}
 
 function actualizarParaQuien() {
   const sel = $('pet-para');
+  if (!sel) return;
   let opts = [];
   if (zonaPeticion === 'heads') {
     opts = PERSONAS.filter(p => p.nivel === 'ceo' || p.nivel === 'head').map(p =>
@@ -2540,32 +2798,114 @@ function actualizarParaQuien() {
   sel.innerHTML = opts.length ? opts.join('') : '<option value="">— sin personas en esta área —</option>';
 }
 
+// Listener para cambios en el área del modo grupal
+document.addEventListener('change', e => {
+  if (e.target && e.target.id === 'pet-area-grupo') actualizarInfoArea();
+});
+
 async function guardarPeticion() {
   const nombre = $('pet-nombre').value.trim();
   if (!nombre) { showInfo('falta dato', 'el nombre de la petición es obligatorio'); return; }
-  const para = $('pet-para').value;
-  if (!para) { showInfo('falta dato', 'falta destinatario'); return; }
   const desc = $('pet-desc').value.trim();
   const fecha = $('pet-fecha').value || dx(7);
   const prio = $('pet-prio').value;
-  let nueva;
+
+  // Si es zona heads, siempre es 1 a 1
   if (zonaPeticion === 'heads') {
-    nueva = { zona: 'heads', nombre, descripcion: desc, creado_por: USER.nombre, para, fecha, prioridad: prio, estatus: 'pendiente' };
-  } else {
-    const area = $('pet-area').value;
-    const esRH = USER.nivel === 'rh';
-    nueva = { zona: 'general', nombre, descripcion: desc, creado_por: USER.nombre, para, area, fecha, prioridad: prio, estatus: 'pendiente', es_rh: esRH };
+    const para = $('pet-para').value;
+    if (!para) { showInfo('falta dato', 'falta destinatario'); return; }
+    const nueva = { zona: 'heads', nombre, descripcion: desc, creado_por: USER.nombre, para, fecha, prioridad: prio, estatus: 'pendiente' };
+    showLoading('creando petición...');
+    const { data, error } = await sb.from('peticiones').insert(nueva).select().single();
+    hideLoading();
+    if (error) { showInfo('error', error.message); return; }
+    DB.heads.push(mapPeticionRow(data));
+    cerrarPeticion();
+    renderTabs();
+    renderActiveTab();
+    return;
   }
-  showLoading('creando petición...');
-  const { data, error } = await sb.from('peticiones').insert(nueva).select().single();
+
+  // Zona general: detectar modo de asignación
+  const modo = document.querySelector('input[name="pet-modo"]:checked')?.value || 'una';
+  let destinatarios = []; // array de nombres
+  let area = '';
+
+  if (modo === 'una') {
+    const para = $('pet-para').value;
+    if (!para) { showInfo('falta dato', 'falta destinatario'); return; }
+    destinatarios = [para];
+    area = $('pet-area').value;
+  } else if (modo === 'varias') {
+    destinatarios = Array.from(document.querySelectorAll('.pet-persona-cb:checked')).map(c => c.value);
+    if (destinatarios.length === 0) { showInfo('falta dato', 'selecciona al menos una persona'); return; }
+    area = USER.areas && USER.areas[0] ? USER.areas[0] : 'imkt';
+  } else if (modo === 'area') {
+    area = $('pet-area-grupo').value;
+    destinatarios = PERSONAS.filter(p =>
+      (p.areas || []).includes(area) &&
+      !p.needsPass &&
+      p.nivel !== 'ceo' &&
+      p.nombre !== USER.nombre
+    ).map(p => p.nombre);
+    if (destinatarios.length === 0) { showInfo('vacío', 'no hay personas en esa área'); return; }
+  } else if (modo === 'heads') {
+    destinatarios = PERSONAS.filter(p => p.nivel === 'head' && p.nombre !== USER.nombre).map(p => p.nombre);
+    area = 'heads';
+  } else if (modo === 'ejecutivos') {
+    destinatarios = PERSONAS.filter(p => p.nivel === 'ejecutivo' && p.nombre !== USER.nombre).map(p => p.nombre);
+    area = USER.areas && USER.areas[0] ? USER.areas[0] : 'imkt';
+  } else if (modo === 'todos') {
+    destinatarios = PERSONAS.filter(p =>
+      (p.nivel === 'ejecutivo' || p.nivel === 'head') &&
+      p.nombre !== USER.nombre
+    ).map(p => p.nombre);
+    area = USER.areas && USER.areas[0] ? USER.areas[0] : 'imkt';
+  }
+
+  // Confirmación si son más de 5
+  if (destinatarios.length > 5) {
+    if (!confirm(`vas a asignar esta petición a ${destinatarios.length} personas. ¿confirmas?\n\n${destinatarios.join(', ')}`)) {
+      return;
+    }
+  }
+
+  const esRH = USER.nivel === 'rh';
+  const esGrupo = destinatarios.length > 1;
+  // Generar grupo_id solo si es múltiple
+  const grupoId = esGrupo ? crypto.randomUUID() : null;
+
+  // Construir payload de inserción (1 fila por destinatario)
+  const peticionesAInsertar = destinatarios.map(para => ({
+    zona: 'general',
+    nombre,
+    descripcion: desc,
+    creado_por: USER.nombre,
+    para,
+    area,
+    fecha,
+    prioridad: prio,
+    estatus: 'pendiente',
+    es_rh: esRH,
+    grupo_id: grupoId
+  }));
+
+  showLoading(esGrupo ? `creando petición para ${destinatarios.length} personas...` : 'creando petición...');
+  const { data, error } = await sb.from('peticiones').insert(peticionesAInsertar).select();
   hideLoading();
   if (error) { showInfo('error', error.message); return; }
-  const mapeada = mapPeticionRow(data);
-  if (mapeada.zona === 'heads') DB.heads.push(mapeada);
-  else DB.general.push(mapeada);
+
+  if (data) {
+    data.forEach(d => DB.general.push(mapPeticionRow(d)));
+  }
+
   cerrarPeticion();
   renderTabs();
   renderActiveTab();
+
+  if (esGrupo) {
+    showInfo('petición múltiple creada ✓', `se asignó "${nombre}" a ${destinatarios.length} personas`);
+  }
 }
 
 // ============================================================
