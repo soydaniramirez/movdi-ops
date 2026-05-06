@@ -1474,6 +1474,14 @@ async function iniciarSesion() {
     await cargarPersonasParaLogin();
     return;
   }
+  // Bloquear acceso si la persona fue archivada (activo = false)
+  if (persona.activo === false) {
+    hideLoading();
+    showInfo('acceso revocado', `tu cuenta ha sido archivada en MOVDI. si esto es un error, contacta a dirección.`);
+    await sb.auth.signOut();
+    await cargarPersonasParaLogin();
+    return;
+  }
   // Vincular auth_user_id si no estaba (primer login)
   if (!persona.auth_user_id) {
     await sb.from('personas').update({ auth_user_id: user.id }).eq('id', persona.id);
@@ -1570,7 +1578,10 @@ async function cerrarSesion() {
 // ============================================================
 function renderLogin() {
   const grid = $('pgrid');
-  if (!PERSONAS.length) {
+  // Solo mostrar personas activas (no archivadas) en el grid de login
+  const personasVisibles = PERSONAS.filter(p => p.activo !== false);
+
+  if (!personasVisibles.length) {
     grid.innerHTML = `
       <div style="padding:40px;text-align:center;color:var(--txt-3);grid-column:1/-1">
         <div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.2em;margin-bottom:8px">primera vez</div>
@@ -1584,7 +1595,7 @@ function renderLogin() {
     $('login-count').textContent = `0 personas`;
     return;
   }
-  grid.innerHTML = PERSONAS.map(p => `
+  grid.innerHTML = personasVisibles.map(p => `
     <div class="pcard${pendingLogin && pendingLogin.id === p.id ? ' sel' : ''}" data-id="${p.id}">
       <div class="pavatar">${inicial(p.nombre, p.apellido)}</div>
       ${p.needsPass ? '<div class="plock">🔒</div>' : ''}
@@ -1593,14 +1604,14 @@ function renderLogin() {
       <div class="pbadge">${p.nivel === 'ceo' ? '/ dirección' : p.nivel === 'head' ? '/ head' : p.nivel === 'rh' ? '/ recursos humanos' : '/ ejecutivo'}</div>
     </div>
   `).join('');
-  $('login-count').textContent = `${PERSONAS.length} personas`;
+  $('login-count').textContent = `${personasVisibles.length} personas`;
 
   if (grid._loginHandler) grid.removeEventListener('click', grid._loginHandler);
   grid._loginHandler = e => {
     const card = e.target.closest('.pcard');
     if (!card) return;
     const id = card.dataset.id;
-    pendingLogin = PERSONAS.find(p => p.id === id);
+    pendingLogin = personasVisibles.find(p => p.id === id);
     $('btn-enter').disabled = false;
     $('login-hint').textContent = `entrar como ${fullName(pendingLogin)}`;
     renderLogin();
