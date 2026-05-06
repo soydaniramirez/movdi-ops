@@ -709,6 +709,7 @@ button{cursor:pointer}
     </div>
   </div>
   <div class="tabs" id="tabs"></div>
+  <div id="banner-anuncios" style="display:none;flex-wrap:wrap;gap:8px;padding:0 32px;margin-top:16px"></div>
   <div class="main" id="main">
     <div class="content" id="content"></div>
     <div class="side" id="side"></div>
@@ -919,6 +920,64 @@ button{cursor:pointer}
   </div>
 </div>
 
+<!-- Modal Anuncio -->
+<div class="ov" id="ov-anuncio" onclick="cerrarAnuncio()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div>
+        <h3>nuevo anuncio 📢</h3>
+        <div class="mh-sub">comunicación interna al equipo</div>
+      </div>
+      <button class="modal-x" onclick="cerrarAnuncio()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>título</label>
+        <input type="text" id="anu-titulo" placeholder="ej: posada navideña 15 dic" maxlength="100">
+      </div>
+      <div class="field">
+        <label>contenido</label>
+        <textarea id="anu-contenido" rows="4" placeholder="describe el anuncio con detalle..."></textarea>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>tipo</label>
+          <select id="anu-tipo">
+            <option value="urgente">🔴 urgente</option>
+            <option value="importante">🟡 importante</option>
+            <option value="informativo" selected>🔵 informativo</option>
+            <option value="cultura">🎉 cultura / equipo</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>audiencia</label>
+          <select id="anu-audiencia">
+            <option value="todos" selected>todo el equipo</option>
+            <option value="heads">solo heads</option>
+            <option value="ejecutivos">solo ejecutivos</option>
+            <option value="area_imkt">área IMKT</option>
+            <option value="area_pm">área P. Managers</option>
+            <option value="area_legal">área Legal</option>
+            <option value="area_admi">área Admi</option>
+            <option value="area_ventas">área Ventas</option>
+            <option value="area_digital">área Digital</option>
+            <option value="area_rh">área RH</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>fecha de expiración (opcional)</label>
+        <input type="date" id="anu-expira">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px">si está vacío, el anuncio es permanente</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="cerrarAnuncio()">cancelar</button>
+      <button class="btn primary" onclick="guardarAnuncio()">publicar anuncio</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal Recurrente -->
 <div class="ov" id="ov-recur" onclick="cerrarRecur()">
   <div class="modal" onclick="event.stopPropagation()">
@@ -1003,6 +1062,8 @@ let PERSONAS = [];
 let DB = { general: [], heads: [] };
 let RECURRENTES = [];
 let TODOS = {};
+let ANUNCIOS = [];
+let ANUNCIOS_VISTOS = [];
 
 let USER = null;          // persona logueada (con datos de la tabla personas + sesión auth)
 let pendingLogin = null;  // persona seleccionada en login screen
@@ -1111,6 +1172,24 @@ const mapRecurRow = r => ({
   diaMes: r.dia_mes,
   activa: r.activa,
   creadoPor: r.creado_por,
+});
+
+const mapAnuncioRow = r => ({
+  id: r.id,
+  titulo: r.titulo,
+  contenido: r.contenido,
+  tipo: r.tipo,
+  audiencia: r.audiencia,
+  creadoPor: r.creado_por,
+  creadoEn: r.creado_en,
+  expiraEn: r.expira_en,
+  activo: r.activo,
+});
+
+const mapAnuncioVistoRow = r => ({
+  anuncioId: r.anuncio_id,
+  personaNombre: r.persona_nombre,
+  vistoEn: r.visto_en,
 });
 
 // ============================================================
@@ -1249,11 +1328,13 @@ async function iniciarSesion() {
 }
 
 async function cargarTodosLosDatos() {
-  const [personasRes, peticionesRes, recurrentesRes, todosRes] = await Promise.all([
+  const [personasRes, peticionesRes, recurrentesRes, todosRes, anunciosRes, anunciosVistosRes] = await Promise.all([
     sb.from('personas').select('*').order('nivel'),
     sb.from('peticiones').select('*').order('fecha'),
     sb.from('recurrentes').select('*'),
     sb.from('todos').select('*').eq('user_nombre', USER.nombre),
+    sb.from('anuncios').select('*').eq('activo', true).order('creado_en', { ascending: false }),
+    sb.from('anuncios_vistos').select('*'),
   ]);
   if (personasRes.data) PERSONAS = personasRes.data.map(mapPersonaRow);
   if (peticionesRes.data) {
@@ -1267,10 +1348,11 @@ async function cargarTodosLosDatos() {
   } else {
     TODOS[USER.nombre] = [];
   }
+  if (anunciosRes.data) ANUNCIOS = anunciosRes.data.map(mapAnuncioRow);
+  if (anunciosVistosRes.data) ANUNCIOS_VISTOS = anunciosVistosRes.data.map(mapAnuncioVistoRow);
   generarRecurrentes();
 
   // Si el usuario es admin, pre-generar instancias pasadas faltantes
-  // (esto hace honesto el cumplimiento histórico)
   if (isAdmin(USER)) {
     await pregenerarInstanciasPasadas();
   }
@@ -1298,6 +1380,7 @@ function prepararAppUI() {
   activeTab = isAdmin(USER) ? 'general' : 'mis';
   renderTabs();
   renderActiveTab();
+  renderBannerAnuncios();
 }
 
 async function cerrarSesion() {
@@ -1309,6 +1392,8 @@ async function cerrarSesion() {
   DB = { general: [], heads: [] };
   RECURRENTES = [];
   TODOS = {};
+  ANUNCIOS = [];
+  ANUNCIOS_VISTOS = [];
   hideLoading();
   $('screen-app').style.display = 'none';
   $('screen-login').style.display = 'flex';
@@ -1455,6 +1540,7 @@ function renderTabs() {
   let tabs = [];
   // Saber si la persona tiene recurrentes asignadas para mostrar "mi ritmo"
   const tieneRecurrentes = RECURRENTES.some(r => r.activa && matchNombre(r.para, USER.nombre));
+  const anunciosCount = contarAnunciosNoVistos();
 
   if (isAdmin(USER)) {
     tabs = [
@@ -1462,6 +1548,7 @@ function renderTabs() {
       { id: 'porpersona', label: 'por persona' },
       { id: 'recur', label: '↻ recurrentes' },
       { id: 'cumpli', label: '📊 cumplimiento' },
+      { id: 'anuncios', label: '📢 anuncios', count: anunciosCount > 0 ? anunciosCount : undefined },
       { id: 'equipo', label: 'equipo' },
       { id: 'todo', label: 'mi to-do' },
     ];
@@ -1471,6 +1558,7 @@ function renderTabs() {
     tabs = [
       { id: 'mis', label: 'mis peticiones', count: countMis() },
       { id: 'pedi', label: 'lo que yo pedí' },
+      { id: 'anuncios', label: '📢 anuncios', count: anunciosCount > 0 ? anunciosCount : undefined },
       { id: 'todo', label: 'mi to-do privado' },
     ];
     if (tieneRecurrentes) tabs.push({ id: 'miritmo', label: '↻ mi ritmo' });
@@ -1569,6 +1657,7 @@ function renderActiveTab() {
     case 'recur': renderRecurrentes(); break;
     case 'cumpli': renderCumplimiento(); break;
     case 'miritmo': renderMiRitmo(); break;
+    case 'anuncios': renderAnuncios(); break;
     case 'equipo': renderEquipo(); break;
     case 'todo': renderTodo(); break;
     case 'heads': renderHeads(); break;
@@ -2965,6 +3054,330 @@ function renderMiRitmo() {
       `).join('')}
     </div>
   `;
+}
+
+// ============================================================
+// SISTEMA DE ANUNCIOS 📢
+// ============================================================
+
+const TIPOS_ANUNCIO = {
+  urgente: { label: '🔴 urgente', color: '#ff4612', bg: 'rgba(255, 70, 18, .1)', border: 'rgba(255, 70, 18, .4)' },
+  importante: { label: '🟡 importante', color: '#e8b04a', bg: 'rgba(232, 176, 74, .1)', border: 'rgba(232, 176, 74, .4)' },
+  informativo: { label: '🔵 informativo', color: '#7aa9d6', bg: 'rgba(122, 169, 214, .1)', border: 'rgba(122, 169, 214, .4)' },
+  cultura: { label: '🎉 cultura', color: '#c084fc', bg: 'rgba(192, 132, 252, .1)', border: 'rgba(192, 132, 252, .4)' }
+};
+
+const AUDIENCIAS_LABEL = {
+  todos: 'todo el equipo',
+  heads: 'solo heads',
+  ejecutivos: 'solo ejecutivos',
+  area_imkt: 'área IMKT',
+  area_pm: 'área P. Managers',
+  area_legal: 'área Legal',
+  area_admi: 'área Admi',
+  area_ventas: 'área Ventas',
+  area_digital: 'área Digital',
+  area_rh: 'área RH'
+};
+
+// ¿Puede el usuario actual ver este anuncio según su audiencia?
+function anuncioAplicaA(anuncio, persona) {
+  const aud = anuncio.audiencia;
+  if (aud === 'todos') return true;
+  if (aud === 'heads') return persona.nivel === 'head' || persona.nivel === 'ceo';
+  if (aud === 'ejecutivos') return persona.nivel === 'ejecutivo';
+  if (aud.startsWith('area_')) {
+    const area = aud.substring(5);
+    return (persona.areas || []).includes(area);
+  }
+  return false;
+}
+
+// ¿Está expirado?
+function anuncioExpirado(anuncio) {
+  if (!anuncio.expiraEn) return false;
+  return new Date(anuncio.expiraEn) < new Date();
+}
+
+// ¿La persona ya lo vio?
+function anuncioVisto(anuncio, nombre) {
+  return ANUNCIOS_VISTOS.some(v => v.anuncioId === anuncio.id && v.personaNombre === nombre);
+}
+
+// Anuncios activos para el usuario actual (no expirados, audiencia válida)
+function anunciosActivosParaMi() {
+  return ANUNCIOS.filter(a => 
+    a.activo && 
+    !anuncioExpirado(a) && 
+    anuncioAplicaA(a, USER)
+  );
+}
+
+// Contar no vistos (para el badge del tab)
+function contarAnunciosNoVistos() {
+  return anunciosActivosParaMi().filter(a => !anuncioVisto(a, USER.nombre)).length;
+}
+
+// Marcar como visto
+async function marcarAnuncioVisto(anuncioId) {
+  if (anuncioVisto({ id: anuncioId }, USER.nombre)) return;
+  const { error } = await sb.from('anuncios_vistos').insert({
+    anuncio_id: anuncioId,
+    persona_nombre: USER.nombre
+  });
+  if (error) {
+    console.warn('Error marcando visto:', error.message);
+    return;
+  }
+  ANUNCIOS_VISTOS.push({ anuncioId, personaNombre: USER.nombre, vistoEn: new Date().toISOString() });
+  // Re-renderizar para actualizar contador
+  renderTabs();
+  renderActiveTab();
+  renderBannerAnuncios();
+}
+
+// Banner arriba del dashboard (solo no vistos, máximo 2)
+function renderBannerAnuncios() {
+  const cont = $('banner-anuncios');
+  if (!cont) return;
+  const noVistos = anunciosActivosParaMi()
+    .filter(a => !anuncioVisto(a, USER.nombre))
+    .sort((a, b) => {
+      // urgentes primero, luego importantes
+      const orden = { urgente: 0, importante: 1, informativo: 2, cultura: 3 };
+      return orden[a.tipo] - orden[b.tipo];
+    })
+    .slice(0, 2);
+
+  if (noVistos.length === 0) {
+    cont.innerHTML = '';
+    cont.style.display = 'none';
+    return;
+  }
+
+  cont.style.display = 'flex';
+  cont.innerHTML = noVistos.map(a => {
+    const t = TIPOS_ANUNCIO[a.tipo];
+    return `
+      <div style="background:${t.bg};border:1px solid ${t.border};padding:14px 18px;display:flex;align-items:center;gap:14px;flex:1;min-width:280px">
+        <div style="flex:1;min-width:0">
+          <div style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.15em;color:${t.color};margin-bottom:4px">${t.label} · ${a.creadoPor}</div>
+          <div style="font-weight:600;font-size:14px;margin-bottom:2px">${a.titulo}</div>
+          <div style="font-size:12px;color:var(--txt-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.contenido}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn ghost sm" onclick="abrirDetalleAnuncio('${a.id}')">ver</button>
+          <button class="btn primary sm" onclick="marcarAnuncioVisto('${a.id}')">✓ visto</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ============================================================
+// VISTA: TAB DE ANUNCIOS 📢
+// ============================================================
+let anunciosFiltroTipo = 'todos';
+
+function renderAnuncios() {
+  const puedeCrear = USER.nivel === 'ceo' || USER.nivel === 'head' || USER.nivel === 'rh';
+  const todos = anunciosActivosParaMi();
+
+  // Filtro por tipo
+  let lista = todos;
+  if (anunciosFiltroTipo !== 'todos') {
+    lista = lista.filter(a => a.tipo === anunciosFiltroTipo);
+  }
+
+  // Ordenar: no vistos primero, luego por fecha
+  lista = lista.sort((a, b) => {
+    const aVista = anuncioVisto(a, USER.nombre);
+    const bVista = anuncioVisto(b, USER.nombre);
+    if (aVista !== bVista) return aVista ? 1 : -1;
+    return new Date(b.creadoEn) - new Date(a.creadoEn);
+  });
+
+  $('content').innerHTML = `
+    <div class="section-head">
+      <div>
+        <h2>📢 anuncios</h2>
+        <div class="sub">comunicación interna · ${todos.length} ${todos.length === 1 ? 'activo' : 'activos'}</div>
+      </div>
+      ${puedeCrear ? `<button class="btn primary sm" onclick="abrirAnuncio()">+ nuevo anuncio</button>` : ''}
+    </div>
+
+    <div class="toolbar">
+      <span style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.15em;color:var(--txt-3);margin-right:8px">filtrar:</span>
+      <button class="filter-btn${anunciosFiltroTipo === 'todos' ? ' active' : ''}" onclick="anunciosFiltroTipo='todos';renderAnuncios()">todos</button>
+      <button class="filter-btn${anunciosFiltroTipo === 'urgente' ? ' active' : ''}" onclick="anunciosFiltroTipo='urgente';renderAnuncios()">🔴 urgentes</button>
+      <button class="filter-btn${anunciosFiltroTipo === 'importante' ? ' active' : ''}" onclick="anunciosFiltroTipo='importante';renderAnuncios()">🟡 importantes</button>
+      <button class="filter-btn${anunciosFiltroTipo === 'informativo' ? ' active' : ''}" onclick="anunciosFiltroTipo='informativo';renderAnuncios()">🔵 informativos</button>
+      <button class="filter-btn${anunciosFiltroTipo === 'cultura' ? ' active' : ''}" onclick="anunciosFiltroTipo='cultura';renderAnuncios()">🎉 cultura</button>
+    </div>
+
+    ${lista.length === 0 ? `
+      <div class="empty">
+        <h4>sin anuncios</h4>
+        <p>${puedeCrear ? 'crea uno con el botón de arriba' : 'aún no hay comunicaciones para ti'}</p>
+      </div>
+    ` : `
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${lista.map(a => {
+          const t = TIPOS_ANUNCIO[a.tipo];
+          const visto = anuncioVisto(a, USER.nombre);
+          const esCreador = a.creadoPor === USER.nombre;
+          const fechaCreado = fechaCorta(a.creadoEn.slice(0, 10));
+          const fechaExpira = a.expiraEn ? fechaCorta(a.expiraEn.slice(0, 10)) : null;
+          // Conteo de vistas (solo para creador y admins)
+          const totalVistas = ANUNCIOS_VISTOS.filter(v => v.anuncioId === a.id).length;
+          
+          return `
+            <div onclick="abrirDetalleAnuncio('${a.id}')" style="cursor:pointer;background:var(--bg-1);border:1px solid var(--line);border-left:3px solid ${t.color};padding:16px 20px;display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;${visto ? 'opacity:.6' : ''}">
+              <div>
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+                  <span style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.15em;color:${t.color}">${t.label}</span>
+                  <span style="font-family:var(--mono);font-size:10px;color:var(--txt-3)">·</span>
+                  <span style="font-family:var(--mono);font-size:10px;color:var(--txt-3)">para ${AUDIENCIAS_LABEL[a.audiencia]}</span>
+                  ${visto ? '<span style="font-family:var(--mono);font-size:10px;color:var(--ok)">· visto ✓</span>' : ''}
+                </div>
+                <div style="font-weight:600;font-size:15px;margin-bottom:4px">${a.titulo}</div>
+                <div style="font-size:13px;color:var(--txt-2);line-height:1.5;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${a.contenido}</div>
+                <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:8px;text-transform:uppercase;letter-spacing:.1em">${a.creadoPor} · ${fechaCreado}${fechaExpira ? ` · expira ${fechaExpira}` : ''}${esCreador ? ` · ${totalVistas} ${totalVistas === 1 ? 'visto' : 'vistos'}` : ''}</div>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center">
+                ${!visto ? '<span style="width:8px;height:8px;background:var(--acc);border-radius:50%"></span>' : ''}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `}
+  `;
+}
+
+// ============================================================
+// MODAL: DETALLE DE ANUNCIO
+// ============================================================
+function abrirDetalleAnuncio(id) {
+  const a = ANUNCIOS.find(x => x.id === id);
+  if (!a) return;
+  const t = TIPOS_ANUNCIO[a.tipo];
+  const visto = anuncioVisto(a, USER.nombre);
+  const esCreador = a.creadoPor === USER.nombre;
+  const fechaCreado = fechaCorta(a.creadoEn.slice(0, 10));
+  const fechaExpira = a.expiraEn ? fechaCorta(a.expiraEn.slice(0, 10)) : null;
+
+  // Para el creador: mostrar quién ya vio
+  let vistasInfo = '';
+  if (esCreador) {
+    const vistas = ANUNCIOS_VISTOS.filter(v => v.anuncioId === a.id);
+    vistasInfo = `
+      <div class="det-section">
+        <div class="det-label">vistas (${vistas.length})</div>
+        ${vistas.length === 0 ? '<div style="color:var(--txt-3);font-size:13px">aún nadie lo ha visto</div>' : `
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+            ${vistas.map(v => `<span class="tag" style="font-size:10px">${v.personaNombre}</span>`).join('')}
+          </div>
+        `}
+      </div>
+    `;
+  }
+
+  $('det-nombre').textContent = a.titulo;
+  $('det-meta').textContent = `${t.label} · para ${AUDIENCIAS_LABEL[a.audiencia]}`;
+
+  $('det-body').innerHTML = `
+    <div class="det-section">
+      <div class="det-label">contenido</div>
+      <div style="font-size:14px;line-height:1.6;color:var(--txt);white-space:pre-wrap;margin-top:6px">${a.contenido}</div>
+    </div>
+    <div class="det-section">
+      <div class="det-label">información</div>
+      <div style="font-size:13px;color:var(--txt-2);margin-top:6px;line-height:1.8">
+        creado por <strong>${a.creadoPor}</strong><br>
+        publicado: ${fechaCreado}<br>
+        ${fechaExpira ? `expira: ${fechaExpira}<br>` : 'no expira<br>'}
+        ${visto ? '<span style="color:var(--ok)">tú ya lo viste ✓</span>' : '<span style="color:var(--acc)">aún no marcado como visto</span>'}
+      </div>
+    </div>
+    ${vistasInfo}
+  `;
+
+  // Botones del footer
+  let actions = `<button class="btn ghost" onclick="cerrarDetalle()">cerrar</button>`;
+  if (!visto) {
+    actions += `<button class="btn primary" onclick="marcarAnuncioVisto('${a.id}');cerrarDetalle()">✓ marcar como visto</button>`;
+  }
+  if (esCreador) {
+    actions = `<button class="btn ghost" onclick="cerrarDetalle()">cerrar</button>`;
+    actions += `<button class="btn danger" onclick="archivarAnuncio('${a.id}')">archivar</button>`;
+  }
+  $('det-foot').innerHTML = actions;
+  $('ov-detalle').classList.add('show');
+}
+
+async function archivarAnuncio(id) {
+  if (!confirm('¿archivar este anuncio?\n\ndejará de aparecer en el tablón. esta acción no se puede deshacer.')) return;
+  const { error } = await sb.from('anuncios').update({ activo: false }).eq('id', id);
+  if (error) { showInfo('error', error.message); return; }
+  ANUNCIOS = ANUNCIOS.filter(a => a.id !== id);
+  cerrarDetalle();
+  renderTabs();
+  renderActiveTab();
+  renderBannerAnuncios();
+}
+
+// ============================================================
+// MODAL: CREAR ANUNCIO
+// ============================================================
+function abrirAnuncio() {
+  // Reset campos
+  $('anu-titulo').value = '';
+  $('anu-contenido').value = '';
+  $('anu-tipo').value = 'informativo';
+  $('anu-audiencia').value = 'todos';
+  $('anu-expira').value = '';
+  $('ov-anuncio').classList.add('show');
+  requestAnimationFrame(() => $('anu-titulo').focus());
+}
+
+function cerrarAnuncio() {
+  $('ov-anuncio').classList.remove('show');
+}
+
+async function guardarAnuncio() {
+  const titulo = $('anu-titulo').value.trim();
+  const contenido = $('anu-contenido').value.trim();
+  const tipo = $('anu-tipo').value;
+  const audiencia = $('anu-audiencia').value;
+  const expira = $('anu-expira').value || null;
+
+  if (!titulo || !contenido) {
+    showInfo('falta dato', 'completa título y contenido del anuncio');
+    return;
+  }
+
+  const payload = {
+    titulo,
+    contenido,
+    tipo,
+    audiencia,
+    creado_por: USER.nombre,
+    expira_en: expira ? new Date(expira + 'T23:59:59').toISOString() : null,
+    activo: true
+  };
+
+  const { data, error } = await sb.from('anuncios').insert(payload).select().single();
+  if (error) { showInfo('error', error.message); return; }
+
+  if (data) {
+    ANUNCIOS.unshift(mapAnuncioRow(data));
+  }
+  cerrarAnuncio();
+  renderTabs();
+  renderActiveTab();
+  renderBannerAnuncios();
+  showInfo('anuncio publicado ✓', `tu anuncio "${titulo}" ya está visible para ${AUDIENCIAS_LABEL[audiencia]}`);
 }
 
 // ============================================================
