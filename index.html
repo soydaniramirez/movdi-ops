@@ -1251,6 +1251,12 @@ async function cargarTodosLosDatos() {
     TODOS[USER.nombre] = [];
   }
   generarRecurrentes();
+
+  // Si el usuario es admin, pre-generar instancias pasadas faltantes
+  // (esto hace honesto el cumplimiento histórico)
+  if (isAdmin(USER)) {
+    await pregenerarInstanciasPasadas();
+  }
 }
 
 function prepararAppUI() {
@@ -1430,21 +1436,27 @@ async function solicitarReset() {
 // ============================================================
 function renderTabs() {
   let tabs = [];
+  // Saber si la persona tiene recurrentes asignadas para mostrar "mi ritmo"
+  const tieneRecurrentes = RECURRENTES.some(r => r.activa && matchNombre(r.para, USER.nombre));
+
   if (isAdmin(USER)) {
     tabs = [
       { id: 'general', label: 'general', count: countGeneral() },
       { id: 'porpersona', label: 'por persona' },
       { id: 'recur', label: '↻ recurrentes' },
+      { id: 'cumpli', label: '📊 cumplimiento' },
       { id: 'equipo', label: 'equipo' },
       { id: 'todo', label: 'mi to-do' },
-      { id: 'heads', label: '🔒 heads' },
     ];
+    if (tieneRecurrentes) tabs.push({ id: 'miritmo', label: '↻ mi ritmo' });
+    tabs.push({ id: 'heads', label: '🔒 heads' });
   } else {
     tabs = [
       { id: 'mis', label: 'mis peticiones', count: countMis() },
       { id: 'pedi', label: 'lo que yo pedí' },
       { id: 'todo', label: 'mi to-do privado' },
     ];
+    if (tieneRecurrentes) tabs.push({ id: 'miritmo', label: '↻ mi ritmo' });
     if (USER.nombre === 'Arylene' || USER.nombre === 'Salvador') {
       tabs.push({ id: 'rhpriv', label: '🔒 RH·privado' });
     }
@@ -1538,6 +1550,8 @@ function renderActiveTab() {
     case 'general': renderGeneral(); renderSide(); break;
     case 'porpersona': renderPorPersona(); renderSide(); break;
     case 'recur': renderRecurrentes(); break;
+    case 'cumpli': renderCumplimiento(); break;
+    case 'miritmo': renderMiRitmo(); break;
     case 'equipo': renderEquipo(); break;
     case 'todo': renderTodo(); break;
     case 'heads': renderHeads(); break;
@@ -1845,18 +1859,52 @@ function renderTablaHeads(lista) {
 // VISTAS: MIS, PEDI, RH PRIV
 // ============================================================
 function renderMis() {
-  // Excluir peticiones que son instancias de recurrentes (esas las maneja obtenerInstanciasRecur)
+  // Peticiones únicas (no instancias de recurrentes)
   const lista = DB.general.filter(t => matchNombre(t.para, USER.nombre) && canSeeRH(t) && !t.esRH && !t.origenRecur);
+  // Instancias de recurrentes
   const recurInst = obtenerInstanciasRecur(USER.nombre);
   const todas = [...lista, ...recurInst];
   const k = calcKpis(todas);
+
+  // Cuántas recurrentes vencen hoy o están pendientes
+  const recurPendientes = recurInst.filter(t => t.estatus !== 'entregado').length;
+
   $('content').innerHTML = `
-    ${renderKpis(k)}
+    ${renderKpisExtended(k, recurPendientes)}
     <div class="section-head">
       <div><h2>mis peticiones</h2><div class="sub">tareas asignadas a mí</div></div>
     </div>
-    ${renderTabla(todas)}
+    ${recurInst.length ? `
+      <div style="margin-bottom:32px">
+        <h3 style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.2em;color:var(--txt-3);margin-bottom:14px;display:flex;align-items:center;gap:10px">
+          <span>↻ entregas recurrentes</span>
+          <span style="flex:1;height:1px;background:var(--line)"></span>
+          <span>${recurInst.length} ${recurInst.length === 1 ? 'tarea' : 'tareas'}</span>
+        </h3>
+        ${renderTabla(recurInst)}
+      </div>
+    ` : ''}
+    ${lista.length ? `
+      <div>
+        <h3 style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.2em;color:var(--txt-3);margin-bottom:14px;display:flex;align-items:center;gap:10px">
+          <span>tareas únicas</span>
+          <span style="flex:1;height:1px;background:var(--line)"></span>
+          <span>${lista.length} ${lista.length === 1 ? 'tarea' : 'tareas'}</span>
+        </h3>
+        ${renderTabla(lista)}
+      </div>
+    ` : (recurInst.length === 0 ? `<div class="empty"><h4>sin peticiones</h4><p>cuando alguien te asigne tareas, aparecerán aquí</p></div>` : '')}
   `;
+}
+
+function renderKpisExtended(k, recurPend) {
+  return `
+  <div class="kpis">
+    <div class="kpi alert"><div class="klab">vencidas</div><div class="kval">${k.vencidas}</div></div>
+    <div class="kpi warn"><div class="klab">esta semana</div><div class="kval">${k.semana}</div></div>
+    <div class="kpi"><div class="klab">↻ pendientes</div><div class="kval">${recurPend}</div></div>
+    <div class="kpi"><div class="klab">entregadas</div><div class="kval">${k.entreg}</div></div>
+  </div>`;
 }
 
 function renderPedi() {
@@ -2456,6 +2504,349 @@ async function guardarRecur() {
   generarRecurrentes();
   cerrarRecur();
   renderActiveTab();
+}
+
+// ============================================================
+// SISTEMA DE CUMPLIMIENTO DE RECURRENTES
+// ============================================================
+
+// Calcula todas las fechas que esa recurrente debió suceder en las últimas N semanas
+function calcularFechasEsperadas(recur, semanasAtras = 12) {
+  const fechas = [];
+  const hoy = new Date(new Date().toDateString());
+  const limite = new Date(hoy);
+  limite.setDate(limite.getDate() - (semanasAtras * 7));
+
+  if (recur.frecuencia === 'mensual') {
+    // Recorrer hacia atrás mes por mes
+    const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), recur.diaMes);
+    let cursor = new Date(mesActual);
+    // Si el día del mes ya pasó este mes, incluir
+    while (cursor >= limite && cursor <= hoy) {
+      fechas.push(cursor.toISOString().slice(0, 10));
+      cursor.setMonth(cursor.getMonth() - 1);
+    }
+  } else {
+    // Semanal o quincenal
+    const interval = recur.frecuencia === 'semanal' ? 7 : 14;
+    // Encontrar el más reciente día configurado que ya pasó
+    let cursor = new Date(hoy);
+    const diff = (cursor.getDay() - recur.diaSemana + 7) % 7;
+    cursor.setDate(cursor.getDate() - diff);
+    while (cursor >= limite) {
+      fechas.push(cursor.toISOString().slice(0, 10));
+      cursor.setDate(cursor.getDate() - interval);
+    }
+  }
+  return fechas;
+}
+
+// Pre-genera instancias pasadas faltantes (solo admin lo dispara al cargar)
+async function pregenerarInstanciasPasadas() {
+  if (!isAdmin(USER)) return;
+
+  // Recurrentes activas con auth_user_id del creador disponible
+  const activas = RECURRENTES.filter(r => r.activa);
+  if (!activas.length) return;
+
+  const hoy = new Date(new Date().toDateString()).toISOString().slice(0, 10);
+  const insertsPendientes = [];
+
+  activas.forEach(r => {
+    const fechas = calcularFechasEsperadas(r, 12);
+    fechas.forEach(fecha => {
+      // No generar para fechas futuras o de hoy (eso lo hace el motor en vivo)
+      if (fecha >= hoy) return;
+      // Verificar si ya existe
+      const ya = DB.general.find(p => p.origenRecur === r.id && p.fecha === fecha);
+      if (!ya) {
+        insertsPendientes.push({
+          zona: 'general',
+          nombre: r.nombre,
+          descripcion: r.desc,
+          creado_por: r.creadoPor,
+          para: r.para,
+          area: r.area,
+          fecha: fecha,
+          prioridad: 'media',
+          estatus: 'pendiente',
+          es_rh: false,
+          origen_recur: r.id
+        });
+      }
+    });
+  });
+
+  if (insertsPendientes.length === 0) return;
+
+  // Insertar en batch
+  const { data, error } = await sb.from('peticiones').insert(insertsPendientes).select();
+  if (error) {
+    console.warn('Error pre-generando instancias:', error.message);
+    return;
+  }
+  if (data) {
+    data.forEach(d => DB.general.push(mapPeticionRow(d)));
+  }
+}
+
+// Calcular estadísticas de cumplimiento por recurrente
+function calcularCumplimiento(recur, semanasAtras = 12) {
+  const fechas = calcularFechasEsperadas(recur, semanasAtras);
+  const hoy = new Date(new Date().toDateString()).toISOString().slice(0, 10);
+  const fechasPasadas = fechas.filter(f => f < hoy);
+
+  const instancias = DB.general.filter(p => p.origenRecur === recur.id);
+
+  let entregadas = 0;
+  let tarde = 0;
+  const detalle = [];
+
+  fechasPasadas.forEach(fecha => {
+    const inst = instancias.find(i => i.fecha === fecha);
+    if (inst && inst.estatus === 'entregado') {
+      entregadas++;
+      // Si tiene una instancia y se entregó, ¿se entregó a tiempo?
+      // (heurística: si existe la fila pero no podemos saber el día exacto de entrega
+      // sin más data, asumimos a tiempo. En el futuro se puede agregar un campo entregado_en)
+      detalle.push({ fecha, estado: 'entregada', tarde: false });
+    } else if (inst) {
+      detalle.push({ fecha, estado: 'pendiente', tarde: true });
+    } else {
+      detalle.push({ fecha, estado: 'no_registrada', tarde: false });
+    }
+  });
+
+  const total = fechasPasadas.length;
+  const porcentaje = total === 0 ? 0 : Math.round((entregadas / total) * 100);
+
+  return {
+    total,
+    entregadas,
+    tarde,
+    porcentaje,
+    detalle: detalle.sort((a, b) => b.fecha.localeCompare(a.fecha))
+  };
+}
+
+// ============================================================
+// VISTA: 📊 CUMPLIMIENTO (admin)
+// ============================================================
+let cumpliFiltroPersona = 'todas';
+let cumpliFiltroArea = 'todas';
+let cumpliFiltroPeriodo = 12;
+
+function renderCumplimiento() {
+  // Filtrar recurrentes según área del head
+  const esDireccion = USER.nombre === 'Dani' || USER.nombre === 'Emmanuel';
+  let recursVisibles = RECURRENTES.slice();
+
+  if (!esDireccion && USER.nivel === 'head') {
+    const misAreas = USER.areas || [];
+    recursVisibles = recursVisibles.filter(r => {
+      // El head solo ve recurrentes de su área
+      return misAreas.includes(r.area);
+    });
+  }
+
+  // Filtros UI
+  if (cumpliFiltroPersona !== 'todas') recursVisibles = recursVisibles.filter(r => r.para === cumpliFiltroPersona);
+  if (cumpliFiltroArea !== 'todas') recursVisibles = recursVisibles.filter(r => r.area === cumpliFiltroArea);
+
+  // Calcular cumplimiento de cada una
+  const conCumpli = recursVisibles.map(r => ({
+    recur: r,
+    cumpli: calcularCumplimiento(r, cumpliFiltroPeriodo)
+  })).sort((a, b) => a.cumpli.porcentaje - b.cumpli.porcentaje); // peor primero
+
+  // Personas únicas con recurrentes para el filtro
+  const personasUnicas = [...new Set(RECURRENTES.map(r => r.para))].sort();
+
+  $('content').innerHTML = `
+    <div class="section-head">
+      <div>
+        <h2>📊 cumplimiento de recurrentes</h2>
+        <div class="sub">${esDireccion ? 'vista dirección · todo el equipo' : 'vista head · ' + (USER.areas || []).map(a => AREAS_LABEL[a] || a).join(', ')}</div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <span style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.15em;color:var(--txt-3);margin-right:8px">filtros:</span>
+      <select onchange="cumpliFiltroPersona=this.value;renderCumplimiento()" style="padding:6px 10px;background:var(--bg-1);border:1px solid var(--line);font-size:12px;color:var(--txt);font-family:var(--mono);text-transform:uppercase">
+        <option value="todas"${cumpliFiltroPersona === 'todas' ? ' selected' : ''}>todas las personas</option>
+        ${personasUnicas.map(n => `<option value="${n}"${cumpliFiltroPersona === n ? ' selected' : ''}>${n}</option>`).join('')}
+      </select>
+      <select onchange="cumpliFiltroArea=this.value;renderCumplimiento()" style="padding:6px 10px;background:var(--bg-1);border:1px solid var(--line);font-size:12px;color:var(--txt);font-family:var(--mono);text-transform:uppercase">
+        <option value="todas"${cumpliFiltroArea === 'todas' ? ' selected' : ''}>todas las áreas</option>
+        ${Object.keys(AREAS_LABEL).map(a => `<option value="${a}"${cumpliFiltroArea === a ? ' selected' : ''}>${AREAS_LABEL[a]}</option>`).join('')}
+      </select>
+      <select onchange="cumpliFiltroPeriodo=parseInt(this.value);renderCumplimiento()" style="padding:6px 10px;background:var(--bg-1);border:1px solid var(--line);font-size:12px;color:var(--txt);font-family:var(--mono);text-transform:uppercase">
+        <option value="4"${cumpliFiltroPeriodo === 4 ? ' selected' : ''}>último mes</option>
+        <option value="12"${cumpliFiltroPeriodo === 12 ? ' selected' : ''}>últimos 3 meses</option>
+        <option value="24"${cumpliFiltroPeriodo === 24 ? ' selected' : ''}>últimos 6 meses</option>
+      </select>
+    </div>
+
+    ${conCumpli.length === 0 ? `<div class="empty"><h4>sin recurrentes</h4><p>no hay recurrentes activas con los filtros aplicados</p></div>` : `
+      <table class="tbl">
+        <thead><tr>
+          <th>persona</th>
+          <th>tarea</th>
+          <th>frecuencia</th>
+          <th>cumplimiento</th>
+          <th style="text-align:right">%</th>
+        </tr></thead>
+        <tbody>
+          ${conCumpli.map(({ recur, cumpli }) => `
+            <tr class="det-clickable-row" onclick="abrirHistoricoRecur('${recur.id}')">
+              <td><strong>${recur.para}</strong></td>
+              <td>${recur.nombre}<div class="tdesc">${recur.desc || ''}</div></td>
+              <td><span class="tag">${recur.frecuencia}${recur.frecuencia === 'mensual' ? ` día ${recur.diaMes}` : ` ${diasNombres[recur.diaSemana]}`}</span></td>
+              <td>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div style="flex:1;max-width:160px;height:8px;background:var(--bg-1);position:relative;border:1px solid var(--line)">
+                    <div style="height:100%;width:${cumpli.porcentaje}%;background:${cumpli.porcentaje >= 80 ? 'var(--ok)' : cumpli.porcentaje >= 50 ? 'var(--warn)' : 'var(--acc)'}"></div>
+                  </div>
+                  <span style="font-family:var(--mono);font-size:11px;color:var(--txt-3)">${cumpli.entregadas}/${cumpli.total}</span>
+                </div>
+              </td>
+              <td style="text-align:right"><strong style="color:${cumpli.porcentaje >= 80 ? 'var(--ok)' : cumpli.porcentaje >= 50 ? 'var(--warn)' : 'var(--acc)'};font-size:16px">${cumpli.porcentaje}%</strong></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `}
+  `;
+}
+
+function abrirHistoricoRecur(recurId) {
+  const recur = RECURRENTES.find(r => r.id === recurId);
+  if (!recur) return;
+  const cumpli = calcularCumplimiento(recur, cumpliFiltroPeriodo);
+
+  $('det-nombre').textContent = `↻ ${recur.nombre}`;
+  $('det-meta').textContent = `${recur.para} · ${recur.frecuencia}${recur.frecuencia === 'mensual' ? ` día ${recur.diaMes}` : ` ${diasNombres[recur.diaSemana]}`}`;
+
+  $('det-body').innerHTML = `
+    <div class="det-section">
+      <div class="det-label">cumplimiento</div>
+      <div style="display:flex;align-items:center;gap:14px;margin-top:6px">
+        <div style="flex:1;max-width:200px;height:10px;background:var(--bg-1);border:1px solid var(--line)">
+          <div style="height:100%;width:${cumpli.porcentaje}%;background:${cumpli.porcentaje >= 80 ? 'var(--ok)' : cumpli.porcentaje >= 50 ? 'var(--warn)' : 'var(--acc)'}"></div>
+        </div>
+        <strong style="font-size:24px;font-weight:300;letter-spacing:-.02em;color:${cumpli.porcentaje >= 80 ? 'var(--ok)' : cumpli.porcentaje >= 50 ? 'var(--warn)' : 'var(--acc)'}">${cumpli.porcentaje}%</strong>
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);margin-top:8px">${cumpli.entregadas} de ${cumpli.total} esperadas en el periodo</div>
+    </div>
+
+    <div class="det-section">
+      <div class="det-label">histórico (más reciente primero)</div>
+      ${cumpli.detalle.length === 0 ? '<div style="color:var(--txt-3);font-size:13px">sin entregas esperadas en el periodo</div>' : `
+        <div style="display:flex;flex-direction:column;gap:1px;background:var(--line);border:1px solid var(--line);margin-top:6px">
+          ${cumpli.detalle.map(d => `
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg);font-size:13px">
+              <span style="font-size:14px">${d.estado === 'entregada' ? '✅' : d.estado === 'pendiente' ? '⚠️' : '❌'}</span>
+              <span style="font-family:var(--mono);font-size:12px;color:var(--txt-2);min-width:90px">${fechaCorta(d.fecha)}</span>
+              <span style="color:${d.estado === 'entregada' ? 'var(--ok)' : 'var(--acc)'};font-size:12px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em">
+                ${d.estado === 'entregada' ? 'entregada' : d.estado === 'pendiente' ? 'pendiente / atrasada' : 'no entregada'}
+              </span>
+            </div>
+          `).join('')}
+        </div>
+      `}
+    </div>
+  `;
+
+  $('det-foot').innerHTML = `<button class="btn ghost" onclick="cerrarDetalle()">cerrar</button>`;
+  $('ov-detalle').classList.add('show');
+}
+
+// ============================================================
+// VISTA: ↻ MI RITMO (personal)
+// ============================================================
+function renderMiRitmo() {
+  // Recurrentes asignadas a mí
+  const misRecur = RECURRENTES.filter(r => r.activa && matchNombre(r.para, USER.nombre));
+
+  if (misRecur.length === 0) {
+    $('content').innerHTML = `
+      <div class="section-head">
+        <div><h2>↻ mi ritmo</h2><div class="sub">tu cumplimiento personal</div></div>
+      </div>
+      <div class="empty"><h4>sin recurrentes</h4><p>no tienes recurrentes asignadas todavía</p></div>
+    `;
+    return;
+  }
+
+  // Calcular cumplimiento de cada una
+  const conCumpli = misRecur.map(r => ({
+    recur: r,
+    cumpli: calcularCumplimiento(r, 12)
+  }));
+
+  // Promedio general
+  const promedioCumpli = conCumpli.length > 0
+    ? Math.round(conCumpli.reduce((sum, x) => sum + x.cumpli.porcentaje, 0) / conCumpli.length)
+    : 0;
+
+  // Mensaje motivacional
+  let mensaje, emoji;
+  if (promedioCumpli >= 90) {
+    mensaje = '¡vas excelente! mantén el ritmo 🏆';
+    emoji = '🎯';
+  } else if (promedioCumpli >= 75) {
+    mensaje = 'buen ritmo, sigue así';
+    emoji = '💪';
+  } else if (promedioCumpli >= 50) {
+    mensaje = 'puedes mejorar — revisa qué te tomó tarde';
+    emoji = '📈';
+  } else if (promedioCumpli > 0) {
+    mensaje = 'momento de retomar el ritmo';
+    emoji = '🌱';
+  } else {
+    mensaje = 'aún no hay datos suficientes';
+    emoji = '✨';
+  }
+
+  // Pendientes hoy
+  const hoy = new Date(new Date().toDateString()).toISOString().slice(0, 10);
+  const pendientesHoy = obtenerInstanciasRecur(USER.nombre).filter(t => t.estatus !== 'entregado').length;
+
+  $('content').innerHTML = `
+    <div class="section-head">
+      <div><h2>↻ mi ritmo</h2><div class="sub">tu cumplimiento personal · últimos 3 meses</div></div>
+    </div>
+
+    <div style="background:var(--bg-1);border:1px solid var(--line);padding:28px;margin-bottom:28px;display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:center">
+      <div style="font-size:48px">${emoji}</div>
+      <div>
+        <div style="font-family:var(--display);font-size:32px;font-weight:300;letter-spacing:-.02em;color:${promedioCumpli >= 80 ? 'var(--ok)' : promedioCumpli >= 50 ? 'var(--warn)' : 'var(--acc)'}">${promedioCumpli}% cumplimiento general</div>
+        <div style="font-size:14px;color:var(--txt-2);margin-top:4px">${mensaje}</div>
+        ${pendientesHoy > 0 ? `<div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:var(--acc);margin-top:10px">tienes ${pendientesHoy} ${pendientesHoy === 1 ? 'tarea pendiente' : 'tareas pendientes'} de entregar</div>` : ''}
+      </div>
+    </div>
+
+    <h3 style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.2em;color:var(--txt-3);margin-bottom:14px">por tarea</h3>
+    <div style="display:flex;flex-direction:column;gap:1px;background:var(--line);border:1px solid var(--line)">
+      ${conCumpli.map(({ recur, cumpli }) => `
+        <div onclick="abrirHistoricoRecur('${recur.id}')" style="background:var(--bg);padding:18px 20px;cursor:pointer;display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center;transition:background .15s">
+          <div>
+            <div style="font-weight:600;font-size:15px;margin-bottom:4px">${recur.nombre}</div>
+            <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em">${recur.frecuencia}${recur.frecuencia === 'mensual' ? ` día ${recur.diaMes}` : ` ${diasNombres[recur.diaSemana]}`}</div>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:10px">
+              <div style="flex:1;max-width:240px;height:6px;background:var(--bg-1);border:1px solid var(--line)">
+                <div style="height:100%;width:${cumpli.porcentaje}%;background:${cumpli.porcentaje >= 80 ? 'var(--ok)' : cumpli.porcentaje >= 50 ? 'var(--warn)' : 'var(--acc)'}"></div>
+              </div>
+              <span style="font-family:var(--mono);font-size:11px;color:var(--txt-3)">${cumpli.entregadas}/${cumpli.total}</span>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-family:var(--display);font-size:28px;font-weight:300;letter-spacing:-.02em;color:${cumpli.porcentaje >= 80 ? 'var(--ok)' : cumpli.porcentaje >= 50 ? 'var(--warn)' : 'var(--acc)'}">${cumpli.porcentaje}%</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
 // ============================================================
