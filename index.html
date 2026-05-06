@@ -909,6 +909,17 @@ button{cursor:pointer}
           </select>
         </div>
       </div>
+
+      <!-- Toggle de privacidad (candado) -->
+      <div class="field">
+        <label class="opt" style="background:var(--bg-1);border:1px solid var(--line);padding:12px 14px;cursor:pointer">
+          <input type="checkbox" id="pet-privada">
+          <span style="display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:13px;color:var(--txt)">🔒 petición privada</span>
+            <span class="opt-meta" style="margin-left:0">solo el creador y el destinatario podrán verla. nadie más, ni siquiera dirección.</span>
+          </span>
+        </label>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn ghost" onclick="cerrarPeticion()">cancelar</button>
@@ -1317,7 +1328,7 @@ const mapPeticionRow = r => ({
   fecha: r.fecha,
   prioridad: r.prioridad,
   estatus: r.estatus,
-  esRH: r.es_rh,
+  privada: r.privada === true,
   origenRecur: r.origen_recur,
   grupoId: r.grupo_id,
 });
@@ -1727,7 +1738,6 @@ function renderTabs() {
       { id: 'todo', label: 'mi to-do' },
     ];
     if (tieneRecurrentes) tabs.push({ id: 'miritmo', label: '↻ mi ritmo' });
-    tabs.push({ id: 'heads', label: '🔒 heads' });
   } else {
     tabs = [
       { id: 'mis', label: 'mis peticiones', count: countMis() },
@@ -1736,9 +1746,6 @@ function renderTabs() {
       { id: 'todo', label: 'mi to-do privado' },
     ];
     if (tieneRecurrentes) tabs.push({ id: 'miritmo', label: '↻ mi ritmo' });
-    if (USER.nombre === 'Arylene' || USER.nombre === 'Salvador') {
-      tabs.push({ id: 'rhpriv', label: '🔒 RH·privado' });
-    }
   }
   $('tabs').innerHTML = tabs.map(t => `
     <button class="tab${activeTab === t.id ? ' active' : ''}" onclick="cambiarTab('${t.id}')">
@@ -1749,14 +1756,6 @@ function renderTabs() {
 }
 
 function cambiarTab(id) {
-  if (id === 'heads' && !headsUnlocked) {
-    abrirHeadsPass();
-    return;
-  }
-  if (id === 'rhpriv' && !rhTabUnlocked) {
-    abrirRhTabPass();
-    return;
-  }
   activeTab = id;
   personaFiltro = null;
   filtroActual = 'todas';
@@ -1764,20 +1763,27 @@ function cambiarTab(id) {
   renderActiveTab();
 }
 
-function countGeneral() { return DB.general.filter(t => (!t.esRH || canSeeRH(t)) && !t.origenRecur).filter(t => t.estatus !== 'entregado').length; }
+function countGeneral() { return DB.general.filter(t => (!t.privada || canSeeRH(t)) && !t.origenRecur).filter(t => t.estatus !== 'entregado').length; }
 function countMis() {
   // Activas asignadas a mí (excluyendo instancias de recurrentes que se cuentan aparte)
-  const normales = DB.general.filter(t => matchNombre(t.para, USER.nombre) && (!t.esRH || canSeeRH(t)) && !t.origenRecur && t.estatus !== 'entregado').length;
+  const normales = DB.general.filter(t => matchNombre(t.para, USER.nombre) && (!t.privada || canSeeRH(t)) && !t.origenRecur && t.estatus !== 'entregado').length;
   // Instancias de recurrentes pendientes
   const recurPend = obtenerInstanciasRecur(USER.nombre).filter(t => t.estatus !== 'entregado').length;
   return normales + recurPend;
 }
-function canSeeRH(t) {
-  if (!t.esRH) return true;
-  if (esDireccion(USER)) return true;
-  if (USER.nivel === 'rh') return true;
+// ¿Puedo ver esta petición?
+// - Si NO es privada → todos los que tendrían razón de verla
+// - Si ES privada → solo creador y destinatario
+function puedoVerPeticion(t) {
+  if (!t.privada) return true;
+  if (t.creadoPor === USER.nombre) return true;
   if (matchNombre(t.para, USER.nombre)) return true;
   return false;
+}
+
+// Mantener canSeeRH como alias para compatibilidad temporal
+function canSeeRH(t) {
+  return puedoVerPeticion(t);
 }
 
 // ============================================================
@@ -1834,10 +1840,8 @@ function renderActiveTab() {
     case 'anuncios': renderAnuncios(); break;
     case 'equipo': renderEquipo(); break;
     case 'todo': renderTodo(); break;
-    case 'heads': renderHeads(); break;
     case 'mis': renderMis(); break;
     case 'pedi': renderPedi(); break;
-    case 'rhpriv': renderRhPriv(); break;
   }
 }
 
@@ -1846,12 +1850,12 @@ function renderActiveTab() {
 // ============================================================
 function renderGeneral() {
   // Excluir instancias de recurrentes (tienen su propio tab)
-  let lista = DB.general.filter(t => !t.esRH && !t.origenRecur);
+  let lista = DB.general.filter(t => !t.privada && !t.origenRecur);
   if (filtroActual === 'vencidas') lista = lista.filter(t => diasHasta(t.fecha) < 0 && t.estatus !== 'entregado');
   else if (filtroActual === 'semana') lista = lista.filter(t => { const d = diasHasta(t.fecha); return d >= 0 && d <= 7 && t.estatus !== 'entregado'; });
   else if (['imkt', 'pm', 'legal', 'admi'].includes(filtroActual)) lista = lista.filter(t => t.area === filtroActual);
 
-  const kpis = calcKpis(DB.general.filter(t => !t.esRH && !t.origenRecur));
+  const kpis = calcKpis(DB.general.filter(t => !t.privada && !t.origenRecur));
 
   $('content').innerHTML = `
     ${renderKpis(kpis)}
@@ -1924,7 +1928,7 @@ function renderFila(t, opts = {}) {
         <div class="tname">
           ${t.nombre}
           ${isRecur ? '<span class="recur-icon">↻</span>' : ''}
-          ${t.esRH ? '<span class="tag area-rh" style="margin-left:4px">RH</span>' : ''}
+          ${t.privada ? '<span class="tag" style="margin-left:4px;background:rgba(255,70,18,.1);border-color:rgba(255,70,18,.3);color:var(--acc)">🔒 privada</span>' : ''}
         </div>
         ${t.desc ? `<div class="tdesc">${t.desc}</div>` : ''}
       </td>
@@ -2002,7 +2006,7 @@ async function cambiarEstatus(id, nuevo, esRecur) {
         zona: 'general',
         nombre: recur.nombre, descripcion: recur.desc, creado_por: recur.creadoPor,
         para: recur.para, area: recur.area, fecha: fechaR, prioridad: 'media',
-        estatus: nuevo, es_rh: false, origen_recur: recur.id
+        estatus: nuevo, privada: false, origen_recur: recur.id
       };
       const { data, error } = await sb.from('peticiones').insert(nueva).select().single();
       if (error) {
@@ -2162,7 +2166,8 @@ function renderTablaHeads(lista) {
 // ============================================================
 function renderMis() {
   // Peticiones únicas (no instancias de recurrentes)
-  const lista = DB.general.filter(t => matchNombre(t.para, USER.nombre) && canSeeRH(t) && !t.esRH && !t.origenRecur);
+  // Incluye privadas si soy el destinatario o creador (puedoVerPeticion lo valida)
+  const lista = DB.general.filter(t => matchNombre(t.para, USER.nombre) && puedoVerPeticion(t) && !t.origenRecur);
   // Instancias de recurrentes
   const recurInst = obtenerInstanciasRecur(USER.nombre);
   const todas = [...lista, ...recurInst];
@@ -2234,7 +2239,7 @@ function renderPedi() {
       fecha: primera.fecha,
       prioridad: primera.prioridad,
       area: primera.area,
-      esRH: primera.esRH,
+      esRH: primera.privada,
       items,
       entregadas,
       total,
@@ -2363,7 +2368,7 @@ async function eliminarGrupoCompleto(grupoId) {
 }
 
 function renderRhPriv() {
-  const lista = DB.general.filter(t => t.esRH && matchNombre(t.para, USER.nombre));
+  const lista = DB.general.filter(t => t.privada && matchNombre(t.para, USER.nombre));
   $('content').innerHTML = `
     <div class="section-head">
       <div><h2>RH · privado <span class="tag area-rh">confidencial</span></h2><div class="sub">peticiones de RH asignadas a mí</div></div>
@@ -2459,7 +2464,7 @@ function obtenerInstanciasRecur(nombre) {
         id: 'rec__' + r.id + '__' + fechaR,
         nombre: r.nombre, desc: r.desc, creadoPor: r.creadoPor,
         para: r.para, area: r.area, fecha: fechaR, prioridad: 'media',
-        estatus: 'pendiente', esRH: false, _recurOrigen: r.id
+        estatus: 'pendiente', privada: false, _recurOrigen: r.id
       });
     }
   });
@@ -2697,9 +2702,8 @@ function renderSide() {
     }
   }
 
-  const headsResumen = `${DB.heads.filter(t => t.estatus !== 'entregado').length} activas`;
   const showRH = soyDireccion;
-  const rhCount = DB.general.filter(t => t.esRH && t.estatus !== 'entregado').length;
+  const rhCount = DB.general.filter(t => t.privada && t.estatus !== 'entregado').length;
 
   $('side').innerHTML = `
     ${semBlocks.length === 0 ? `
@@ -2721,14 +2725,9 @@ function renderSide() {
         </div>
       </div>
     `).join('')}
-    <div class="side-card">
-      <div class="scn">zona heads</div>
-      <div class="scv">${DB.heads.length}</div>
-      <div class="scs">${headsResumen}</div>
-    </div>
     ${showRH ? `
     <div class="side-card alert">
-      <div class="scn">zona RH (privada)</div>
+      <div class="scn">peticiones privadas 🔒</div>
       <div class="scv">${rhCount}</div>
       <div class="scs">peticiones confidenciales activas</div>
     </div>` : ''}
@@ -2768,7 +2767,7 @@ function abrirDetalle(id, esRecur) {
   $('det-nombre').textContent = t.nombre;
   $('det-meta').textContent = isRecur 
     ? `↻ recurrente · ${t.zona === 'heads' ? 'zona heads' : 'zona general'}`
-    : `${t.zona === 'heads' ? 'zona heads' : (t.esRH ? 'RH · confidencial' : 'zona general')}`;
+    : `${t.zona === 'heads' ? 'zona heads' : (t.privada ? 'RH · confidencial' : 'zona general')}`;
 
   // Body con todos los detalles
   $('det-body').innerHTML = `
@@ -2894,14 +2893,18 @@ function escapeHtml(s) {
 // MODAL: NUEVA PETICIÓN
 // ============================================================
 function abrirPeticion(zona) {
-  zonaPeticion = zona;
-  $('pet-title').textContent = zona === 'heads' ? 'nueva petición heads' : 'nueva petición';
-  $('pet-zone-label').textContent = zona === 'heads' ? 'zona heads · privada' : (USER.nivel === 'rh' ? 'zona general · marcará como RH' : 'zona general');
+  zonaPeticion = 'general'; // Ya solo existe la zona general
+  $('pet-title').textContent = 'nueva petición';
+  $('pet-zone-label').textContent = 'zona general';
   $('pet-nombre').value = '';
   $('pet-desc').value = '';
   $('pet-fecha').value = dx(7);
   $('pet-prio').value = 'media';
   $('pet-area').value = USER.areas && USER.areas[0] && AREAS_LABEL[USER.areas[0]] ? USER.areas[0] : 'imkt';
+
+  // Toggle de privada — default ON para Sarai/Diego (RH suele ser sensible)
+  const esRH = USER.nivel === 'rh';
+  if ($('pet-privada')) $('pet-privada').checked = esRH;
 
   // Reset modo de asignación
   document.querySelector('input[name="pet-modo"][value="una"]').checked = true;
@@ -2911,9 +2914,6 @@ function abrirPeticion(zona) {
   document.querySelectorAll('.admin-only-modo').forEach(el => {
     el.style.display = esAdminOHead ? 'flex' : 'none';
   });
-
-  // Si es zona heads, ocultar el modo de asignación múltiple (solo 1 a 1)
-  $('pet-modo-asig').style.display = zona === 'heads' ? 'none' : '';
 
   cambiarModoAsignacion();
   actualizarParaQuien();
@@ -2943,11 +2943,9 @@ function cambiarModoAsignacion() {
 }
 
 function renderCheckboxesPersonas() {
-  // Lista de personas elegibles (ejecutivos + heads, sin la persona logueada, sin RH privado)
+  // Lista de personas elegibles (todos menos uno mismo)
   // Excluye inactivas y pausadas (no pueden recibir asignaciones nuevas)
   const elegibles = PERSONAS.filter(p =>
-    p.nivel !== 'ceo' &&
-    !p.needsPass &&
     p.nombre !== USER.nombre &&
     personaDisponible(p)
   ).sort((a, b) => a.nombre.localeCompare(b.nombre));
@@ -2980,15 +2978,10 @@ function actualizarInfoArea() {
 function actualizarParaQuien() {
   const sel = $('pet-para');
   if (!sel) return;
-  let opts = [];
-  if (zonaPeticion === 'heads') {
-    opts = PERSONAS.filter(p => (p.nivel === 'ceo' || p.nivel === 'head') && personaDisponible(p)).map(p =>
-      `<option value="${p.nombre}">${fullName(p)} · ${p.rol}</option>`);
-  } else {
-    const area = $('pet-area').value;
-    opts = PERSONAS.filter(p => (p.areas || []).includes(area) && !p.needsPass && p.nivel !== 'ceo' && personaDisponible(p))
-      .map(p => `<option value="${p.nombre}">${fullName(p)} · ${p.rol}</option>`);
-  }
+  const area = $('pet-area').value;
+  // Incluye TODOS los activos del área (ejecutivos, heads, RH, CEO si están en esa área)
+  const opts = PERSONAS.filter(p => (p.areas || []).includes(area) && personaDisponible(p) && p.nombre !== USER.nombre)
+    .map(p => `<option value="${p.nombre}">${fullName(p)} · ${p.rol}</option>`);
   sel.innerHTML = opts.length ? opts.join('') : '<option value="">— sin personas en esta área —</option>';
 }
 
@@ -3003,24 +2996,10 @@ async function guardarPeticion() {
   const desc = $('pet-desc').value.trim();
   const fecha = $('pet-fecha').value || dx(7);
   const prio = $('pet-prio').value;
+  // Toggle de candado/privada
+  const esPrivada = $('pet-privada') ? $('pet-privada').checked : false;
 
-  // Si es zona heads, siempre es 1 a 1
-  if (zonaPeticion === 'heads') {
-    const para = $('pet-para').value;
-    if (!para) { showInfo('falta dato', 'falta destinatario'); return; }
-    const nueva = { zona: 'heads', nombre, descripcion: desc, creado_por: USER.nombre, para, fecha, prioridad: prio, estatus: 'pendiente' };
-    showLoading('creando petición...');
-    const { data, error } = await sb.from('peticiones').insert(nueva).select().single();
-    hideLoading();
-    if (error) { showInfo('error', error.message); return; }
-    DB.heads.push(mapPeticionRow(data));
-    cerrarPeticion();
-    renderTabs();
-    renderActiveTab();
-    return;
-  }
-
-  // Zona general: detectar modo de asignación
+  // Detectar modo de asignación
   const modo = document.querySelector('input[name="pet-modo"]:checked')?.value || 'una';
   let destinatarios = []; // array de nombres
   let area = '';
@@ -3038,21 +3017,19 @@ async function guardarPeticion() {
     area = $('pet-area-grupo').value;
     destinatarios = PERSONAS.filter(p =>
       (p.areas || []).includes(area) &&
-      !p.needsPass &&
-      p.nivel !== 'ceo' &&
       p.nombre !== USER.nombre &&
       personaDisponible(p)
     ).map(p => p.nombre);
     if (destinatarios.length === 0) { showInfo('vacío', 'no hay personas activas en esa área'); return; }
   } else if (modo === 'heads') {
     destinatarios = PERSONAS.filter(p => p.nivel === 'head' && p.nombre !== USER.nombre && personaDisponible(p)).map(p => p.nombre);
-    area = 'heads';
+    area = USER.areas && USER.areas[0] ? USER.areas[0] : 'imkt';
   } else if (modo === 'ejecutivos') {
     destinatarios = PERSONAS.filter(p => p.nivel === 'ejecutivo' && p.nombre !== USER.nombre && personaDisponible(p)).map(p => p.nombre);
     area = USER.areas && USER.areas[0] ? USER.areas[0] : 'imkt';
   } else if (modo === 'todos') {
     destinatarios = PERSONAS.filter(p =>
-      (p.nivel === 'ejecutivo' || p.nivel === 'head') &&
+      p.nivel !== 'ceo' &&  // no se asigna a sí misma la CEO si elige "todos"
       p.nombre !== USER.nombre &&
       personaDisponible(p)
     ).map(p => p.nombre);
@@ -3066,7 +3043,6 @@ async function guardarPeticion() {
     }
   }
 
-  const esRH = USER.nivel === 'rh';
   const esGrupo = destinatarios.length > 1;
   // Generar grupo_id solo si es múltiple
   const grupoId = esGrupo ? crypto.randomUUID() : null;
@@ -3082,7 +3058,7 @@ async function guardarPeticion() {
     fecha,
     prioridad: prio,
     estatus: 'pendiente',
-    es_rh: esRH,
+    privada: esPrivada,
     grupo_id: grupoId
   }));
 
@@ -3100,7 +3076,7 @@ async function guardarPeticion() {
   renderActiveTab();
 
   if (esGrupo) {
-    showInfo('petición múltiple creada ✓', `se asignó "${nombre}" a ${destinatarios.length} personas`);
+    showInfo('petición múltiple creada ✓', `se asignó "${nombre}" a ${destinatarios.length} ${esPrivada ? 'personas (privada 🔒)' : 'personas'}`);
   }
 }
 
@@ -3462,8 +3438,6 @@ function cambiarModoRecur() {
 
 function renderRecCheckboxesPersonas() {
   const elegibles = PERSONAS.filter(p =>
-    p.nivel !== 'ceo' &&
-    !p.needsPass &&
     p.nombre !== USER.nombre &&
     personaDisponible(p)
   ).sort((a, b) => a.nombre.localeCompare(b.nombre));
@@ -3499,7 +3473,7 @@ document.addEventListener('change', e => {
 
 function actualizarRecPara() {
   const area = $('rec-area').value;
-  $('rec-para').innerHTML = PERSONAS.filter(p => (p.areas || []).includes(area) && p.nivel !== 'ceo' && personaDisponible(p))
+  $('rec-para').innerHTML = PERSONAS.filter(p => (p.areas || []).includes(area) && personaDisponible(p))
     .map(p => `<option value="${p.nombre}">${fullName(p)}</option>`).join('');
 }
 
@@ -3541,20 +3515,17 @@ async function guardarRecur() {
     area = $('rec-area-grupo').value;
     destinatarios = PERSONAS.filter(p =>
       (p.areas || []).includes(area) &&
-      !p.needsPass &&
-      p.nivel !== 'ceo' &&
       p.nombre !== USER.nombre &&
       personaDisponible(p)
     ).map(p => p.nombre);
     if (destinatarios.length === 0) { showInfo('vacío', 'no hay personas activas en esa área'); return; }
   } else if (modo === 'ejecutivos') {
-    destinatarios = PERSONAS.filter(p => p.nivel === 'ejecutivo' && p.nombre !== USER.nombre && !p.needsPass && personaDisponible(p)).map(p => p.nombre);
+    destinatarios = PERSONAS.filter(p => p.nivel === 'ejecutivo' && p.nombre !== USER.nombre && personaDisponible(p)).map(p => p.nombre);
     area = USER.areas && USER.areas[0] ? USER.areas[0] : 'imkt';
   } else if (modo === 'todos') {
     destinatarios = PERSONAS.filter(p =>
-      (p.nivel === 'ejecutivo' || p.nivel === 'head') &&
+      p.nivel !== 'ceo' &&
       p.nombre !== USER.nombre &&
-      !p.needsPass &&
       personaDisponible(p)
     ).map(p => p.nombre);
     area = USER.areas && USER.areas[0] ? USER.areas[0] : 'imkt';
@@ -3676,7 +3647,7 @@ async function pregenerarInstanciasPasadas() {
           fecha: fecha,
           prioridad: 'media',
           estatus: 'pendiente',
-          es_rh: false,
+          privada: false,
           origen_recur: r.id
         });
       }
@@ -3784,7 +3755,12 @@ function renderCumplimiento() {
       </select>
       <select onchange="cumpliFiltroArea=this.value;renderCumplimiento()" style="padding:6px 10px;background:var(--bg-1);border:1px solid var(--line);font-size:12px;color:var(--txt);font-family:var(--mono);text-transform:uppercase">
         <option value="todas"${cumpliFiltroArea === 'todas' ? ' selected' : ''}>todas las áreas</option>
-        ${Object.keys(AREAS_LABEL).map(a => `<option value="${a}"${cumpliFiltroArea === a ? ' selected' : ''}>${AREAS_LABEL[a]}</option>`).join('')}
+        ${Object.keys(AREAS_LABEL).filter(a => {
+          // Solo dirección/CEO ve "rh" como opción de filtro
+          if (a === 'rh' && !esDireccion(USER) && USER.nivel !== 'rh') return false;
+          if (a === 'heads') return false; // ya no existe zona heads
+          return true;
+        }).map(a => `<option value="${a}"${cumpliFiltroArea === a ? ' selected' : ''}>${AREAS_LABEL[a]}</option>`).join('')}
       </select>
       <select onchange="cumpliFiltroPeriodo=parseInt(this.value);renderCumplimiento()" style="padding:6px 10px;background:var(--bg-1);border:1px solid var(--line);font-size:12px;color:var(--txt);font-family:var(--mono);text-transform:uppercase">
         <option value="4"${cumpliFiltroPeriodo === 4 ? ' selected' : ''}>último mes</option>
