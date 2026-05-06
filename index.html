@@ -1473,9 +1473,13 @@ function cambiarTab(id) {
   renderActiveTab();
 }
 
-function countGeneral() { return DB.general.filter(t => !t.esRH || canSeeRH(t)).filter(t => t.estatus !== 'entregado').length; }
+function countGeneral() { return DB.general.filter(t => (!t.esRH || canSeeRH(t)) && !t.origenRecur).filter(t => t.estatus !== 'entregado').length; }
 function countMis() {
-  return DB.general.filter(t => matchNombre(t.para, USER.nombre) && (!t.esRH || canSeeRH(t)) && t.estatus !== 'entregado').length;
+  // Activas asignadas a mí (excluyendo instancias de recurrentes que se cuentan aparte)
+  const normales = DB.general.filter(t => matchNombre(t.para, USER.nombre) && (!t.esRH || canSeeRH(t)) && !t.origenRecur && t.estatus !== 'entregado').length;
+  // Instancias de recurrentes pendientes
+  const recurPend = obtenerInstanciasRecur(USER.nombre).filter(t => t.estatus !== 'entregado').length;
+  return normales + recurPend;
 }
 function canSeeRH(t) {
   if (!t.esRH) return true;
@@ -1547,12 +1551,13 @@ function renderActiveTab() {
 // VISTAS (general, por persona, mis, etc)
 // ============================================================
 function renderGeneral() {
-  let lista = DB.general.filter(t => !t.esRH);
+  // Excluir instancias de recurrentes (tienen su propio tab)
+  let lista = DB.general.filter(t => !t.esRH && !t.origenRecur);
   if (filtroActual === 'vencidas') lista = lista.filter(t => diasHasta(t.fecha) < 0 && t.estatus !== 'entregado');
   else if (filtroActual === 'semana') lista = lista.filter(t => { const d = diasHasta(t.fecha); return d >= 0 && d <= 7 && t.estatus !== 'entregado'; });
   else if (['imkt', 'pm', 'legal', 'admi'].includes(filtroActual)) lista = lista.filter(t => t.area === filtroActual);
 
-  const kpis = calcKpis(DB.general.filter(t => !t.esRH));
+  const kpis = calcKpis(DB.general.filter(t => !t.esRH && !t.origenRecur));
 
   $('content').innerHTML = `
     ${renderKpis(kpis)}
@@ -1780,7 +1785,7 @@ function renderPorPersona() {
     ? personas.find(p => p.nombre === personaFiltro)
     : personas[0];
   if (!persona) { $('content').innerHTML = '<div class="empty"><h4>sin personas</h4><p>no hay personas en tu área para mostrar</p></div>'; return; }
-  const tareas = DB.general.filter(t => matchNombre(t.para, persona.nombre) && canSeeRH(t));
+  const tareas = DB.general.filter(t => matchNombre(t.para, persona.nombre) && canSeeRH(t) && !t.origenRecur);
   const recurInst = obtenerInstanciasRecur(persona.nombre);
   const todas = [...tareas, ...recurInst];
   const k = calcKpis(todas);
@@ -1840,7 +1845,8 @@ function renderTablaHeads(lista) {
 // VISTAS: MIS, PEDI, RH PRIV
 // ============================================================
 function renderMis() {
-  const lista = DB.general.filter(t => matchNombre(t.para, USER.nombre) && canSeeRH(t) && !t.esRH);
+  // Excluir peticiones que son instancias de recurrentes (esas las maneja obtenerInstanciasRecur)
+  const lista = DB.general.filter(t => matchNombre(t.para, USER.nombre) && canSeeRH(t) && !t.esRH && !t.origenRecur);
   const recurInst = obtenerInstanciasRecur(USER.nombre);
   const todas = [...lista, ...recurInst];
   const k = calcKpis(todas);
@@ -1854,7 +1860,8 @@ function renderMis() {
 }
 
 function renderPedi() {
-  const lista = DB.general.filter(t => t.creadoPor === USER.nombre);
+  // Excluir instancias de recurrentes (las gestiona el tab de recurrentes)
+  const lista = DB.general.filter(t => t.creadoPor === USER.nombre && !t.origenRecur);
   const k = calcKpis(lista);
   $('content').innerHTML = `
     ${renderKpis(k)}
@@ -2075,7 +2082,11 @@ function renderSide() {
   }
 
   const sem = personas.map(p => {
-    const tareas = DB.general.filter(t => matchNombre(t.para, p.nombre) && t.estatus !== 'entregado' && canSeeRH(t));
+    // Peticiones normales (no instancias de recurrentes)
+    const normales = DB.general.filter(t => matchNombre(t.para, p.nombre) && t.estatus !== 'entregado' && canSeeRH(t) && !t.origenRecur);
+    // Instancias de recurrentes pendientes
+    const recurInst = obtenerInstanciasRecur(p.nombre).filter(t => t.estatus !== 'entregado');
+    const tareas = [...normales, ...recurInst];
     const venc = tareas.filter(t => diasHasta(t.fecha) < 0).length;
     const sem7 = tareas.filter(t => { const d = diasHasta(t.fecha); return d >= 0 && d <= 7; }).length;
     let estado = 'x';
