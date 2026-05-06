@@ -1644,14 +1644,30 @@ function renderFila(t, opts = {}) {
 }
 
 function renderEstatusSelect(t) {
-  const puedeConfirmar = USER && t.creadoPor === USER.nombre;
   const isRecur = t._recurOrigen;
+  const esAsignado = USER && matchNombre(t.para, USER.nombre);
+  const esCreador = USER && t.creadoPor === USER.nombre;
+
+  // RECURRENTES: estados binarios (pendiente / entregado), solo asignado puede marcar entregado
+  if (isRecur) {
+    const opts = [`<option value="pendiente"${t.estatus === 'pendiente' ? ' selected' : ''}>pendiente</option>`];
+    if (esAsignado) {
+      opts.push(`<option value="entregado"${t.estatus === 'entregado' ? ' selected' : ''}>entregado ✓</option>`);
+    }
+    // Si no es el asignado, no puede cambiar nada (solo ver)
+    if (!esAsignado) {
+      return `<span class="tag" style="font-size:10px;color:${t.estatus === 'entregado' ? 'var(--ok)' : 'var(--txt-3)'}">${t.estatus === 'entregado' ? 'entregado ✓' : 'pendiente'}</span>`;
+    }
+    return `<select class="status-sel s-${t.estatus}" onchange="cambiarEstatus('${t.id}', this.value, true)">${opts.join('')}</select>`;
+  }
+
+  // PETICIONES NORMALES: pendiente / proceso / entregado (creador entrega)
   const opts = [
     `<option value="pendiente"${t.estatus === 'pendiente' ? ' selected' : ''}>pendiente</option>`,
     `<option value="proceso"${t.estatus === 'proceso' ? ' selected' : ''}>en proceso</option>`,
   ];
-  if (puedeConfirmar) opts.push(`<option value="entregado"${t.estatus === 'entregado' ? ' selected' : ''}>entregado ✓</option>`);
-  return `<select class="status-sel s-${t.estatus}" onchange="cambiarEstatus('${t.id}', this.value, ${isRecur ? 'true' : 'false'})">${opts.join('')}</select>`;
+  if (esCreador) opts.push(`<option value="entregado"${t.estatus === 'entregado' ? ' selected' : ''}>entregado ✓</option>`);
+  return `<select class="status-sel s-${t.estatus}" onchange="cambiarEstatus('${t.id}', this.value, false)">${opts.join('')}</select>`;
 }
 
 async function cambiarEstatus(id, nuevo, esRecur) {
@@ -1665,13 +1681,13 @@ async function cambiarEstatus(id, nuevo, esRecur) {
     const recur = RECURRENTES.find(r => r.id === recurId);
     if (!recur) return;
 
-    if (nuevo === 'entregado') {
-      if (recur.creadoPor !== USER.nombre) {
-        showInfo('no permitido', 'solo quien creó la recurrente puede marcarla entregada');
-        renderActiveTab();
-        return;
-      }
+    // Validación: solo el asignado puede cambiar el estatus de SU recurrente
+    if (!matchNombre(recur.para, USER.nombre)) {
+      showInfo('no permitido', 'solo la persona asignada puede marcar esta recurrente como entregada');
+      renderActiveTab();
+      return;
     }
+
     // Buscar instancia en BD o crearla
     let inst = DB.general.find(x => x.origenRecur === recur.id && x.fecha === fechaR);
     if (inst) {
@@ -1891,7 +1907,7 @@ function renderTablaRecur() {
               <td><div class="date-cell ${claseFecha(prox)}">${fechaCorta(prox)}<span class="dsub">${labelFecha(prox)}</span></div></td>
               <td><span style="font-family:var(--mono);font-size:11px;color:var(--txt-3)">${r.creadoPor}</span></td>
               <td><span class="tag" style="color:${r.activa ? 'var(--ok)' : 'var(--txt-3)'};border-color:${r.activa ? 'rgba(123,196,127,.3)' : 'var(--line-2)'}">${r.activa ? 'activa' : 'pausada'}</span></td>
-              <td><div class="row-actions"><button class="icon-btn" onclick="toggleRecur('${r.id}')" title="${r.activa ? 'pausar' : 'activar'}">${r.activa ? '⏸' : '▶'}</button>${r.creadoPor === USER.nombre ? `<button class="icon-btn danger" onclick="eliminarRecur('${r.id}')">✕</button>` : ''}</div></td>
+              <td><div class="row-actions">${r.creadoPor === USER.nombre ? `<button class="icon-btn" onclick="toggleRecur('${r.id}')" title="${r.activa ? 'pausar' : 'activar'}">${r.activa ? '⏸' : '▶'}</button><button class="icon-btn danger" onclick="eliminarRecur('${r.id}')">✕</button>` : `<span style="font-family:var(--mono);font-size:10px;color:var(--txt-3)">solo ${r.creadoPor} edita</span>`}</div></td>
             </tr>`;
   }).join('')}
       </tbody>
@@ -1900,6 +1916,10 @@ function renderTablaRecur() {
 async function toggleRecur(id) {
   const r = RECURRENTES.find(x => x.id === id);
   if (!r) return;
+  if (r.creadoPor !== USER.nombre) {
+    showInfo('no permitido', `solo ${r.creadoPor} puede pausar o activar esta recurrente`);
+    return;
+  }
   const { error } = await sb.from('recurrentes').update({ activa: !r.activa }).eq('id', id);
   if (!error) { r.activa = !r.activa; generarRecurrentes(); renderActiveTab(); }
 }
@@ -2186,7 +2206,17 @@ function abrirDetalle(id, esRecur) {
     <div class="det-status-block">
       <label>cambiar estatus</label>
       ${renderEstatusSelectDetalle(t, isRecur)}
-      ${!puedeConfirmar ? `<div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em;margin-top:4px">solo ${t.creadoPor} puede marcar como entregada</div>` : ''}
+      ${(() => {
+        // Helper text según el tipo
+        if (isRecur) {
+          // Para recurrentes el render ya incluye el texto si no eres asignado, no hace falta más
+          return '';
+        }
+        if (!puedeConfirmar) {
+          return `<div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em;margin-top:4px">solo ${t.creadoPor} puede marcar como entregada</div>`;
+        }
+        return '';
+      })()}
     </div>
   `;
 
@@ -2205,13 +2235,27 @@ function cerrarDetalle() {
 }
 
 function renderEstatusSelectDetalle(t, isRecur) {
-  const puedeConfirmar = USER && t.creadoPor === USER.nombre;
+  const esAsignado = USER && matchNombre(t.para, USER.nombre);
+  const esCreador = USER && t.creadoPor === USER.nombre;
+
+  // RECURRENTES: solo asignado puede cambiar, estados binarios
+  if (isRecur) {
+    if (!esAsignado) {
+      return `<div style="font-family:var(--mono);font-size:11px;color:${t.estatus === 'entregado' ? 'var(--ok)' : 'var(--txt-3)'}">${t.estatus === 'entregado' ? '✓ entregado' : 'pendiente · solo ' + t.para + ' puede marcar entregado'}</div>`;
+    }
+    return `<select class="status-sel s-${t.estatus}" style="font-size:13px;padding:8px 12px" onchange="cambiarEstatusDesdeDetalle('${t.id}', this.value, true)">
+      <option value="pendiente"${t.estatus === 'pendiente' ? ' selected' : ''}>pendiente</option>
+      <option value="entregado"${t.estatus === 'entregado' ? ' selected' : ''}>entregado ✓</option>
+    </select>`;
+  }
+
+  // PETICIONES NORMALES
   const opts = [
     `<option value="pendiente"${t.estatus === 'pendiente' ? ' selected' : ''}>pendiente</option>`,
     `<option value="proceso"${t.estatus === 'proceso' ? ' selected' : ''}>en proceso</option>`,
   ];
-  if (puedeConfirmar) opts.push(`<option value="entregado"${t.estatus === 'entregado' ? ' selected' : ''}>entregado ✓</option>`);
-  return `<select class="status-sel s-${t.estatus}" style="font-size:13px;padding:8px 12px" onchange="cambiarEstatusDesdeDetalle('${t.id}', this.value, ${isRecur ? 'true' : 'false'})">${opts.join('')}</select>`;
+  if (esCreador) opts.push(`<option value="entregado"${t.estatus === 'entregado' ? ' selected' : ''}>entregado ✓</option>`);
+  return `<select class="status-sel s-${t.estatus}" style="font-size:13px;padding:8px 12px" onchange="cambiarEstatusDesdeDetalle('${t.id}', this.value, false)">${opts.join('')}</select>`;
 }
 
 async function cambiarEstatusDesdeDetalle(id, nuevo, esRecur) {
