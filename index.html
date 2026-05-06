@@ -2450,10 +2450,10 @@ function generarRecurrentes() {
 }
 function obtenerInstanciasRecur(nombre) {
   const out = [];
-  // Si la persona está pausada, no devolver instancias nuevas
-  // (las viejas en BD sí siguen disponibles si las miran desde otro lado)
+  // Si la persona está inactiva o pausada, no devolver instancias nuevas
   const persona = PERSONAS.find(p => matchNombre(p.nombre, nombre));
-  if (persona && estaPausada(persona)) return out;
+  if (!persona || persona.activo === false) return out;
+  if (estaPausada(persona)) return out;
 
   RECURRENTES.forEach(r => {
     if (!r.activa) return;
@@ -2971,9 +2971,8 @@ function actualizarInfoArea() {
   const area = $('pet-area-grupo').value;
   const personas = PERSONAS.filter(p =>
     (p.areas || []).includes(area) &&
-    !p.needsPass &&
-    p.nivel !== 'ceo' &&
-    p.nombre !== USER.nombre
+    p.nombre !== USER.nombre &&
+    personaDisponible(p)
   );
   $('pet-area-info').textContent = `— se asignará a ${personas.length} ${personas.length === 1 ? 'persona' : 'personas'} de ${AREAS_LABEL[area] || area} —`;
 }
@@ -3114,15 +3113,15 @@ function abrirPersona(id) {
 }
 
 function renderManagerPrincipalSelect(seleccionado) {
-  // CEO + Heads pueden ser manager principal
-  const candidatos = PERSONAS.filter(p => p.nivel === 'ceo' || p.nivel === 'head');
+  // CEO + Heads pueden ser manager principal (solo activos)
+  const candidatos = PERSONAS.filter(p => (p.nivel === 'ceo' || p.nivel === 'head') && p.activo !== false);
   $('per-manager-principal').innerHTML = '<option value="">— sin manager principal —</option>' +
     candidatos.map(p => `<option value="${p.nombre}"${p.nombre === seleccionado ? ' selected' : ''}>${fullName(p)} · ${p.rol}</option>`).join('');
 }
 
 function renderManagersCheckboxes(seleccionados) {
-  // Solo Heads + CEO como managers de apoyo (excluyendo el seleccionado como principal evitamos confusión)
-  const candidatos = PERSONAS.filter(p => p.nivel === 'head' || p.nivel === 'ceo');
+  // Solo Heads + CEO como managers de apoyo, solo activos
+  const candidatos = PERSONAS.filter(p => (p.nivel === 'head' || p.nivel === 'ceo') && p.activo !== false);
   $('per-managers').innerHTML = candidatos.length === 0
     ? '<div style="color:var(--txt-3);font-size:12px">no hay heads para asignar</div>'
     : candidatos.map(h => `
@@ -3215,11 +3214,11 @@ let _reasignContext = null; // { persona, peticiones, peticionesHeads, recurrent
 function abrirReasignacion(persona, peticiones, peticionesHeads, recurrentes) {
   _reasignContext = { persona, peticiones, peticionesHeads, recurrentes };
 
-  // Lista de candidatos para reasignar (excluir la propia persona, RH privado, ceo, e inactivas)
+  // Lista de candidatos para reasignar (excluir la propia persona, e inactivas)
   const candidatos = PERSONAS.filter(p =>
     p.id !== persona.id &&
     p.activo !== false &&
-    !p.needsPass
+    !estaPausada(p)
   ).sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   const totalActivas = peticiones.length + peticionesHeads.length;
@@ -3463,9 +3462,8 @@ function actualizarRecAreaInfo() {
   const area = $('rec-area-grupo').value;
   const personas = PERSONAS.filter(p =>
     (p.areas || []).includes(area) &&
-    !p.needsPass &&
-    p.nivel !== 'ceo' &&
-    p.nombre !== USER.nombre
+    p.nombre !== USER.nombre &&
+    personaDisponible(p)
   );
   $('rec-area-info').textContent = `— se creará una recurrente para cada una de las ${personas.length} ${personas.length === 1 ? 'persona' : 'personas'} de ${AREAS_LABEL[area] || area} —`;
 }
