@@ -1757,6 +1757,8 @@ function renderTabs() {
   if (isAdmin(USER)) {
     tabs = [
       { id: 'general', label: 'general', count: countGeneral() },
+      { id: 'mis', label: 'mis peticiones', count: countMis() },
+      { id: 'pedi', label: 'lo que yo pedí' },
       { id: 'porpersona', label: 'por persona' },
       { id: 'recur', label: '↻ recurrentes' },
       { id: 'cumpli', label: '📊 cumplimiento' },
@@ -1877,15 +1879,41 @@ function renderActiveTab() {
 // ============================================================
 function renderGeneral() {
   // Excluir instancias de recurrentes (tienen su propio tab)
-  let lista = DB.general.filter(t => !t.privada && !t.origenRecur);
+  // Incluir privadas SOLO si soy creadora o destinataria (modelo candado)
+  let lista = DB.general.filter(t => {
+    if (t.origenRecur) return false;
+    if (t.privada) return puedoVerPeticion(t);
+    return true;
+  });
   if (filtroActual === 'vencidas') lista = lista.filter(t => diasHasta(t.fecha) < 0 && t.estatus !== 'entregado');
   else if (filtroActual === 'semana') lista = lista.filter(t => { const d = diasHasta(t.fecha); return d >= 0 && d <= 7 && t.estatus !== 'entregado'; });
   else if (['imkt', 'pm', 'legal', 'admi', 'ventas', 'digital', 'rh'].includes(filtroActual)) lista = lista.filter(t => t.area === filtroActual);
 
-  const kpis = calcKpis(DB.general.filter(t => !t.privada && !t.origenRecur));
+  const kpis = calcKpis(DB.general.filter(t => {
+    if (t.origenRecur) return false;
+    if (t.privada) return puedoVerPeticion(t);
+    return true;
+  }));
+
+  // Conteo de peticiones asignadas a mí (para banner)
+  const misPendientes = DB.general.filter(t =>
+    matchNombre(t.para, USER.nombre) &&
+    puedoVerPeticion(t) &&
+    !t.origenRecur &&
+    t.estatus !== 'entregado'
+  ).length;
 
   $('content').innerHTML = `
     ${renderKpis(kpis)}
+    ${misPendientes > 0 ? `
+      <div onclick="cambiarTab('mis')" style="background:rgba(255,70,18,.08);border:1px solid rgba(255,70,18,.3);padding:12px 18px;margin-bottom:18px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:background .15s" onmouseover="this.style.background='rgba(255,70,18,.15)'" onmouseout="this.style.background='rgba(255,70,18,.08)'">
+        <div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--acc);text-transform:uppercase;letter-spacing:.15em;margin-bottom:4px">📌 tareas asignadas a ti</div>
+          <div style="font-size:13px;color:var(--txt-2)">tienes <strong style="color:var(--txt)">${misPendientes}</strong> ${misPendientes === 1 ? 'petición pendiente' : 'peticiones pendientes'} esperando tu acción</div>
+        </div>
+        <button class="btn primary sm" onclick="event.stopPropagation();cambiarTab('mis')">ver mis peticiones →</button>
+      </div>
+    ` : ''}
     <div class="section-head">
       <div>
         <h2>peticiones generales</h2>
@@ -1959,7 +1987,7 @@ function renderFila(t, opts = {}) {
           ${t.nombre}
           ${isRecur ? '<span class="recur-icon">↻</span>' : ''}
           ${t.privada ? '<span class="tag" style="margin-left:4px;background:rgba(255,70,18,.1);border-color:rgba(255,70,18,.3);color:var(--acc)">🔒 privada</span>' : ''}
-          ${t.cambioVistoPorCreador === false && puedeConfirmar ? '<span class="tag" style="margin-left:4px;background:rgba(232,176,74,.15);border-color:rgba(232,176,74,.4);color:var(--warn);animation:pulse 2s infinite">⚠ fecha cambiada</span>' : ''}
+          ${t.cambioVistoPorCreador === false && t.fechaOriginal && t.motivoCambioFecha && puedeConfirmar ? '<span class="tag" style="margin-left:4px;background:rgba(232,176,74,.15);border-color:rgba(232,176,74,.4);color:var(--warn);animation:pulse 2s infinite">⚠ fecha cambiada</span>' : ''}
         </div>
         ${t.desc ? `<div class="tdesc">${t.desc}</div>` : ''}
       </td>
