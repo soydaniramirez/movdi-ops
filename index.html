@@ -2403,21 +2403,33 @@ async function eliminarGrupoCompleto(grupoId) {
 // VISTA: RECURRENTES
 // ============================================================
 function renderRecurrentes() {
+  // Filtrar recurrentes según permisos:
+  // - Admins (CEO + Heads): ven TODAS
+  // - RH + Salvador + Arylene: solo las de su(s) área(s)
+  // - Otros: no ven el tab
+  let visibles = RECURRENTES.slice();
+  if (!isAdmin(USER)) {
+    const misAreas = USER.areas || [];
+    visibles = visibles.filter(r => misAreas.includes(r.area));
+  }
+
   $('content').innerHTML = `
     <div class="section-head">
-      <div><h2>tareas recurrentes <span class="recur-icon" style="font-size:18px;margin-left:4px">↻</span></h2><div class="sub">se generan automáticamente · ${RECURRENTES.length} configuradas</div></div>
+      <div><h2>tareas recurrentes <span class="recur-icon" style="font-size:18px;margin-left:4px">↻</span></h2><div class="sub">se generan automáticamente · ${visibles.length} configuradas</div></div>
       <button class="btn primary sm" onclick="abrirRecur()">+ nueva recurrente</button>
     </div>
-    ${renderTablaRecur()}
+    ${renderTablaRecur(visibles)}
   `;
 }
-function renderTablaRecur() {
-  if (!RECURRENTES.length) return `<div class="empty"><h4>sin recurrentes</h4></div>`;
+function renderTablaRecur(lista) {
+  // Si no se pasa lista, usar todas (fallback)
+  const recs = lista || RECURRENTES;
+  if (!recs.length) return `<div class="empty"><h4>sin recurrentes</h4></div>`;
   return `
     <table class="tbl">
       <thead><tr><th>tarea</th><th>para</th><th>frecuencia</th><th>próxima</th><th>creada por</th><th>estado</th><th></th></tr></thead>
       <tbody>
-        ${RECURRENTES.map(r => {
+        ${recs.map(r => {
     const prox = proximaFecha(r);
     return `
             <tr>
