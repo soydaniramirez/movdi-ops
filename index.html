@@ -600,6 +600,10 @@ button{cursor:pointer}
   .tbl{font-size:12px}
   .tbl thead th,.tbl tbody td{padding:10px 8px}
 }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
 </style>
 </head>
 <body>
@@ -1000,6 +1004,26 @@ button{cursor:pointer}
   </div>
 </div>
 
+<!-- Modal Cambio de Fecha (destinatario solicita prórroga con motivo) -->
+<div class="ov" id="ov-cambiofecha" onclick="cerrarCambioFecha()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div>
+        <h3 id="cf-titulo">cambiar fecha</h3>
+        <div class="mh-sub">solicita más tiempo con un motivo</div>
+      </div>
+      <button class="modal-x" onclick="cerrarCambioFecha()">✕</button>
+    </div>
+    <div class="modal-body" id="cf-body">
+      <!-- contenido dinámico -->
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="cerrarCambioFecha()">cancelar</button>
+      <button class="btn primary" onclick="confirmarCambioFecha()">confirmar cambio</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal Reasignación (al desactivar persona) -->
 <div class="ov" id="ov-reasign" onclick="cerrarReasignacion()">
   <div class="modal" onclick="event.stopPropagation()">
@@ -1331,6 +1355,9 @@ const mapPeticionRow = r => ({
   privada: r.privada === true,
   origenRecur: r.origen_recur,
   grupoId: r.grupo_id,
+  fechaOriginal: r.fecha_original || null,
+  motivoCambioFecha: r.motivo_cambio_fecha || null,
+  cambioVistoPorCreador: r.cambio_visto_por_creador !== false,
 });
 const mapRecurRow = r => ({
   id: r.id,
@@ -1932,6 +1959,7 @@ function renderFila(t, opts = {}) {
           ${t.nombre}
           ${isRecur ? '<span class="recur-icon">↻</span>' : ''}
           ${t.privada ? '<span class="tag" style="margin-left:4px;background:rgba(255,70,18,.1);border-color:rgba(255,70,18,.3);color:var(--acc)">🔒 privada</span>' : ''}
+          ${t.cambioVistoPorCreador === false && puedeConfirmar ? '<span class="tag" style="margin-left:4px;background:rgba(232,176,74,.15);border-color:rgba(232,176,74,.4);color:var(--warn);animation:pulse 2s infinite">⚠ fecha cambiada</span>' : ''}
         </div>
         ${t.desc ? `<div class="tdesc">${t.desc}</div>` : ''}
       </td>
@@ -1954,7 +1982,7 @@ function renderEstatusSelect(t) {
   const esAsignado = USER && matchNombre(t.para, USER.nombre);
   const esCreador = USER && t.creadoPor === USER.nombre;
 
-  // RECURRENTES: estados binarios (pendiente / entregado), solo asignado puede marcar entregado
+  // RECURRENTES: estados binarios (pendiente / entregado), solo asignado puede marcar
   if (isRecur) {
     const opts = [`<option value="pendiente"${t.estatus === 'pendiente' ? ' selected' : ''}>pendiente</option>`];
     if (esAsignado) {
@@ -1967,12 +1995,25 @@ function renderEstatusSelect(t) {
     return `<select class="status-sel s-${t.estatus}" onchange="cambiarEstatus('${t.id}', this.value, true)">${opts.join('')}</select>`;
   }
 
-  // PETICIONES NORMALES: pendiente / proceso / entregado (creador entrega)
+  // PETICIONES NORMALES — Modelo C.1:
+  // - Tanto creador como destinatario pueden cambiar estatus
+  // - Solo el creador puede REABRIR (cambiar de "entregado" a otro estado)
+  // - Si no soy ninguno, solo veo el estado en lectura
+  if (!esAsignado && !esCreador) {
+    const labels = { pendiente: 'pendiente', proceso: 'en proceso', entregado: 'entregado ✓' };
+    return `<span class="tag" style="font-size:10px;color:${t.estatus === 'entregado' ? 'var(--ok)' : 'var(--txt-3)'}">${labels[t.estatus] || t.estatus}</span>`;
+  }
+
+  // Si está entregado y NO soy creador, no puedo cambiarlo (solo lectura visual)
+  if (t.estatus === 'entregado' && !esCreador) {
+    return `<span class="tag" style="font-size:10px;color:var(--ok)">entregado ✓</span>`;
+  }
+
   const opts = [
     `<option value="pendiente"${t.estatus === 'pendiente' ? ' selected' : ''}>pendiente</option>`,
     `<option value="proceso"${t.estatus === 'proceso' ? ' selected' : ''}>en proceso</option>`,
+    `<option value="entregado"${t.estatus === 'entregado' ? ' selected' : ''}>entregado ✓</option>`,
   ];
-  if (esCreador) opts.push(`<option value="entregado"${t.estatus === 'entregado' ? ' selected' : ''}>entregado ✓</option>`);
   return `<select class="status-sel s-${t.estatus}" onchange="cambiarEstatus('${t.id}', this.value, false)">${opts.join('')}</select>`;
 }
 
@@ -2026,11 +2067,24 @@ async function cambiarEstatus(id, nuevo, esRecur) {
   const t = DB.general.find(x => x.id === id) || DB.heads.find(x => x.id === id);
   if (!t) return;
 
-  if (nuevo === 'entregado' && t.creadoPor !== USER.nombre) {
-    showInfo('no permitido', 'solo el creador de la petición puede marcarla como entregada');
+  // Modelo C.1: tanto creador como destinatario pueden cambiar estatus
+  // Solo el creador puede REABRIR (volver de entregado a en proceso)
+  const soyCreador = t.creadoPor === USER.nombre;
+  const soyDestinatario = matchNombre(t.para, USER.nombre);
+
+  if (!soyCreador && !soyDestinatario) {
+    showInfo('no permitido', 'solo el creador o destinatario pueden cambiar el estatus');
     renderActiveTab();
     return;
   }
+
+  // Si está entregado y se quiere REABRIR (cambiar a otro estatus), solo el creador
+  if (t.estatus === 'entregado' && nuevo !== 'entregado' && !soyCreador) {
+    showInfo('no permitido', 'solo el creador puede reabrir una petición entregada');
+    renderActiveTab();
+    return;
+  }
+
   const { error } = await sb.from('peticiones').update({ estatus: nuevo }).eq('id', id);
   if (!error) {
     t.estatus = nuevo;
@@ -2056,7 +2110,7 @@ async function limpiarEntregadas(scope) {
   if (!confirm('¿borrar todas las peticiones marcadas como entregadas?')) return;
   let query = sb.from('peticiones').delete().eq('estatus', 'entregado');
   if (scope === 'pedi') query = query.eq('creado_por', USER.nombre);
-  if (scope === 'general') query = query.eq('zona', 'general').eq('es_rh', false);
+  if (scope === 'general') query = query.eq('zona', 'general').eq('privada', false);
   const { error } = await query;
   if (error) {
     showInfo('error', error.message);
@@ -2816,17 +2870,23 @@ function abrirDetalle(id, esRecur) {
         <div class="det-tags"><span class="tag area-${t.area}">${AREAS_LABEL[t.area] || t.area}</span></div>
       </div>
     ` : ''}
+    ${t.fechaOriginal && t.motivoCambioFecha ? `
+      <div class="det-section" style="background:rgba(232,176,74,.08);border:1px solid rgba(232,176,74,.3);padding:12px 14px;margin-top:14px">
+        <div class="det-label" style="color:var(--warn)">⚠ fecha modificada</div>
+        <div style="font-size:13px;line-height:1.6;margin-top:4px">
+          fecha original: <strong>${fechaCorta(t.fechaOriginal)}</strong> → nueva: <strong>${fechaCorta(t.fecha)}</strong>
+          <br>
+          <span style="color:var(--txt-2)">motivo:</span> ${escapeHtml(t.motivoCambioFecha)}
+        </div>
+      </div>
+    ` : ''}
     <div class="det-status-block">
       <label>cambiar estatus</label>
       ${renderEstatusSelectDetalle(t, isRecur)}
       ${(() => {
-        // Helper text según el tipo
-        if (isRecur) {
-          // Para recurrentes el render ya incluye el texto si no eres asignado, no hace falta más
-          return '';
-        }
-        if (!puedeConfirmar) {
-          return `<div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em;margin-top:4px">solo ${t.creadoPor} puede marcar como entregada</div>`;
+        if (isRecur) return '';
+        if (t.estatus === 'entregado' && !puedeConfirmar) {
+          return `<div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em;margin-top:4px">solo ${t.creadoPor} puede reabrir esta petición</div>`;
         }
         return '';
       })()}
@@ -2835,12 +2895,21 @@ function abrirDetalle(id, esRecur) {
 
   // Foot con acciones
   let actions = `<button class="btn ghost" onclick="cerrarDetalle()">cerrar</button>`;
+  // El destinatario puede cambiar fecha (con motivo) si la petición no está entregada
+  if (esAsignado && !puedeConfirmar && !isRecur && t.estatus !== 'entregado') {
+    actions += `<button class="btn ghost" onclick="abrirCambioFecha('${t.id}')">📅 cambiar fecha</button>`;
+  }
   if (puedeConfirmar && !isRecur) {
     actions += `<button class="btn danger" onclick="eliminarPeticionDesdeDetalle('${t.id}')">eliminar</button>`;
   }
   $('det-foot').innerHTML = actions;
 
   $('ov-detalle').classList.add('show');
+
+  // Si el creador está abriendo y hay un cambio de fecha sin ver, marcar como visto
+  if (puedeConfirmar && t.cambioVistoPorCreador === false) {
+    marcarCambioVisto(t);
+  }
 }
 
 function cerrarDetalle() {
@@ -2862,12 +2931,20 @@ function renderEstatusSelectDetalle(t, isRecur) {
     </select>`;
   }
 
-  // PETICIONES NORMALES
+  // PETICIONES NORMALES — Modelo C.1
+  if (!esAsignado && !esCreador) {
+    const labels = { pendiente: 'pendiente', proceso: 'en proceso', entregado: 'entregado ✓' };
+    return `<div style="font-family:var(--mono);font-size:11px;color:${t.estatus === 'entregado' ? 'var(--ok)' : 'var(--txt-3)'}">${labels[t.estatus] || t.estatus}</div>`;
+  }
+  // Si está entregado y NO soy creador, no puedo cambiarlo
+  if (t.estatus === 'entregado' && !esCreador) {
+    return `<div style="font-family:var(--mono);font-size:11px;color:var(--ok)">✓ entregado</div>`;
+  }
   const opts = [
     `<option value="pendiente"${t.estatus === 'pendiente' ? ' selected' : ''}>pendiente</option>`,
     `<option value="proceso"${t.estatus === 'proceso' ? ' selected' : ''}>en proceso</option>`,
+    `<option value="entregado"${t.estatus === 'entregado' ? ' selected' : ''}>entregado ✓</option>`,
   ];
-  if (esCreador) opts.push(`<option value="entregado"${t.estatus === 'entregado' ? ' selected' : ''}>entregado ✓</option>`);
   return `<select class="status-sel s-${t.estatus}" style="font-size:13px;padding:8px 12px" onchange="cambiarEstatusDesdeDetalle('${t.id}', this.value, false)">${opts.join('')}</select>`;
 }
 
@@ -2884,6 +2961,102 @@ async function eliminarPeticionDesdeDetalle(id) {
   DB.heads = DB.heads.filter(t => t.id !== id);
   cerrarDetalle();
   renderActiveTab();
+}
+
+// ============================================================
+// CAMBIO DE FECHA POR DESTINATARIO (Modelo Opción B con motivo)
+// ============================================================
+let _cambioFechaContext = null;
+
+function abrirCambioFecha(id) {
+  const t = DB.general.find(x => x.id === id);
+  if (!t) return;
+  if (!matchNombre(t.para, USER.nombre)) {
+    showInfo('no permitido', 'solo el destinatario puede cambiar la fecha');
+    return;
+  }
+  _cambioFechaContext = t;
+
+  // Default: agregar 7 días a la fecha actual
+  const f = new Date(t.fecha);
+  f.setDate(f.getDate() + 7);
+  const sugerida = f.toISOString().slice(0, 10);
+
+  $('cf-titulo').textContent = `cambiar fecha · ${t.nombre}`;
+  $('cf-body').innerHTML = `
+    <div style="background:rgba(232,176,74,.08);border:1px solid rgba(232,176,74,.3);padding:12px 14px;margin-bottom:18px">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--warn);text-transform:uppercase;letter-spacing:.15em;margin-bottom:6px">cambio de fecha</div>
+      <div style="font-size:13px;line-height:1.6">
+        esta petición fue creada por <strong>${t.creadoPor}</strong> con fecha <strong>${fechaCorta(t.fecha)}</strong>.
+        <br>al cambiarla, le aparecerá una alerta visual con tu motivo.
+      </div>
+    </div>
+
+    <div class="field">
+      <label>nueva fecha</label>
+      <input type="date" id="cf-fecha" value="${sugerida}">
+    </div>
+
+    <div class="field">
+      <label>motivo del cambio (obligatorio)</label>
+      <textarea id="cf-motivo" rows="3" placeholder="ej: el cliente aún no nos manda los archivos finales..." style="width:100%;padding:10px 12px;background:var(--bg-1);border:1px solid var(--line);font-size:13px;color:var(--txt);font-family:inherit;resize:vertical"></textarea>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px">explica brevemente por qué necesitas más tiempo</div>
+    </div>
+  `;
+  $('ov-cambiofecha').classList.add('show');
+  requestAnimationFrame(() => $('cf-fecha').focus());
+}
+
+function cerrarCambioFecha() {
+  _cambioFechaContext = null;
+  $('ov-cambiofecha').classList.remove('show');
+}
+
+async function confirmarCambioFecha() {
+  if (!_cambioFechaContext) return;
+  const t = _cambioFechaContext;
+  const nuevaFecha = $('cf-fecha').value;
+  const motivo = $('cf-motivo').value.trim();
+
+  if (!nuevaFecha) { showInfo('falta dato', 'elige una nueva fecha'); return; }
+  if (!motivo) { showInfo('falta dato', 'el motivo es obligatorio'); return; }
+  if (motivo.length < 10) { showInfo('motivo muy corto', 'escribe al menos 10 caracteres explicando el motivo'); return; }
+
+  // Si es la primera vez que se cambia, guardar la fecha original
+  const fechaOriginal = t.fechaOriginal || t.fecha;
+
+  showLoading('actualizando fecha...');
+  const { error } = await sb.from('peticiones').update({
+    fecha: nuevaFecha,
+    fecha_original: fechaOriginal,
+    motivo_cambio_fecha: motivo,
+    cambio_visto_por_creador: false  // alerta para el creador
+  }).eq('id', t.id);
+  hideLoading();
+
+  if (error) {
+    showInfo('error', 'no se pudo actualizar: ' + error.message);
+    return;
+  }
+
+  // Actualizar estado local
+  t.fecha = nuevaFecha;
+  t.fechaOriginal = fechaOriginal;
+  t.motivoCambioFecha = motivo;
+  t.cambioVistoPorCreador = false;
+
+  cerrarCambioFecha();
+  cerrarDetalle();
+  renderActiveTab();
+  showInfo('fecha actualizada ✓', `${t.creadoPor} verá una alerta con tu motivo cuando entre.`);
+}
+
+// Marca como visto cuando el creador abre la petición con cambio
+async function marcarCambioVisto(t) {
+  if (!t || t.cambioVistoPorCreador !== false) return;
+  if (t.creadoPor !== USER.nombre) return;
+  await sb.from('peticiones').update({ cambio_visto_por_creador: true }).eq('id', t.id);
+  t.cambioVistoPorCreador = true;
 }
 
 function escapeHtml(s) {
