@@ -1264,6 +1264,17 @@ const claseFecha = s => {
 };
 const dx = (offset) => { const d = new Date(); d.setDate(d.getDate() + offset); return d.toISOString().slice(0, 10) };
 const isAdmin = u => u && (u.nivel === 'ceo' || u.nivel === 'head');
+// RH también puede crear recurrentes (nóminas, reportes, etc)
+// Quién puede crear/administrar recurrentes
+// - ceo + heads: para todo el equipo
+// - rh + ejecutivos especiales (Salvador, Arylene): solo para su área
+const puedeCrearRecurrentes = u => {
+  if (!u) return false;
+  if (u.nivel === 'ceo' || u.nivel === 'head' || u.nivel === 'rh') return true;
+  // Salvador (Admi) y Arylene (Legal) pueden crear recurrentes propias
+  if (u.nombre === 'Salvador' || u.nombre === 'Arylene') return true;
+  return false;
+};
 
 // Helper centralizado: ¿esta persona es dirección/co-founder?
 // Usar SIEMPRE esto en lugar de hardcoded "Dani"/"Emmanuel"
@@ -1547,8 +1558,8 @@ async function cargarTodosLosDatos() {
   if (anunciosVistosRes.data) ANUNCIOS_VISTOS = anunciosVistosRes.data.map(mapAnuncioVistoRow);
   generarRecurrentes();
 
-  // Si el usuario es admin, pre-generar instancias pasadas faltantes
-  if (isAdmin(USER)) {
+  // Si el usuario puede crear recurrentes, pre-generar instancias pasadas faltantes
+  if (puedeCrearRecurrentes(USER)) {
     await pregenerarInstanciasPasadas();
   }
 }
@@ -1781,6 +1792,10 @@ function renderTabs() {
       { id: 'todo', label: 'mi to-do privado' },
     ];
     if (tieneRecurrentes) tabs.push({ id: 'miritmo', label: '↻ mi ritmo' });
+    // RH puede crear/administrar recurrentes (nóminas, reportes mensuales, etc)
+    if (puedeCrearRecurrentes(USER) && !isAdmin(USER)) {
+      tabs.splice(2, 0, { id: 'recur', label: '↻ recurrentes' });
+    }
   }
   $('tabs').innerHTML = tabs.map(t => `
     <button class="tab${activeTab === t.id ? ' active' : ''}" onclick="cambiarTab('${t.id}')">
@@ -3026,9 +3041,9 @@ function abrirPeticion(zona) {
   $('pet-prio').value = 'media';
   $('pet-area').value = USER.areas && USER.areas[0] && AREAS_LABEL[USER.areas[0]] ? USER.areas[0] : 'imkt';
 
-  // Toggle de privada — default ON para Sarai/Diego (RH suele ser sensible)
-  const esRH = USER.nivel === 'rh';
-  if ($('pet-privada')) $('pet-privada').checked = esRH;
+  // Toggle de privada — default ON para RH/Admi (peticiones suelen ser sensibles)
+  const candadoPorDefault = USER.nivel === 'rh' || USER.nombre === 'Salvador';
+  if ($('pet-privada')) $('pet-privada').checked = candadoPorDefault;
 
   // Reset modo de asignación
   document.querySelector('input[name="pet-modo"][value="una"]').checked = true;
@@ -3513,8 +3528,24 @@ async function reanudarPersona(id) {
 function abrirRecur() {
   $('rec-nombre').value = '';
   $('rec-desc').value = '';
-  $('rec-area').value = 'pm';
   $('rec-frec').value = 'semanal';
+
+  // Filtrar áreas disponibles según el usuario
+  // - Admins (ceo, head): todas las áreas
+  // - rh, Salvador, Arylene: solo sus propias áreas
+  let areasDisponibles = ['imkt', 'pm', 'legal', 'admi', 'ventas', 'digital', 'rh'];
+  if (!isAdmin(USER)) {
+    areasDisponibles = USER.areas || [];
+  }
+  $('rec-area').innerHTML = areasDisponibles
+    .map(a => `<option value="${a}">${AREAS_LABEL[a] || a}</option>`)
+    .join('');
+  // También en el dropdown de "área completa" para asignación grupal
+  if ($('rec-area-grupo')) {
+    $('rec-area-grupo').innerHTML = areasDisponibles
+      .map(a => `<option value="${a}">${AREAS_LABEL[a] || a}</option>`)
+      .join('');
+  }
 
   // Reset modo
   document.querySelector('input[name="rec-modo"][value="una"]').checked = true;
@@ -3715,7 +3746,7 @@ function calcularFechasEsperadas(recur, semanasAtras = 12) {
 
 // Pre-genera instancias pasadas faltantes (solo admin lo dispara al cargar)
 async function pregenerarInstanciasPasadas() {
-  if (!isAdmin(USER)) return;
+  if (!puedeCrearRecurrentes(USER)) return;
 
   // Recurrentes activas (saltar las de personas inactivas o pausadas)
   const activas = RECURRENTES.filter(r => {
