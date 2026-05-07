@@ -761,54 +761,6 @@ button{cursor:pointer}
   </div>
 </div>
 
-<!-- Password modal Heads tab -->
-<div class="ov" id="ov-heads-pass">
-  <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-head">
-      <div>
-        <h3>zona heads</h3>
-        <div class="mh-sub">acceso restringido / dirección</div>
-      </div>
-      <button class="modal-x" onclick="cerrarHeadsPass()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="field">
-        <label>contraseña heads</label>
-        <input type="password" id="heads-pass-input" onkeydown="if(event.key==='Enter')validarHeadsPass()" placeholder="••••••••">
-      </div>
-      <div id="heads-pass-err" style="color:var(--acc);font-family:var(--mono);font-size:11px;display:none">contraseña incorrecta</div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn ghost" onclick="cerrarHeadsPass()">cancelar</button>
-      <button class="btn primary" onclick="validarHeadsPass()">desbloquear</button>
-    </div>
-  </div>
-</div>
-
-<!-- Password modal RH tab privado -->
-<div class="ov" id="ov-rhtab-pass">
-  <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-head">
-      <div>
-        <h3>RH · privado</h3>
-        <div class="mh-sub">peticiones confidenciales</div>
-      </div>
-      <button class="modal-x" onclick="cerrarRhTabPass()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="field">
-        <label>contraseña</label>
-        <input type="password" id="rhtab-pass-input" onkeydown="if(event.key==='Enter')validarRhTabPass()" placeholder="••••••••">
-      </div>
-      <div id="rhtab-pass-err" style="color:var(--acc);font-family:var(--mono);font-size:11px;display:none">contraseña incorrecta</div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn ghost" onclick="cerrarRhTabPass()">cancelar</button>
-      <button class="btn primary" onclick="validarRhTabPass()">desbloquear</button>
-    </div>
-  </div>
-</div>
-
 <!-- Modal Nueva petición -->
 <div class="ov" id="ov-peticion" onclick="cerrarPeticion()">
   <div class="modal wide" onclick="event.stopPropagation()">
@@ -1228,16 +1180,33 @@ const SUPABASE_URL = 'https://nxyhgbrretusqbgfodmo.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_L4kmyX8EPnGUF5N-XUhp_Q_fjU2iIUL';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Contraseñas legacy para tabs especiales (Heads + RH-tab)
-// Estas son adicionales al login y solo gateán la visibilidad de tabs específicas
-const HEADS_PASS = 'heads2026';
-const RH_PASS = 'recursosmovdi2026';
+// Listener para detectar sesión expirada o cerrada en otra pestaña
+sb.auth.onAuthStateChange((event, session) => {
+  // Si la sesión expira o se cierra mientras el usuario está usando la app
+  if (event === 'SIGNED_OUT' && USER !== null) {
+    // Hubo logout pero USER aún existe = sesión zombie
+    USER = null;
+    pendingLogin = null;
+    PERSONAS = [];
+    DB = { general: [] };
+    RECURRENTES = [];
+    TODOS = {};
+    ANUNCIOS = [];
+    ANUNCIOS_VISTOS = [];
+    showInfo('sesión cerrada', 'tu sesión ha expirado. por favor inicia sesión nuevamente.');
+    setTimeout(() => {
+      $('screen-app').style.display = 'none';
+      $('screen-login').style.display = 'flex';
+      cargarPersonasParaLogin();
+    }, 1500);
+  }
+});
 
 // ============================================================
 // ESTADO APP
 // ============================================================
 let PERSONAS = [];
-let DB = { general: [], heads: [] };
+let DB = { general: [] };
 let RECURRENTES = [];
 let TODOS = {};
 let ANUNCIOS = [];
@@ -1250,9 +1219,6 @@ let filtroActual = 'todas';
 let personaFiltro = null;
 let editandoPersonaId = null;
 let editandoPeticionId = null;
-let headsUnlocked = false;
-let rhTabUnlocked = false;
-let zonaPeticion = 'general';
 let isRecoveryFlow = false; // si llegaron por link de recovery/invite
 
 // ============================================================
@@ -1261,9 +1227,18 @@ let isRecoveryFlow = false; // si llegaron por link de recovery/invite
 const $ = id => document.getElementById(id);
 const inicial = (n, a = '') => (n[0] || '').toUpperCase() + (a[0] || '').toUpperCase();
 const fullName = p => `${p.nombre} ${p.apellido}`;
+// Normaliza una cadena: minúsculas, sin acentos, sin espacios extras
+const normalizarTexto = s => {
+  if (!s) return '';
+  return s.toLowerCase()
+    .trim()
+    .normalize('NFD')                // descompone acentos (á → a + ́)
+    .replace(/[\u0300-\u036f]/g, ''); // remueve los marcadores de acento
+};
+
 const matchNombre = (campo, nombre) => {
-  if (!campo) return false;
-  return campo.toLowerCase().trim() === nombre.toLowerCase().trim();
+  if (!campo || !nombre) return false;
+  return normalizarTexto(campo) === normalizarTexto(nombre);
 };
 
 const fechaObj = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
@@ -1546,11 +1521,21 @@ async function cargarTodosLosDatos() {
     sb.from('anuncios').select('*').eq('activo', true).order('creado_en', { ascending: false }),
     sb.from('anuncios_vistos').select('*'),
   ]);
+
+  // Detectar errores críticos y avisar al usuario
+  const erroresCriticos = [];
+  if (personasRes.error) erroresCriticos.push('personas: ' + personasRes.error.message);
+  if (peticionesRes.error) erroresCriticos.push('peticiones: ' + peticionesRes.error.message);
+  if (recurrentesRes.error) erroresCriticos.push('recurrentes: ' + recurrentesRes.error.message);
+
+  if (erroresCriticos.length > 0) {
+    showInfo('error de conexión', 'no se pudieron cargar algunos datos:\n\n' + erroresCriticos.join('\n') + '\n\nintenta refrescar la página o avisa a dani.');
+  }
+
   if (personasRes.data) PERSONAS = personasRes.data.map(mapPersonaRow);
   if (peticionesRes.data) {
     const todas = peticionesRes.data.map(mapPeticionRow);
     DB.general = todas.filter(t => t.zona === 'general');
-    DB.heads = todas.filter(t => t.zona === 'heads');
   }
   if (recurrentesRes.data) RECURRENTES = recurrentesRes.data.map(mapRecurRow);
   if (todosRes.data) {
@@ -1571,11 +1556,6 @@ async function cargarTodosLosDatos() {
 function prepararAppUI() {
   personaFiltro = null;
   filtroActual = 'todas';
-  // Auto-desbloqueo: dirección y heads no necesitan password para ver tab heads
-  headsUnlocked = isAdmin(USER);
-  // Auto-desbloqueo: dirección + Salvador/Arylene + RH ven tab RH·privado
-  rhTabUnlocked = esDireccion(USER) || USER.nivel === 'rh' ||
-    USER.nombre === 'Salvador' || USER.nombre === 'Arylene';
   editandoPersonaId = null;
   editandoPeticionId = null;
 
@@ -1598,15 +1578,37 @@ function prepararAppUI() {
 
 async function cerrarSesion() {
   showLoading('cerrando sesión...');
-  await sb.auth.signOut();
+  try {
+    const { error } = await sb.auth.signOut();
+    if (error) {
+      console.warn('Error en signOut:', error.message);
+      // Aunque falle el signOut del servidor, limpiamos local de todas formas
+    }
+  } catch (e) {
+    console.warn('Excepción en signOut:', e);
+  }
+
+  // Limpieza local SIEMPRE (aunque haya fallado el signOut del servidor)
   USER = null;
   pendingLogin = null;
   PERSONAS = [];
-  DB = { general: [], heads: [] };
+  DB = { general: [] };
   RECURRENTES = [];
   TODOS = {};
   ANUNCIOS = [];
   ANUNCIOS_VISTOS = [];
+
+  // Limpiar localStorage de Supabase por si quedó zombie
+  try {
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('sb-') || key.includes('supabase')) {
+        localStorage.removeItem(key);
+      }
+    });
+  } catch (e) {
+    console.warn('No se pudo limpiar localStorage:', e);
+  }
+
   hideLoading();
   $('screen-app').style.display = 'none';
   $('screen-login').style.display = 'flex';
@@ -1822,39 +1824,6 @@ function canSeeRH(t) {
 // ============================================================
 // PASSWORDS extra (heads tab, rh tab)
 // ============================================================
-function abrirHeadsPass() {
-  $('ov-heads-pass').classList.add('show');
-  $('heads-pass-input').value = '';
-  $('heads-pass-err').style.display = 'none';
-  requestAnimationFrame(() => $('heads-pass-input').focus());
-}
-function cerrarHeadsPass() { $('ov-heads-pass').classList.remove('show'); }
-function validarHeadsPass() {
-  if ($('heads-pass-input').value === HEADS_PASS) {
-    headsUnlocked = true;
-    cerrarHeadsPass();
-    cambiarTab('heads');
-  } else {
-    $('heads-pass-err').style.display = 'block';
-  }
-}
-function abrirRhTabPass() {
-  $('ov-rhtab-pass').classList.add('show');
-  $('rhtab-pass-input').value = '';
-  $('rhtab-pass-err').style.display = 'none';
-  requestAnimationFrame(() => $('rhtab-pass-input').focus());
-}
-function cerrarRhTabPass() { $('ov-rhtab-pass').classList.remove('show'); }
-function validarRhTabPass() {
-  if ($('rhtab-pass-input').value === RH_PASS) {
-    rhTabUnlocked = true;
-    cerrarRhTabPass();
-    cambiarTab('rhpriv');
-  } else {
-    $('rhtab-pass-err').style.display = 'block';
-  }
-}
-
 // ============================================================
 // RENDER ROUTER
 // ============================================================
@@ -2096,7 +2065,7 @@ async function cambiarEstatus(id, nuevo, esRecur) {
     return;
   }
 
-  const t = DB.general.find(x => x.id === id) || DB.heads.find(x => x.id === id);
+  const t = DB.general.find(x => x.id === id);
   if (!t) return;
 
   // Modelo C.1: tanto creador como destinatario pueden cambiar estatus
@@ -2134,7 +2103,6 @@ async function eliminarPeticion(id) {
     return;
   }
   DB.general = DB.general.filter(t => t.id !== id);
-  DB.heads = DB.heads.filter(t => t.id !== id);
   renderActiveTab();
 }
 
@@ -2211,47 +2179,7 @@ function renderPorPersona() {
 }
 
 // ============================================================
-// VISTA: HEADS
-// ============================================================
-function renderHeads() {
-  let lista = DB.heads.slice();
-  if (!esDireccion(USER)) {
-    lista = lista.filter(t => matchNombre(t.para, USER.nombre));
-  }
-  $('content').innerHTML = `
-    <div class="section-head">
-      <div>
-        <h2>zona heads <span class="tag area-heads">privado</span></h2>
-        <div class="sub">peticiones entre dirección · ${lista.length} activas</div>
-      </div>
-      <button class="btn primary sm" onclick="abrirPeticion('heads')">+ nueva petición heads</button>
-    </div>
-    ${renderTablaHeads(lista)}
-  `;
-}
-function renderTablaHeads(lista) {
-  if (!lista.length) return `<div class="empty"><h4>sin peticiones heads</h4></div>`;
-  lista = lista.slice().sort((a, b) => fechaObj(a.fecha) - fechaObj(b.fecha));
-  return `
-  <table class="tbl">
-    <thead><tr><th>petición</th><th>de → para</th><th>fecha</th><th>prio</th><th>estatus</th><th></th></tr></thead>
-    <tbody>
-      ${lista.map(t => `
-        <tr class="det-clickable-row" onclick="abrirDetalle('${t.id}', false)">
-          <td><div class="tname">${t.nombre}</div>${t.desc ? `<div class="tdesc">${t.desc}</div>` : ''}</td>
-          <td><span style="font-family:var(--mono);font-size:11px;color:var(--txt-3)">${t.creadoPor}</span> → <strong>${t.para}</strong></td>
-          <td><div class="date-cell ${claseFecha(t.fecha)}">${fechaCorta(t.fecha)}<span class="dsub">${labelFecha(t.fecha)}</span></div></td>
-          <td><span class="tag prio-${t.prioridad}">${t.prioridad}</span></td>
-          <td onclick="event.stopPropagation()">${renderEstatusSelect(t)}</td>
-          <td onclick="event.stopPropagation()"><div class="row-actions">${t.creadoPor === USER.nombre ? `<button class="icon-btn danger" onclick="eliminarPeticion('${t.id}')">✕</button>` : ''}</div></td>
-        </tr>
-      `).join('')}
-    </tbody>
-  </table>`;
-}
-
-// ============================================================
-// VISTAS: MIS, PEDI, RH PRIV
+// VISTAS: MIS, PEDI
 // ============================================================
 function renderMis() {
   // Peticiones únicas (no instancias de recurrentes)
@@ -2454,16 +2382,6 @@ async function eliminarGrupoCompleto(grupoId) {
   if (error) { showInfo('error', error.message); return; }
   DB.general = DB.general.filter(t => t.grupoId !== grupoId);
   renderActiveTab();
-}
-
-function renderRhPriv() {
-  const lista = DB.general.filter(t => t.privada && matchNombre(t.para, USER.nombre));
-  $('content').innerHTML = `
-    <div class="section-head">
-      <div><h2>RH · privado <span class="tag area-rh">confidencial</span></h2><div class="sub">peticiones de RH asignadas a mí</div></div>
-    </div>
-    ${renderTabla(lista)}
-  `;
 }
 
 // ============================================================
@@ -2845,7 +2763,7 @@ function abrirDetalle(id, esRecur) {
     }
     t = allInst.find(x => x.id === id);
   } else {
-    t = DB.general.find(x => x.id === id) || DB.heads.find(x => x.id === id);
+    t = DB.general.find(x => x.id === id);
   }
   if (!t) return;
 
@@ -2990,7 +2908,6 @@ async function eliminarPeticionDesdeDetalle(id) {
   const { error } = await sb.from('peticiones').delete().eq('id', id);
   if (error) { showInfo('error', 'no se pudo eliminar: ' + error.message); return; }
   DB.general = DB.general.filter(t => t.id !== id);
-  DB.heads = DB.heads.filter(t => t.id !== id);
   cerrarDetalle();
   renderActiveTab();
 }
@@ -3101,7 +3018,6 @@ function escapeHtml(s) {
 // MODAL: NUEVA PETICIÓN
 // ============================================================
 function abrirPeticion(zona) {
-  zonaPeticion = 'general'; // Ya solo existe la zona general
   $('pet-title').textContent = 'nueva petición';
   $('pet-zone-label').textContent = 'zona general';
   $('pet-nombre').value = '';
@@ -3383,11 +3299,8 @@ async function eliminarPersona(id) {
   const recurrentesActivas = RECURRENTES.filter(r =>
     matchNombre(r.para, persona.nombre) && r.activa
   );
-  const peticionesHeads = DB.heads.filter(t =>
-    matchNombre(t.para, persona.nombre) && t.estatus !== 'entregado'
-  );
 
-  const totalPeticiones = peticionesActivas.length + peticionesHeads.length;
+  const totalPeticiones = peticionesActivas.length;
   const totalRecurrentes = recurrentesActivas.length;
 
   // Si no tiene nada activo → eliminar directo (soft-delete)
@@ -3398,7 +3311,7 @@ async function eliminarPersona(id) {
   }
 
   // Si tiene cosas activas → modal de reasignación obligatoria
-  abrirReasignacion(persona, peticionesActivas, peticionesHeads, recurrentesActivas);
+  abrirReasignacion(persona, peticionesActivas, recurrentesActivas);
 }
 
 async function desactivarPersona(persona) {
@@ -3414,10 +3327,10 @@ async function desactivarPersona(persona) {
   showInfo('persona desactivada ✓', `${fullName(persona)} ya no recibirá nuevas asignaciones. su histórico se conserva.`);
 }
 
-let _reasignContext = null; // { persona, peticiones, peticionesHeads, recurrentes }
+let _reasignContext = null; // { persona, peticiones, recurrentes }
 
-function abrirReasignacion(persona, peticiones, peticionesHeads, recurrentes) {
-  _reasignContext = { persona, peticiones, peticionesHeads, recurrentes };
+function abrirReasignacion(persona, peticiones, recurrentes) {
+  _reasignContext = { persona, peticiones, recurrentes };
 
   // Lista de candidatos para reasignar (excluir la propia persona, e inactivas)
   const candidatos = PERSONAS.filter(p =>
@@ -3426,7 +3339,7 @@ function abrirReasignacion(persona, peticiones, peticionesHeads, recurrentes) {
     !estaPausada(p)
   ).sort((a, b) => a.nombre.localeCompare(b.nombre));
 
-  const totalActivas = peticiones.length + peticionesHeads.length;
+  const totalActivas = peticiones.length;
   const totalRec = recurrentes.length;
 
   $('reasign-title').textContent = `desactivar a ${fullName(persona)}`;
@@ -3481,11 +3394,11 @@ function cerrarReasignacion() {
 
 async function confirmarReasignacion() {
   if (!_reasignContext) return;
-  const { persona, peticiones, peticionesHeads, recurrentes } = _reasignContext;
+  const { persona, peticiones, recurrentes } = _reasignContext;
   const reasignPet = $('reasign-peticiones').value;
   const reasignRec = $('reasign-recurrentes').value;
 
-  const totalPet = peticiones.length + peticionesHeads.length;
+  const totalPet = peticiones.length;
   const totalRec = recurrentes.length;
 
   // Validar
@@ -3501,7 +3414,7 @@ async function confirmarReasignacion() {
   showLoading('reasignando y desactivando...');
 
   try {
-    // 1. Reasignar peticiones generales
+    // 1. Reasignar peticiones
     if (peticiones.length > 0 && reasignPet) {
       const ids = peticiones.map(p => p.id);
       const { error } = await sb.from('peticiones')
@@ -3513,19 +3426,7 @@ async function confirmarReasignacion() {
       });
     }
 
-    // 2. Reasignar peticiones de heads
-    if (peticionesHeads.length > 0 && reasignPet) {
-      const ids = peticionesHeads.map(p => p.id);
-      const { error } = await sb.from('peticiones')
-        .update({ para: reasignPet })
-        .in('id', ids);
-      if (error) throw error;
-      DB.heads.forEach(t => {
-        if (ids.includes(t.id)) t.para = reasignPet;
-      });
-    }
-
-    // 3. Reasignar recurrentes
+    // 2. Reasignar recurrentes
     if (recurrentes.length > 0 && reasignRec) {
       const ids = recurrentes.map(r => r.id);
       const { error } = await sb.from('recurrentes')
@@ -3537,7 +3438,7 @@ async function confirmarReasignacion() {
       });
     }
 
-    // 4. Desactivar la persona
+    // 3. Desactivar la persona
     const { error: errDesact } = await sb.from('personas')
       .update({ activo: false })
       .eq('id', persona.id);
