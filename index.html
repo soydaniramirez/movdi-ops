@@ -958,6 +958,38 @@ button{cursor:pointer}
   </div>
 </div>
 
+<!-- Modal Entrega (al marcar entregado, opcional link y nota) -->
+<div class="ov" id="ov-entrega" onclick="cerrarEntrega()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div>
+        <h3 id="entrega-titulo">marcar como entregado</h3>
+        <div class="mh-sub">opcional: agrega evidencia para que el creador pueda verificar</div>
+      </div>
+      <button class="modal-x" onclick="cerrarEntrega()">✕</button>
+    </div>
+    <div class="modal-body" id="entrega-body">
+      <div class="field">
+        <label>📎 link (opcional)</label>
+        <input type="text" id="entrega-link" placeholder="https://drive.google.com/... o https://notion.so/...">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px">drive, notion, slack, donde tengas la entrega</div>
+      </div>
+      <div class="field">
+        <label>📝 nota (opcional)</label>
+        <textarea id="entrega-nota" rows="3" placeholder="ej: ya envié wpp a Demian con el seguimiento..." style="width:100%;padding:10px 12px;background:var(--bg-1);border:1px solid var(--line);font-size:13px;color:var(--txt);font-family:inherit;resize:vertical"></textarea>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px">si la entrega no es un archivo (ej: wpp, llamada, junta), explica brevemente</div>
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em;margin-top:8px">
+        💡 puedes dejar ambos campos vacíos si no aplica
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="cerrarEntrega()">cancelar</button>
+      <button class="btn primary" onclick="confirmarEntrega()">marcar entregado ✓</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal Cambio de Fecha (destinatario solicita prórroga con motivo) -->
 <div class="ov" id="ov-cambiofecha" onclick="cerrarCambioFecha()">
   <div class="modal" onclick="event.stopPropagation()">
@@ -1348,6 +1380,8 @@ const mapPeticionRow = r => ({
   fechaOriginal: r.fecha_original || null,
   motivoCambioFecha: r.motivo_cambio_fecha || null,
   cambioVistoPorCreador: r.cambio_visto_por_creador !== false,
+  linkEntrega: r.link_entrega || null,
+  notaEntrega: r.nota_entrega || null,
 });
 const mapRecurRow = r => ({
   id: r.id,
@@ -1976,6 +2010,7 @@ function renderFila(t, opts = {}) {
           ${isRecur ? '<span class="recur-icon">↻</span>' : ''}
           ${t.privada ? '<span class="tag" style="margin-left:4px;background:rgba(255,70,18,.1);border-color:rgba(255,70,18,.3);color:var(--acc)">🔒 privada</span>' : ''}
           ${t.cambioVistoPorCreador === false && t.fechaOriginal && t.motivoCambioFecha && puedeConfirmar ? '<span class="tag" style="margin-left:4px;background:rgba(232,176,74,.15);border-color:rgba(232,176,74,.4);color:var(--warn);animation:pulse 2s infinite">⚠ fecha cambiada</span>' : ''}
+          ${t.estatus === 'entregado' && (t.linkEntrega || t.notaEntrega) ? '<span style="margin-left:4px;color:var(--ok);font-size:11px" title="con evidencia de entrega">📎</span>' : ''}
         </div>
         ${t.desc ? `<div class="tdesc">${t.desc}</div>` : ''}
       </td>
@@ -2034,6 +2069,12 @@ function renderEstatusSelect(t) {
 }
 
 async function cambiarEstatus(id, nuevo, esRecur) {
+  // Si el nuevo estatus es "entregado", abrimos modal para link/nota opcional
+  if (nuevo === 'entregado') {
+    abrirEntrega(id, esRecur);
+    return;
+  }
+
   if (esRecur) {
     // ID format: 'rec__<uuid>__<yyyy-mm-dd>'
     if (!id.startsWith('rec__')) return;
@@ -2857,6 +2898,15 @@ function abrirDetalle(id, esRecur) {
         </div>
       </div>
     ` : ''}
+    ${t.estatus === 'entregado' && (t.linkEntrega || t.notaEntrega) ? `
+      <div class="det-section" style="background:rgba(102,194,89,.08);border:1px solid rgba(102,194,89,.3);padding:12px 14px;margin-top:14px">
+        <div class="det-label" style="color:var(--ok)">✓ evidencia de entrega</div>
+        <div style="font-size:13px;line-height:1.6;margin-top:6px">
+          ${t.linkEntrega ? `<div style="margin-bottom:6px">📎 <a href="${escapeHtml(t.linkEntrega)}" target="_blank" rel="noopener" style="color:var(--acc);text-decoration:underline;word-break:break-all">${escapeHtml(t.linkEntrega)}</a></div>` : ''}
+          ${t.notaEntrega ? `<div>📝 ${escapeHtml(t.notaEntrega)}</div>` : ''}
+        </div>
+      </div>
+    ` : ''}
     <div class="det-status-block">
       <label>cambiar estatus</label>
       ${renderEstatusSelectDetalle(t, isRecur)}
@@ -2926,8 +2976,14 @@ function renderEstatusSelectDetalle(t, isRecur) {
 }
 
 async function cambiarEstatusDesdeDetalle(id, nuevo, esRecur) {
+  // Si es entregado, cerramos detalle PRIMERO porque abrirá otro modal
+  if (nuevo === 'entregado') {
+    cerrarDetalle();
+  }
   await cambiarEstatus(id, nuevo, esRecur);
-  cerrarDetalle();
+  if (nuevo !== 'entregado') {
+    cerrarDetalle();
+  }
 }
 
 async function eliminarPeticionDesdeDetalle(id) {
@@ -2936,6 +2992,134 @@ async function eliminarPeticionDesdeDetalle(id) {
   if (error) { showInfo('error', 'no se pudo eliminar: ' + error.message); return; }
   DB.general = DB.general.filter(t => t.id !== id);
   cerrarDetalle();
+  renderActiveTab();
+}
+
+// ============================================================
+// MARCAR ENTREGADO CON LINK/NOTA OPCIONAL
+// ============================================================
+let _entregaContext = null; // { id, esRecur }
+
+function abrirEntrega(id, esRecur) {
+  _entregaContext = { id, esRecur };
+
+  // Si es recurrente, mostrar nombre de la recurrente
+  let titulo = 'marcar como entregado';
+  if (esRecur && id.startsWith('rec__')) {
+    const parts = id.substring(5).split('__');
+    const recur = RECURRENTES.find(r => r.id === parts[0]);
+    if (recur) titulo = `entregar · ${recur.nombre}`;
+  } else {
+    const t = DB.general.find(x => x.id === id);
+    if (t) titulo = `entregar · ${t.nombre}`;
+  }
+
+  $('entrega-titulo').textContent = titulo;
+  $('entrega-link').value = '';
+  $('entrega-nota').value = '';
+  $('ov-entrega').classList.add('show');
+  requestAnimationFrame(() => $('entrega-link').focus());
+}
+
+function cerrarEntrega() {
+  // Si el usuario cierra sin confirmar, restaurar el dropdown al estatus anterior
+  if (_entregaContext) {
+    renderActiveTab();
+  }
+  _entregaContext = null;
+  $('ov-entrega').classList.remove('show');
+}
+
+async function confirmarEntrega() {
+  if (!_entregaContext) return;
+  const { id, esRecur } = _entregaContext;
+  let link = $('entrega-link').value.trim();
+  const nota = $('entrega-nota').value.trim();
+
+  // Auto-detectar si pegaron URL sin https://
+  if (link && !link.startsWith('http://') && !link.startsWith('https://') && link.includes('.')) {
+    link = 'https://' + link;
+  }
+
+  _entregaContext = null;
+  $('ov-entrega').classList.remove('show');
+
+  if (esRecur) {
+    // Mismo flujo de cambiarEstatus para recurrente, pero con link/nota
+    if (!id.startsWith('rec__')) return;
+    const parts = id.substring(5).split('__');
+    if (parts.length !== 2) return;
+    const recurId = parts[0];
+    const fechaR = parts[1];
+    const recur = RECURRENTES.find(r => r.id === recurId);
+    if (!recur) return;
+
+    if (!matchNombre(recur.para, USER.nombre)) {
+      showInfo('no permitido', 'solo la persona asignada puede marcar esta recurrente');
+      renderActiveTab();
+      return;
+    }
+
+    let inst = DB.general.find(x => x.origenRecur === recur.id && x.fecha === fechaR);
+    if (inst) {
+      const { error } = await sb.from('peticiones').update({
+        estatus: 'entregado',
+        link_entrega: link || null,
+        nota_entrega: nota || null
+      }).eq('id', inst.id);
+      if (error) {
+        showInfo('error', 'no se pudo actualizar: ' + error.message);
+        renderActiveTab();
+        return;
+      }
+      inst.estatus = 'entregado';
+      inst.linkEntrega = link || null;
+      inst.notaEntrega = nota || null;
+    } else {
+      const nueva = {
+        zona: 'general',
+        nombre: recur.nombre, descripcion: recur.desc, creado_por: recur.creadoPor,
+        para: recur.para, area: recur.area, fecha: fechaR, prioridad: 'media',
+        estatus: 'entregado', privada: false, origen_recur: recur.id,
+        link_entrega: link || null, nota_entrega: nota || null
+      };
+      const { data, error } = await sb.from('peticiones').insert(nueva).select().single();
+      if (error) {
+        showInfo('error', 'no se pudo crear instancia: ' + error.message);
+        renderActiveTab();
+        return;
+      }
+      if (data) DB.general.push(mapPeticionRow(data));
+    }
+    renderActiveTab();
+    return;
+  }
+
+  // Petición normal
+  const t = DB.general.find(x => x.id === id);
+  if (!t) return;
+
+  const soyCreador = t.creadoPor === USER.nombre;
+  const soyDestinatario = matchNombre(t.para, USER.nombre);
+  if (!soyCreador && !soyDestinatario) {
+    showInfo('no permitido', 'no puedes cambiar el estatus de esta petición');
+    renderActiveTab();
+    return;
+  }
+
+  const { error } = await sb.from('peticiones').update({
+    estatus: 'entregado',
+    link_entrega: link || null,
+    nota_entrega: nota || null
+  }).eq('id', id);
+  if (error) {
+    showInfo('error', 'no se pudo actualizar: ' + error.message);
+    renderActiveTab();
+    return;
+  }
+  t.estatus = 'entregado';
+  t.linkEntrega = link || null;
+  t.notaEntrega = nota || null;
   renderActiveTab();
 }
 
