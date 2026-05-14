@@ -604,6 +604,90 @@ button{cursor:pointer}
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
 }
+
+/* === Notificaciones === */
+.notif-btn {
+  position: relative;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--txt);
+  width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background .15s, border-color .15s;
+}
+.notif-btn:hover { background: var(--bg-1); border-color: var(--acc); }
+.notif-badge {
+  position: absolute;
+  top: -4px; right: -4px;
+  background: var(--acc);
+  color: white;
+  font-size: 10px;
+  font-family: var(--mono);
+  font-weight: 700;
+  min-width: 16px; height: 16px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 4px;
+  border-radius: 8px;
+}
+.panel-notif {
+  position: absolute;
+  top: 64px; right: 24px;
+  width: 380px;
+  max-height: 480px;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  z-index: 1000;
+  display: flex; flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,.4);
+}
+.panel-notif-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+.panel-notif-list { overflow-y: auto; flex: 1; }
+.notif-item {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  transition: background .15s;
+  position: relative;
+}
+.notif-item:hover { background: var(--bg-0); }
+.notif-item.sinver { background: rgba(255,70,18,.05); }
+.notif-item.sinver:hover { background: rgba(255,70,18,.1); }
+.notif-icon { font-size: 18px; flex-shrink: 0; }
+.notif-content { flex: 1; min-width: 0; }
+.notif-titulo { font-size: 13px; color: var(--txt); margin-bottom: 2px; word-break: break-word; }
+.notif-detalle {
+  font-size: 12px; color: var(--txt-2);
+  margin-bottom: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.notif-time {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--txt-3);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.notif-dot {
+  width: 8px; height: 8px;
+  background: var(--acc);
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 6px;
+}
 </style>
 </head>
 <body>
@@ -724,9 +808,14 @@ button{cursor:pointer}
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <span class="login-meta" id="app-date">—</span>
+      <button class="notif-btn" onclick="togglePanelNotif()" title="notificaciones">
+        🔔<span id="notif-badge" class="notif-badge" style="display:none">0</span>
+      </button>
       <button class="btn ghost sm" onclick="cerrarSesion()">salir</button>
     </div>
   </div>
+  <!-- Panel desplegable de notificaciones -->
+  <div id="panel-notif" class="panel-notif" style="display:none"></div>
   <div class="tabs" id="tabs"></div>
   <div id="banner-anuncios" style="display:none;flex-wrap:wrap;gap:8px;padding:0 32px;margin-top:16px"></div>
   <div class="main" id="main">
@@ -1243,6 +1332,9 @@ let RECURRENTES = [];
 let TODOS = {};
 let ANUNCIOS = [];
 let ANUNCIOS_VISTOS = [];
+let NOTIFICACIONES = []; // notificaciones in-app del usuario actual
+let _notifChannel = null; // canal de realtime
+let _notifPermisoSO = null; // 'granted' | 'denied' | 'default' | null si no se preguntó
 
 let USER = null;          // persona logueada (con datos de la tabla personas + sesión auth)
 let pendingLogin = null;  // persona seleccionada en login screen
@@ -1344,6 +1436,282 @@ function showInfo(title, msg) {
 }
 function cerrarInfo() {
   $('ov-info').classList.remove('show');
+}
+
+// ============================================================
+// NOTIFICACIONES
+// ============================================================
+
+// Pedir permiso de notificaciones del SO (solo una vez por usuario)
+async function pedirPermisoNotificaciones() {
+  if (!('Notification' in window)) {
+    _notifPermisoSO = 'denied';
+    return false;
+  }
+  if (Notification.permission === 'granted') {
+    _notifPermisoSO = 'granted';
+    return true;
+  }
+  if (Notification.permission === 'denied') {
+    _notifPermisoSO = 'denied';
+    return false;
+  }
+  // Pedir permiso
+  const result = await Notification.requestPermission();
+  _notifPermisoSO = result;
+  return result === 'granted';
+}
+
+// Mostrar notificación del SO (popup nativo)
+function mostrarNotifSO(titulo, cuerpo, onClick) {
+  if (_notifPermisoSO !== 'granted') return;
+  try {
+    const n = new Notification(titulo, {
+      body: cuerpo,
+      icon: '/favicon.ico',
+      badge: '/favicon.ico',
+      tag: 'movdi-ops-' + Date.now(),
+      requireInteraction: false,
+    });
+    n.onclick = () => {
+      window.focus();
+      if (onClick) onClick();
+      n.close();
+    };
+    // Auto-cerrar a los 6 segundos
+    setTimeout(() => n.close(), 6000);
+  } catch (e) {
+    console.warn('No se pudo mostrar notificación del SO:', e);
+  }
+}
+
+// Actualizar título de la pestaña con contador
+function actualizarTituloPestana() {
+  const sinVer = NOTIFICACIONES.filter(n => !n.vista).length;
+  if (sinVer > 0) {
+    document.title = `(${sinVer}) MOVDI · ops`;
+  } else {
+    document.title = 'MOVDI · ops';
+  }
+}
+
+// Mapear row de notificación
+const mapNotifRow = r => ({
+  id: r.id,
+  para: r.para,
+  tipo: r.tipo,
+  titulo: r.titulo,
+  detalle: r.detalle,
+  peticionId: r.peticion_id,
+  vista: r.vista === true,
+  creadaEn: r.creada_en,
+});
+
+// Cargar notificaciones del usuario actual
+async function cargarNotificaciones() {
+  if (!USER) return;
+  const { data, error } = await sb.from('notificaciones')
+    .select('*')
+    .eq('para', USER.nombre)
+    .order('creada_en', { ascending: false })
+    .limit(30);
+  if (error) {
+    console.warn('Error cargando notificaciones:', error.message);
+    return;
+  }
+  NOTIFICACIONES = (data || []).map(mapNotifRow);
+  actualizarTituloPestana();
+  renderBadgeNotif();
+}
+
+// Crear notificación (la llaman las funciones que generan eventos)
+async function crearNotificacion(para, tipo, titulo, detalle, peticionId) {
+  if (!para || para === USER.nombre) return; // no notificar a uno mismo
+  const persona = PERSONAS.find(p => matchNombre(p.nombre, para));
+  if (!persona || persona.activo === false) return; // no notificar a inactivos
+  try {
+    await sb.from('notificaciones').insert({
+      para: persona.nombre, // usar nombre canónico de BD
+      tipo,
+      titulo,
+      detalle: detalle || null,
+      peticion_id: peticionId || null,
+    });
+  } catch (e) {
+    console.warn('No se pudo crear notificación:', e);
+  }
+}
+
+// Crear notificaciones masivas (para asignación múltiple)
+async function crearNotificacionesBatch(destinatarios, tipo, titulo, detalle, peticionIds) {
+  if (!destinatarios || !destinatarios.length) return;
+  const rows = destinatarios
+    .filter(nombre => nombre !== USER.nombre)
+    .map((nombre, i) => ({
+      para: nombre,
+      tipo,
+      titulo,
+      detalle: detalle || null,
+      peticion_id: (peticionIds && peticionIds[i]) || null,
+    }));
+  if (!rows.length) return;
+  try {
+    await sb.from('notificaciones').insert(rows);
+  } catch (e) {
+    console.warn('No se pudieron crear notificaciones:', e);
+  }
+}
+
+// Suscribirse a notificaciones en realtime
+function suscribirNotificaciones() {
+  if (!USER) return;
+  // Cleanup canal anterior si existe
+  if (_notifChannel) {
+    sb.removeChannel(_notifChannel);
+    _notifChannel = null;
+  }
+  _notifChannel = sb.channel('notif-' + USER.nombre)
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'notificaciones',
+      filter: `para=eq.${USER.nombre}`
+    }, (payload) => {
+      const notif = mapNotifRow(payload.new);
+      NOTIFICACIONES.unshift(notif);
+      actualizarTituloPestana();
+      renderBadgeNotif();
+      // Mostrar notificación del SO
+      mostrarNotifSO(notif.titulo, notif.detalle || '', () => {
+        abrirPanelNotif();
+      });
+    })
+    .subscribe();
+}
+
+// Abrir/cerrar panel de notificaciones
+let _panelNotifAbierto = false;
+function togglePanelNotif() {
+  _panelNotifAbierto = !_panelNotifAbierto;
+  if (_panelNotifAbierto) {
+    abrirPanelNotif();
+  } else {
+    cerrarPanelNotif();
+  }
+}
+
+function abrirPanelNotif() {
+  _panelNotifAbierto = true;
+  const panel = $('panel-notif');
+  if (!panel) return;
+  panel.style.display = 'block';
+  renderPanelNotif();
+}
+
+function cerrarPanelNotif() {
+  _panelNotifAbierto = false;
+  const panel = $('panel-notif');
+  if (panel) panel.style.display = 'none';
+}
+
+// Render del badge en el header
+function renderBadgeNotif() {
+  const badge = $('notif-badge');
+  if (!badge) return;
+  const sinVer = NOTIFICACIONES.filter(n => !n.vista).length;
+  if (sinVer > 0) {
+    badge.textContent = sinVer > 9 ? '9+' : sinVer;
+    badge.style.display = 'inline-flex';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// Render del panel desplegable de notificaciones
+function renderPanelNotif() {
+  const panel = $('panel-notif');
+  if (!panel) return;
+  if (!NOTIFICACIONES.length) {
+    panel.innerHTML = `
+      <div class="panel-notif-head">
+        <strong>notificaciones</strong>
+        <button class="modal-x" onclick="cerrarPanelNotif()" style="font-size:14px">✕</button>
+      </div>
+      <div style="padding:24px;text-align:center;color:var(--txt-3);font-size:13px">sin notificaciones todavía</div>
+    `;
+    return;
+  }
+  const sinVer = NOTIFICACIONES.filter(n => !n.vista).length;
+  panel.innerHTML = `
+    <div class="panel-notif-head">
+      <strong>notificaciones</strong>
+      <div style="display:flex;gap:8px;align-items:center">
+        ${sinVer > 0 ? `<button class="btn ghost sm" onclick="marcarTodasVistas()" style="font-size:11px">marcar todas vistas</button>` : ''}
+        <button class="modal-x" onclick="cerrarPanelNotif()" style="font-size:14px">✕</button>
+      </div>
+    </div>
+    <div class="panel-notif-list">
+      ${NOTIFICACIONES.map(n => `
+        <div class="notif-item ${n.vista ? 'vista' : 'sinver'}" onclick="abrirNotif('${n.id}')">
+          <div class="notif-icon">${iconoNotif(n.tipo)}</div>
+          <div class="notif-content">
+            <div class="notif-titulo">${escapeHtml(n.titulo)}</div>
+            ${n.detalle ? `<div class="notif-detalle">${escapeHtml(n.detalle)}</div>` : ''}
+            <div class="notif-time">${tiempoRelativo(n.creadaEn)}</div>
+          </div>
+          ${!n.vista ? '<div class="notif-dot"></div>' : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function iconoNotif(tipo) {
+  if (tipo === 'nueva_peticion') return '📥';
+  if (tipo === 'fecha_cambiada') return '📅';
+  if (tipo === 'reabierta') return '🔄';
+  return '🔔';
+}
+
+function tiempoRelativo(iso) {
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (diff < 60) return 'hace un momento';
+  if (diff < 3600) return `hace ${Math.floor(diff / 60)} min`;
+  if (diff < 86400) return `hace ${Math.floor(diff / 3600)} h`;
+  if (diff < 604800) return `hace ${Math.floor(diff / 86400)} d`;
+  return new Date(iso).toLocaleDateString();
+}
+
+// Click en una notificación: marcar vista y abrir petición si aplica
+async function abrirNotif(id) {
+  const notif = NOTIFICACIONES.find(n => n.id === id);
+  if (!notif) return;
+  if (!notif.vista) {
+    await sb.from('notificaciones').update({ vista: true }).eq('id', id);
+    notif.vista = true;
+    actualizarTituloPestana();
+    renderBadgeNotif();
+    renderPanelNotif();
+  }
+  // Si tiene petición asociada, abrirla
+  if (notif.peticionId) {
+    const t = DB.general.find(x => x.id === notif.peticionId);
+    if (t) {
+      cerrarPanelNotif();
+      abrirDetalle(notif.peticionId, false);
+    }
+  }
+}
+
+async function marcarTodasVistas() {
+  const sinVer = NOTIFICACIONES.filter(n => !n.vista);
+  if (!sinVer.length) return;
+  const ids = sinVer.map(n => n.id);
+  await sb.from('notificaciones').update({ vista: true }).in('id', ids);
+  NOTIFICACIONES.forEach(n => { if (ids.includes(n.id)) n.vista = true; });
+  actualizarTituloPestana();
+  renderBadgeNotif();
+  renderPanelNotif();
 }
 
 // Mapear filas de Supabase a formato interno
@@ -1619,10 +1987,25 @@ function prepararAppUI() {
   renderTabs();
   renderActiveTab();
   renderBannerAnuncios();
+
+  // Cargar y suscribir notificaciones
+  cargarNotificaciones();
+  suscribirNotificaciones();
+  // Pedir permiso de notificaciones del SO (silencioso, no bloquea)
+  pedirPermisoNotificaciones();
 }
 
 async function cerrarSesion() {
   showLoading('cerrando sesión...');
+
+  // Limpiar canal de notificaciones realtime
+  if (_notifChannel) {
+    try { sb.removeChannel(_notifChannel); } catch (e) {}
+    _notifChannel = null;
+  }
+  NOTIFICACIONES = [];
+  document.title = 'MOVDI · ops';
+
   try {
     const { error } = await sb.auth.signOut();
     if (error) {
@@ -2142,10 +2525,21 @@ async function cambiarEstatus(id, nuevo, esRecur) {
     return;
   }
 
+  // Detectar si es REABRIR (estaba entregado, ahora se vuelve pendiente o proceso)
+  const esReabrir = t.estatus === 'entregado' && nuevo !== 'entregado';
+
   const { error } = await sb.from('peticiones').update({ estatus: nuevo }).eq('id', id);
   if (!error) {
     t.estatus = nuevo;
     renderActiveTab();
+
+    // Si fue reabrir, notificar al destinatario
+    if (esReabrir && soyCreador) {
+      crearNotificacion(t.para, 'reabierta',
+        `${USER.nombre} reabrió "${t.nombre}"`,
+        `vuelve a estar pendiente · revisa los detalles`,
+        t.id);
+    }
   } else {
     showInfo('error', 'no se pudo actualizar: ' + error.message);
   }
@@ -3208,6 +3602,13 @@ async function confirmarCambioFecha() {
   cerrarCambioFecha();
   cerrarDetalle();
   renderActiveTab();
+
+  // Notificar al creador
+  crearNotificacion(t.creadoPor, 'fecha_cambiada',
+    `${USER.nombre} cambió la fecha de "${t.nombre}"`,
+    `nueva fecha: ${fechaCorta(nuevaFecha)} · motivo: ${motivo}`,
+    t.id);
+
   showInfo('fecha actualizada ✓', `${t.creadoPor} verá una alerta con tu motivo cuando entre.`);
 }
 
@@ -3403,6 +3804,11 @@ async function guardarPeticion() {
 
   if (data) {
     data.forEach(d => DB.general.push(mapPeticionRow(d)));
+
+    // Crear notificaciones para destinatarios (excepto si soy yo)
+    const tituloNotif = `nueva petición de ${USER.nombre}`;
+    const peticionIds = data.map(d => d.id);
+    crearNotificacionesBatch(destinatarios, 'nueva_peticion', tituloNotif, nombre, peticionIds);
   }
 
   cerrarPeticion();
