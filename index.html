@@ -4394,15 +4394,19 @@ async function pregenerarInstanciasPasadas() {
     const fechas = calcularFechasEsperadas(r, 12);
 
     // ✨ FIX: solo pregenerar desde la fecha de creación de la recurrente
-    // (no inventar instancias de antes de que existiera)
+    // Si no tenemos creadaEn, NO pregeneramos nada para esta recurrente (más seguro)
     const fechaCreacion = r.creadaEn ? r.creadaEn.slice(0, 10) : null;
+    if (!fechaCreacion) {
+      // Sin fecha de creación → no podemos saber desde cuándo cuenta → no pregenerar
+      return;
+    }
 
     fechas.forEach(fecha => {
       // No generar para fechas futuras o de hoy (eso lo hace el motor en vivo)
       if (fecha >= hoy) return;
 
       // ✨ FIX: no generar instancias anteriores a la creación de la recurrente
-      if (fechaCreacion && fecha < fechaCreacion) return;
+      if (fecha < fechaCreacion) return;
 
       // Si la persona estaba pausada en esa fecha, no generar
       if (persona && persona.pausadaHasta && fecha <= persona.pausadaHasta) {
