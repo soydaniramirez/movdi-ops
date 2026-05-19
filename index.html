@@ -4374,75 +4374,10 @@ function calcularFechasEsperadas(recur, semanasAtras = 12) {
 
 // Pre-genera instancias pasadas faltantes (solo admin lo dispara al cargar)
 async function pregenerarInstanciasPasadas() {
-  if (!puedeCrearRecurrentes(USER)) return;
-
-  // Recurrentes activas (saltar las de personas inactivas o pausadas)
-  const activas = RECURRENTES.filter(r => {
-    if (!r.activa) return false;
-    const persona = PERSONAS.find(p => matchNombre(p.nombre, r.para));
-    if (!persona) return false; // persona no existe (¿borrada manualmente?)
-    if (persona.activo === false) return false; // inactiva
-    return true;
-  });
-  if (!activas.length) return;
-
-  const hoy = new Date(new Date().toDateString()).toISOString().slice(0, 10);
-  const insertsPendientes = [];
-
-  activas.forEach(r => {
-    const persona = PERSONAS.find(p => matchNombre(p.nombre, r.para));
-    const fechas = calcularFechasEsperadas(r, 12);
-
-    // ✨ FIX: solo pregenerar desde la fecha de creación de la recurrente
-    // Si no tenemos creadaEn, NO pregeneramos nada para esta recurrente (más seguro)
-    const fechaCreacion = r.creadaEn ? r.creadaEn.slice(0, 10) : null;
-    if (!fechaCreacion) {
-      // Sin fecha de creación → no podemos saber desde cuándo cuenta → no pregenerar
-      return;
-    }
-
-    fechas.forEach(fecha => {
-      // No generar para fechas futuras o de hoy (eso lo hace el motor en vivo)
-      if (fecha >= hoy) return;
-
-      // ✨ FIX: no generar instancias anteriores a la creación de la recurrente
-      if (fecha < fechaCreacion) return;
-
-      // Si la persona estaba pausada en esa fecha, no generar
-      if (persona && persona.pausadaHasta && fecha <= persona.pausadaHasta) {
-        // Solo si la pausa abarca esa fecha pasada
-      }
-      // Verificar si ya existe
-      const ya = DB.general.find(p => p.origenRecur === r.id && p.fecha === fecha);
-      if (!ya) {
-        insertsPendientes.push({
-          zona: 'general',
-          nombre: r.nombre,
-          descripcion: r.desc,
-          creado_por: r.creadoPor,
-          para: r.para,
-          area: r.area,
-          fecha: fecha,
-          prioridad: 'media',
-          estatus: 'pendiente',
-          privada: false,
-          origen_recur: r.id
-        });
-      }
-    });
-  });
-
-  if (insertsPendientes.length === 0) return;
-
-  // Insertar en batch
-  const { data, error } = await sb.from('peticiones').insert(insertsPendientes).select();
-  if (error) {
-    console.warn('Error pre-generando instancias:', error.message);
-    return;
-  }
-  if (data) {
-    data.forEach(d => DB.general.push(mapPeticionRow(d)));
-  }
+  // ✨ DESHABILITADO: ya no pregeneramos instancias pasadas.
+  // Las instancias se crean al vuelo cuando alguien marca entregado.
+  // Esto evita el bug de "fechas fantasma" en recurrentes nuevas.
+  return;
 }
 
 // Calcular estadísticas de cumplimiento por recurrente
@@ -4478,12 +4413,13 @@ function calcularCumplimiento(recur, semanasAtras = 12) {
 
   fechasRelevantes.forEach(fecha => {
     const inst = instancias.find(i => i.fecha === fecha);
+    if (inst && inst.estatus === 'archivada') {
+      // Archivadas: NO se muestran en histórico ni cuentan en cálculo
+      return;
+    }
     if (inst && inst.estatus === 'entregado') {
       entregadas++;
       detalle.push({ fecha, estado: 'entregada', tarde: false });
-    } else if (inst && inst.estatus === 'archivada') {
-      // Archivada: no cuenta como entregada NI como pendiente (limpieza histórica)
-      detalle.push({ fecha, estado: 'archivada', tarde: false });
     } else if (inst) {
       detalle.push({ fecha, estado: 'pendiente', tarde: true });
     } else {
@@ -4491,9 +4427,8 @@ function calcularCumplimiento(recur, semanasAtras = 12) {
     }
   });
 
-  // Excluir archivadas del total para que no contaminen el %
-  const archivadas = detalle.filter(d => d.estado === 'archivada').length;
-  const total = fechasRelevantes.length - archivadas;
+  // Total = solo las fechas que se mostrarán en detalle (sin archivadas)
+  const total = detalle.length;
   const porcentaje = total === 0 ? 0 : Math.round((entregadas / total) * 100);
 
   return {
