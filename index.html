@@ -2367,6 +2367,10 @@ function renderKpis(k) {
 }
 
 function renderTabla(lista, opts = {}) {
+  // Filtrar archivadas (a menos que explícitamente se pidan)
+  if (!opts.incluirArchivadas) {
+    lista = lista.filter(t => t.estatus !== 'archivada');
+  }
   if (!lista.length) return `<div class="empty"><h4>sin peticiones</h4><p>no hay tareas que cumplan los filtros actuales</p></div>`;
   lista = lista.slice().sort((a, b) => {
     const ea = a.estatus === 'entregado' ? 1 : 0, eb = b.estatus === 'entregado' ? 1 : 0;
@@ -2906,9 +2910,11 @@ function proximaFecha(r) {
     if (d < hoy) d.setMonth(d.getMonth() + 1);
     return d.toISOString().slice(0, 10);
   }
+  // Semanal: si hoy es el día, devolver HOY (no la próxima semana)
+  // Si no, calcular cuántos días faltan para el día de la recurrente
   const d = new Date(hoy);
   const diff = (r.diaSemana - hoy.getDay() + 7) % 7;
-  d.setDate(d.getDate() + (diff || (r.frecuencia === 'semanal' ? 7 : 14)));
+  d.setDate(d.getDate() + diff);
   return d.toISOString().slice(0, 10);
 }
 function generarRecurrentes() {
@@ -2924,9 +2930,28 @@ function obtenerInstanciasRecur(nombre) {
   RECURRENTES.forEach(r => {
     if (!r.activa) return;
     if (!matchNombre(r.para, nombre)) return;
-    const fechaR = r._fechaActual;
+
+    let fechaR = r._fechaActual;
+
+    // Si la instancia para esa fecha YA está entregada o archivada,
+    // calcular la SIGUIENTE fecha futura
+    const instActual = DB.general.find(x => x.origenRecur === r.id && x.fecha === fechaR);
+    if (instActual && (instActual.estatus === 'entregado' || instActual.estatus === 'archivada')) {
+      // Calcular siguiente fecha según frecuencia
+      const d = new Date(fechaR + 'T00:00:00');
+      if (r.frecuencia === 'mensual') {
+        d.setMonth(d.getMonth() + 1);
+      } else {
+        d.setDate(d.getDate() + 7);
+      }
+      fechaR = d.toISOString().slice(0, 10);
+    }
+
+    // Buscar la instancia en BD para la fecha resultante
     const inst = DB.general.find(x => x.origenRecur === r.id && x.fecha === fechaR);
     if (inst) {
+      // Si la siguiente también está entregada/archivada, no la mostramos
+      if (inst.estatus === 'entregado' || inst.estatus === 'archivada') return;
       out.push({ ...inst, _recurOrigen: r.id });
     } else {
       out.push({
@@ -4423,10 +4448,11 @@ function calcularCumplimiento(recur, semanasAtras = 12) {
     const inst = instancias.find(i => i.fecha === fecha);
     if (inst && inst.estatus === 'entregado') {
       entregadas++;
-      // Si tiene una instancia y se entregó, ¿se entregó a tiempo?
-      // (heurística: si existe la fila pero no podemos saber el día exacto de entrega
-      // sin más data, asumimos a tiempo. En el futuro se puede agregar un campo entregado_en)
       detalle.push({ fecha, estado: 'entregada', tarde: false });
+    } else if (inst && inst.estatus === 'archivada') {
+      // Archivada: no cuenta como entregada NI como pendiente (limpieza histórica)
+      // Reducimos el total para no penalizar
+      detalle.push({ fecha, estado: 'archivada', tarde: false });
     } else if (inst) {
       detalle.push({ fecha, estado: 'pendiente', tarde: true });
     } else {
@@ -4434,7 +4460,9 @@ function calcularCumplimiento(recur, semanasAtras = 12) {
     }
   });
 
-  const total = fechasPasadas.length;
+  // Excluir archivadas del total para que no contaminen el %
+  const archivadas = detalle.filter(d => d.estado === 'archivada').length;
+  const total = fechasPasadas.length - archivadas;
   const porcentaje = total === 0 ? 0 : Math.round((entregadas / total) * 100);
 
   return {
