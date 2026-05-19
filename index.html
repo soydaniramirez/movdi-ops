@@ -4436,22 +4436,40 @@ async function pregenerarInstanciasPasadas() {
 function calcularCumplimiento(recur, semanasAtras = 12) {
   const fechas = calcularFechasEsperadas(recur, semanasAtras);
   const hoy = new Date(new Date().toDateString()).toISOString().slice(0, 10);
-  const fechasPasadas = fechas.filter(f => f < hoy);
 
   const instancias = DB.general.filter(p => p.origenRecur === recur.id);
+
+  // ✨ NUEVO: encontrar la fecha más antigua donde realmente se entregó algo
+  // (esto define cuándo la recurrente empezó a contar oficialmente)
+  const entregadasInst = instancias.filter(i => i.estatus === 'entregado');
+  let fechaInicio = null;
+  if (entregadasInst.length > 0) {
+    fechaInicio = entregadasInst.reduce((min, i) =>
+      i.fecha < min ? i.fecha : min, entregadasInst[0].fecha);
+  }
+
+  // Si no hay entregadas todavía, usar las semanasAtras pero solo las que tienen instancia
+  // (no fechas teóricas anteriores al sistema)
+  let fechasRelevantes;
+  if (fechaInicio) {
+    // Solo fechas entre la primera entrega y hoy
+    fechasRelevantes = fechas.filter(f => f >= fechaInicio && f < hoy);
+  } else {
+    // Sin entregadas: solo fechas que tienen instancia registrada (no las teóricas vacías)
+    fechasRelevantes = fechas.filter(f => f < hoy && instancias.find(i => i.fecha === f));
+  }
 
   let entregadas = 0;
   let tarde = 0;
   const detalle = [];
 
-  fechasPasadas.forEach(fecha => {
+  fechasRelevantes.forEach(fecha => {
     const inst = instancias.find(i => i.fecha === fecha);
     if (inst && inst.estatus === 'entregado') {
       entregadas++;
       detalle.push({ fecha, estado: 'entregada', tarde: false });
     } else if (inst && inst.estatus === 'archivada') {
       // Archivada: no cuenta como entregada NI como pendiente (limpieza histórica)
-      // Reducimos el total para no penalizar
       detalle.push({ fecha, estado: 'archivada', tarde: false });
     } else if (inst) {
       detalle.push({ fecha, estado: 'pendiente', tarde: true });
@@ -4462,7 +4480,7 @@ function calcularCumplimiento(recur, semanasAtras = 12) {
 
   // Excluir archivadas del total para que no contaminen el %
   const archivadas = detalle.filter(d => d.estado === 'archivada').length;
-  const total = fechasPasadas.length - archivadas;
+  const total = fechasRelevantes.length - archivadas;
   const porcentaje = total === 0 ? 0 : Math.round((entregadas / total) * 100);
 
   return {
