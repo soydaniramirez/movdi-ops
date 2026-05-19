@@ -1762,6 +1762,7 @@ const mapRecurRow = r => ({
   diaMes: r.dia_mes,
   activa: r.activa,
   creadoPor: r.creado_por,
+  creadaEn: r.creada_en || r.created_at || null,
 });
 
 const mapAnuncioRow = r => ({
@@ -4391,13 +4392,21 @@ async function pregenerarInstanciasPasadas() {
   activas.forEach(r => {
     const persona = PERSONAS.find(p => matchNombre(p.nombre, r.para));
     const fechas = calcularFechasEsperadas(r, 12);
+
+    // ✨ FIX: solo pregenerar desde la fecha de creación de la recurrente
+    // (no inventar instancias de antes de que existiera)
+    const fechaCreacion = r.creadaEn ? r.creadaEn.slice(0, 10) : null;
+
     fechas.forEach(fecha => {
       // No generar para fechas futuras o de hoy (eso lo hace el motor en vivo)
       if (fecha >= hoy) return;
+
+      // ✨ FIX: no generar instancias anteriores a la creación de la recurrente
+      if (fechaCreacion && fecha < fechaCreacion) return;
+
       // Si la persona estaba pausada en esa fecha, no generar
       if (persona && persona.pausadaHasta && fecha <= persona.pausadaHasta) {
         // Solo si la pausa abarca esa fecha pasada
-        // (asumimos que pausada_hasta viene de un futuro o presente, así que esto raramente aplica)
       }
       // Verificar si ya existe
       const ya = DB.general.find(p => p.origenRecur === r.id && p.fecha === fecha);
