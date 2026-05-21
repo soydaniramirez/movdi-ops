@@ -817,6 +817,7 @@ button{cursor:pointer}
   <!-- Panel desplegable de notificaciones -->
   <div id="panel-notif" class="panel-notif" style="display:none"></div>
   <div class="tabs" id="tabs"></div>
+  <div id="banner-podio" style="display:none;padding:0 32px;margin-top:16px"></div>
   <div id="banner-anuncios" style="display:none;flex-wrap:wrap;gap:8px;padding:0 32px;margin-top:16px"></div>
   <div class="main" id="main">
     <div class="content" id="content"></div>
@@ -1987,6 +1988,7 @@ function prepararAppUI() {
   activeTab = isAdmin(USER) ? 'general' : 'mis';
   renderTabs();
   renderActiveTab();
+  renderBannerPodio();
   renderBannerAnuncios();
 
   // Cargar y suscribir notificaciones
@@ -2197,6 +2199,7 @@ function renderTabs() {
       { id: 'porpersona', label: 'por persona' },
       { id: 'recur', label: '↻ recurrentes' },
       { id: 'cumpli', label: '📊 cumplimiento' },
+      { id: 'progreso', label: '🏆 progreso' },
       { id: 'anuncios', label: '📢 anuncios', count: anunciosCount > 0 ? anunciosCount : undefined },
       { id: 'equipo', label: 'equipo' },
       { id: 'todo', label: 'mi to-do' },
@@ -2206,6 +2209,7 @@ function renderTabs() {
     tabs = [
       { id: 'mis', label: 'mis peticiones', count: countMis() },
       { id: 'pedi', label: 'lo que yo pedí' },
+      { id: 'progreso', label: '🏆 progreso' },
       { id: 'anuncios', label: '📢 anuncios', count: anunciosCount > 0 ? anunciosCount : undefined },
       { id: 'todo', label: 'mi to-do privado' },
     ];
@@ -2271,6 +2275,7 @@ function renderActiveTab() {
     case 'porpersona': renderPorPersona(); renderSide(); break;
     case 'recur': renderRecurrentes(); break;
     case 'cumpli': renderCumplimiento(); break;
+    case 'progreso': renderProgreso(); break;
     case 'miritmo': renderMiRitmo(); break;
     case 'anuncios': renderAnuncios(); break;
     case 'equipo': renderEquipo(); break;
@@ -4380,6 +4385,464 @@ async function pregenerarInstanciasPasadas() {
   return;
 }
 
+// ============================================================
+// 🏆 SISTEMA DE GAMIFICACIÓN
+// ============================================================
+
+// Quién compite en leaderboard mensual (ejecutivos operativos + heads que ejecutan)
+function competeEnLeaderboard(persona) {
+  if (!persona) return false;
+  if (persona.activo === false) return false;
+  // CEO no compite (evalúan)
+  if (persona.nivel === 'ceo') return false;
+  // RH no compite
+  if (persona.nivel === 'rh') return false;
+  // Salvador (Admi) y Arylene (Legal) no compiten - naturaleza distinta
+  if (persona.nombre === 'Salvador' || persona.nombre === 'Arylene') return false;
+  // El resto sí compite (heads + ejecutivos operativos)
+  return true;
+}
+
+// Calcular stats personales de una persona para un periodo
+function calcularStatsPersona(nombre, opts = {}) {
+  // opts: { desde, hasta } - rango de fechas opcional
+  const persona = PERSONAS.find(p => matchNombre(p.nombre, nombre));
+  if (!persona) return null;
+
+  // Filtrar peticiones donde esta persona es destinataria y están entregadas
+  let entregadas = DB.general.filter(t =>
+    matchNombre(t.para, nombre) &&
+    t.estatus === 'entregado' &&
+    t.estatus !== 'archivada'
+  );
+
+  // Filtrar por rango si se especifica
+  if (opts.desde) entregadas = entregadas.filter(t => t.fecha >= opts.desde);
+  if (opts.hasta) entregadas = entregadas.filter(t => t.fecha <= opts.hasta);
+
+  // Calcular a tiempo vs tarde
+  // Heurística: si no tenemos fecha de entrega real, asumimos a tiempo
+  // (en el futuro se puede agregar campo entregado_en)
+  const aTiempo = entregadas.length;
+  const tarde = 0;
+
+  // Pendientes vencidas (atrasadas) - cuenta como "tarde implícito"
+  const hoy = new Date(new Date().toDateString()).toISOString().slice(0, 10);
+  const pendientesVencidas = DB.general.filter(t =>
+    matchNombre(t.para, nombre) &&
+    t.estatus !== 'entregado' &&
+    t.estatus !== 'archivada' &&
+    t.fecha < hoy
+  );
+  if (opts.desde) {
+    // Solo contar las vencidas dentro del rango
+  }
+
+  // Cumplimiento: entregadas / (entregadas + vencidas)
+  const totalConsiderado = entregadas.length + pendientesVencidas.length;
+  const porcentaje = totalConsiderado === 0 ? 0 :
+    Math.round((aTiempo / totalConsiderado) * 100);
+
+  return {
+    nombre: persona.nombre,
+    apellido: persona.apellido,
+    entregadas: entregadas.length,
+    aTiempo,
+    tarde,
+    pendientesVencidas: pendientesVencidas.length,
+    total: totalConsiderado,
+    porcentaje,
+  };
+}
+
+// Calcular racha actual: peticiones entregadas consecutivamente sin reabrir
+function calcularRachaActual(nombre) {
+  const peticiones = DB.general.filter(t =>
+    matchNombre(t.para, nombre) &&
+    t.estatus !== 'archivada'
+  ).sort((a, b) => b.fecha.localeCompare(a.fecha));
+
+  let racha = 0;
+  for (const t of peticiones) {
+    if (t.estatus === 'entregado') {
+      racha++;
+    } else {
+      break;
+    }
+  }
+  return racha;
+}
+
+// Calcular mejor racha histórica
+function calcularMejorRacha(nombre) {
+  const peticiones = DB.general.filter(t =>
+    matchNombre(t.para, nombre) &&
+    t.estatus !== 'archivada'
+  ).sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+  let mejor = 0;
+  let actual = 0;
+  for (const t of peticiones) {
+    if (t.estatus === 'entregado') {
+      actual++;
+      if (actual > mejor) mejor = actual;
+    } else {
+      actual = 0;
+    }
+  }
+  return mejor;
+}
+
+// Definición de todos los logros del sistema
+const LOGROS = [
+  // Volumen
+  { id: 'volumen_1', nombre: 'primera entrega', icono: '🌱', categoria: 'volumen', criterio: s => s.entregadasTotales >= 1, desc: 'tu primera entrega completada' },
+  { id: 'volumen_10', nombre: '10 entregas', icono: '🌿', categoria: 'volumen', criterio: s => s.entregadasTotales >= 10, desc: '10 peticiones entregadas' },
+  { id: 'volumen_25', nombre: '25 entregas', icono: '🌳', categoria: 'volumen', criterio: s => s.entregadasTotales >= 25, desc: '25 peticiones entregadas' },
+  { id: 'volumen_50', nombre: '50 entregas', icono: '🏔️', categoria: 'volumen', criterio: s => s.entregadasTotales >= 50, desc: '50 peticiones entregadas' },
+  { id: 'volumen_100', nombre: 'centenario', icono: '⭐', categoria: 'volumen', criterio: s => s.entregadasTotales >= 100, desc: '100 peticiones entregadas' },
+  // Rachas
+  { id: 'racha_5', nombre: 'racha de 5', icono: '🔥', categoria: 'racha', criterio: s => s.mejorRacha >= 5, desc: '5 entregas seguidas sin retraso' },
+  { id: 'racha_10', nombre: 'racha de 10', icono: '🔥🔥', categoria: 'racha', criterio: s => s.mejorRacha >= 10, desc: '10 entregas seguidas sin retraso' },
+  { id: 'racha_20', nombre: 'racha de 20', icono: '🔥🔥🔥', categoria: 'racha', criterio: s => s.mejorRacha >= 20, desc: '20 entregas seguidas sin retraso' },
+  // Calidad
+  { id: 'sin_reabrir_10', nombre: 'sin reabrir', icono: '💎', categoria: 'calidad', criterio: s => s.entregadasTotales >= 10 && s.reabiertas === 0, desc: '10+ entregas sin que ninguna se reabra' },
+  // Especiales
+  { id: 'variedad_5', nombre: 'variedad', icono: '🌍', categoria: 'especial', criterio: s => s.areasUnicas >= 3, desc: 'entregas en 3+ áreas distintas' },
+  { id: 'mes_perfecto', nombre: 'mes perfecto', icono: '🏆', categoria: 'especial', criterio: s => s.mesPerfecto, desc: 'un mes completo sin tareas vencidas' },
+];
+
+// Calcular logros desbloqueados de una persona
+function calcularLogros(nombre) {
+  const persona = PERSONAS.find(p => matchNombre(p.nombre, nombre));
+  if (!persona) return { desbloqueados: [], bloqueados: LOGROS };
+
+  // Stats globales necesarios para criterios
+  const todasEntregadas = DB.general.filter(t =>
+    matchNombre(t.para, nombre) &&
+    t.estatus === 'entregado' &&
+    t.estatus !== 'archivada'
+  );
+
+  const areasUnicas = new Set(todasEntregadas.map(t => t.area)).size;
+  const reabiertas = 0; // por ahora 0, ya que no tenemos histórico de cambios de estatus
+
+  // Mes perfecto: revisar el mes anterior completo
+  const hoy = new Date();
+  const mesAnt = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  const mesAntStr = mesAnt.toISOString().slice(0, 7);
+  const finMesAnt = new Date(hoy.getFullYear(), hoy.getMonth(), 0).toISOString().slice(0, 10);
+  const inicioMesAnt = mesAnt.toISOString().slice(0, 10);
+
+  const peticionesDelMesAnt = DB.general.filter(t =>
+    matchNombre(t.para, nombre) &&
+    t.estatus !== 'archivada' &&
+    t.fecha >= inicioMesAnt &&
+    t.fecha <= finMesAnt
+  );
+  const vencidasDelMesAnt = peticionesDelMesAnt.filter(t => t.estatus !== 'entregado');
+  const mesPerfecto = peticionesDelMesAnt.length >= 3 && vencidasDelMesAnt.length === 0;
+
+  const stats = {
+    entregadasTotales: todasEntregadas.length,
+    mejorRacha: calcularMejorRacha(nombre),
+    rachaActual: calcularRachaActual(nombre),
+    areasUnicas,
+    reabiertas,
+    mesPerfecto,
+  };
+
+  const desbloqueados = LOGROS.filter(l => {
+    try { return l.criterio(stats); } catch (e) { return false; }
+  });
+  const bloqueados = LOGROS.filter(l => !desbloqueados.find(d => d.id === l.id));
+
+  return { desbloqueados, bloqueados, stats };
+}
+
+// Calcular leaderboard mensual del equipo
+function calcularLeaderboardMes(opts = {}) {
+  // opts: { mes: 'YYYY-MM', soloEquipo: nombre de manager (filtra a los que reportan a esta persona) }
+  const mes = opts.mes || new Date().toISOString().slice(0, 7);
+  const desde = mes + '-01';
+  const hasta = (() => {
+    const [y, m] = mes.split('-').map(Number);
+    return new Date(y, m, 0).toISOString().slice(0, 10);
+  })();
+
+  // Filtrar personas que compiten
+  let candidatos = PERSONAS.filter(p => competeEnLeaderboard(p));
+
+  // Si soloEquipo, filtrar a quienes reportan a esa persona
+  if (opts.soloEquipo) {
+    candidatos = candidatos.filter(p =>
+      p.managerPrincipal === opts.soloEquipo ||
+      (p.managers || []).includes(opts.soloEquipo)
+    );
+  }
+
+  // Calcular stats del mes para cada uno
+  const ranking = candidatos.map(p => {
+    const stats = calcularStatsPersona(p.nombre, { desde, hasta });
+    return { ...stats, persona: p };
+  }).filter(r => r.total > 0); // solo si tienen actividad
+
+  // Ordenar por porcentaje desc, luego por entregadas desc
+  ranking.sort((a, b) => {
+    if (b.porcentaje !== a.porcentaje) return b.porcentaje - a.porcentaje;
+    return b.entregadas - a.entregadas;
+  });
+
+  return { mes, desde, hasta, ranking };
+}
+
+// Calcular reconocimientos especiales del mes
+function calcularReconocimientosMes(mes) {
+  const m = mes || new Date().toISOString().slice(0, 7);
+  const desde = m + '-01';
+  const [y, mm] = m.split('-').map(Number);
+  const hasta = new Date(y, mm, 0).toISOString().slice(0, 10);
+
+  const candidatos = PERSONAS.filter(p => competeEnLeaderboard(p));
+  const stats = candidatos.map(p => ({
+    persona: p,
+    stats: calcularStatsPersona(p.nombre, { desde, hasta }),
+    rachaActual: calcularRachaActual(p.nombre),
+  })).filter(s => s.stats.total > 0);
+
+  if (!stats.length) return [];
+
+  const recos = [];
+
+  // Más rápida: la que más entregó en el mes (cantidad)
+  const masEntregas = stats.slice().sort((a, b) => b.stats.entregadas - a.stats.entregadas)[0];
+  if (masEntregas && masEntregas.stats.entregadas >= 5) {
+    recos.push({
+      tipo: 'volumen',
+      icono: '⚡',
+      titulo: 'más entregas del mes',
+      persona: masEntregas.persona.nombre,
+      valor: `${masEntregas.stats.entregadas} peticiones`
+    });
+  }
+
+  // Sin reabrir
+  const sinReabrir = stats.filter(s => s.stats.entregadas >= 5).slice()
+    .sort((a, b) => b.stats.entregadas - a.stats.entregadas)[0];
+  if (sinReabrir) {
+    recos.push({
+      tipo: 'calidad',
+      icono: '🎯',
+      titulo: 'sin reabrir',
+      persona: sinReabrir.persona.nombre,
+      valor: '100% sin reabrir'
+    });
+  }
+
+  // Racha más larga del mes
+  const mejorRacha = stats.slice().sort((a, b) => b.rachaActual - a.rachaActual)[0];
+  if (mejorRacha && mejorRacha.rachaActual >= 5) {
+    recos.push({
+      tipo: 'racha',
+      icono: '🔥',
+      titulo: 'racha más larga',
+      persona: mejorRacha.persona.nombre,
+      valor: `${mejorRacha.rachaActual} entregas seguidas`
+    });
+  }
+
+  return recos;
+}
+
+// Detectar bajones de performance vs mes anterior (alertas para dirección)
+function detectarAlertasDireccion() {
+  const hoy = new Date();
+  const mesActual = hoy.toISOString().slice(0, 7);
+  const mesAntDate = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  const mesAnterior = mesAntDate.toISOString().slice(0, 7);
+
+  const candidatos = PERSONAS.filter(p => competeEnLeaderboard(p));
+  const alertas = [];
+
+  candidatos.forEach(p => {
+    const finMesAnt = new Date(hoy.getFullYear(), hoy.getMonth(), 0).toISOString().slice(0, 10);
+    const inicioMesAnt = mesAnterior + '-01';
+    const inicioMesActual = mesActual + '-01';
+
+    const statsAnt = calcularStatsPersona(p.nombre, { desde: inicioMesAnt, hasta: finMesAnt });
+    const statsAct = calcularStatsPersona(p.nombre, { desde: inicioMesActual });
+
+    // Solo si tiene actividad en ambos meses
+    if (statsAnt.total >= 3 && statsAct.total >= 3) {
+      const diff = statsAct.porcentaje - statsAnt.porcentaje;
+      if (diff <= -15) {
+        alertas.push({
+          tipo: 'bajon',
+          persona: p.nombre,
+          mensaje: `${p.nombre} bajó de ${statsAnt.porcentaje}% a ${statsAct.porcentaje}%`,
+          severidad: diff <= -25 ? 'alta' : 'media'
+        });
+      }
+    }
+  });
+
+  return alertas;
+}
+
+// ============================================================
+// VISTA: 🏆 PROGRESO (gamificación)
+// ============================================================
+function renderProgreso() {
+  const persona = USER;
+  const compite = competeEnLeaderboard(persona);
+  const mes = new Date().toISOString().slice(0, 7);
+  const mesNombre = new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
+
+  // Stats personales del mes actual
+  const inicioMes = mes + '-01';
+  const statsMes = calcularStatsPersona(persona.nombre, { desde: inicioMes });
+  const rachaActual = calcularRachaActual(persona.nombre);
+  const logros = calcularLogros(persona.nombre);
+  const totalLogros = LOGROS.length;
+
+  // Stats globales (sin filtro de fecha)
+  const statsTotal = calcularStatsPersona(persona.nombre);
+  const mejorRacha = calcularMejorRacha(persona.nombre);
+
+  let html = `
+    <div class="section-head">
+      <div>
+        <h2>🏆 mi progreso</h2>
+        <div class="sub">tu evolución personal · ${mesNombre}</div>
+      </div>
+    </div>
+
+    <!-- Card grande: stats del mes -->
+    <div style="background:var(--bg-1);border:1px solid var(--line);padding:24px 28px;margin-bottom:20px">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:14px">mis números este mes</div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:24px">
+        <div>
+          <div style="font-size:32px;font-weight:300;color:var(--txt);line-height:1">${statsMes.entregadas}</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;margin-top:6px">entregadas</div>
+        </div>
+        <div>
+          <div style="font-size:32px;font-weight:300;color:${statsMes.porcentaje >= 80 ? 'var(--ok)' : statsMes.porcentaje >= 50 ? 'var(--warn)' : 'var(--acc)'};line-height:1">${statsMes.porcentaje}%</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;margin-top:6px">cumplimiento</div>
+        </div>
+        <div>
+          <div style="font-size:32px;font-weight:300;color:var(--txt);line-height:1">${rachaActual} 🔥</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;margin-top:6px">racha actual</div>
+        </div>
+        <div>
+          <div style="font-size:32px;font-weight:300;color:var(--txt-2);line-height:1">${mejorRacha}</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;margin-top:6px">mejor racha</div>
+        </div>
+      </div>
+
+      ${statsMes.pendientesVencidas > 0 ? `
+        <div style="margin-top:18px;padding:10px 12px;background:rgba(255,70,18,.08);border-left:3px solid var(--acc);font-size:12px;color:var(--txt-2)">
+          tienes <strong style="color:var(--acc)">${statsMes.pendientesVencidas}</strong> ${statsMes.pendientesVencidas === 1 ? 'tarea vencida' : 'tareas vencidas'} \u2014 ponte al corriente para subir tu cumplimiento
+        </div>
+      ` : ''}
+    </div>
+
+    <!-- Logros -->
+    <div style="background:var(--bg-1);border:1px solid var(--line);padding:24px 28px;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em">logros</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--txt-2)">${logros.desbloqueados.length} / ${totalLogros} desbloqueados</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px">
+        ${LOGROS.map(l => {
+          const desbloqueado = logros.desbloqueados.find(d => d.id === l.id);
+          return `
+            <div style="padding:14px 12px;background:${desbloqueado ? 'rgba(102,194,89,.08)' : 'var(--bg-0)'};border:1px solid ${desbloqueado ? 'rgba(102,194,89,.3)' : 'var(--line)'};text-align:center;${desbloqueado ? '' : 'opacity:.45'}" title="${l.desc}">
+              <div style="font-size:24px;margin-bottom:6px">${desbloqueado ? l.icono : '🔒'}</div>
+              <div style="font-size:12px;color:var(--txt);margin-bottom:2px">${l.nombre}</div>
+              <div style="font-family:var(--mono);font-size:9px;color:var(--txt-3);text-transform:uppercase">${desbloqueado ? '✓ desbloqueado' : 'bloqueado'}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+
+  // LEADERBOARD: solo si compite o es admin/head
+  if (compite || isAdmin(USER)) {
+    const lb = isAdmin(USER) && USER.nivel === 'head'
+      ? calcularLeaderboardMes({ mes, soloEquipo: USER.nombre })
+      : calcularLeaderboardMes({ mes });
+
+    const recos = calcularReconocimientosMes(mes);
+
+    html += `
+      <div style="background:var(--bg-1);border:1px solid var(--line);padding:24px 28px;margin-bottom:20px">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:14px">
+          🏆 leaderboard del equipo ${USER.nivel === 'head' && !esDireccion(USER) ? '(mi equipo)' : ''}
+        </div>
+
+        ${lb.ranking.length === 0 ? `
+          <div style="color:var(--txt-3);font-size:13px;padding:20px 0;text-align:center">aún no hay entregas suficientes este mes</div>
+        ` : `
+          <div style="display:flex;flex-direction:column;gap:8px">
+            ${lb.ranking.map((r, i) => {
+              const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+              const esYo = r.persona.nombre === USER.nombre;
+              return `
+                <div style="display:grid;grid-template-columns:50px 1fr auto auto;gap:14px;align-items:center;padding:10px 14px;background:${esYo ? 'rgba(255,70,18,.06)' : 'var(--bg-0)'};border:1px solid ${esYo ? 'rgba(255,70,18,.3)' : 'transparent'}">
+                  <div style="font-size:18px">${medal}</div>
+                  <div>
+                    <div style="font-size:14px;color:var(--txt)">${fullName(r.persona)}${esYo ? ' <span style="font-family:var(--mono);font-size:10px;color:var(--acc);text-transform:uppercase">tú</span>' : ''}</div>
+                    <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase">${r.entregadas} entregadas \u00b7 ${r.pendientesVencidas} vencidas</div>
+                  </div>
+                  <div style="font-family:var(--mono);font-size:11px;color:var(--txt-2)">${r.aTiempo}/${r.total}</div>
+                  <div style="font-size:18px;font-weight:300;color:${r.porcentaje >= 80 ? 'var(--ok)' : r.porcentaje >= 50 ? 'var(--warn)' : 'var(--acc)'}">${r.porcentaje}%</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `}
+
+        ${recos.length > 0 ? `
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
+            <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">✨ reconocimientos del mes</div>
+            <div style="display:flex;flex-wrap:wrap;gap:14px">
+              ${recos.map(r => `
+                <div style="padding:8px 12px;background:var(--bg-0);border:1px solid var(--line);font-size:12px">
+                  <span style="font-size:14px">${r.icono}</span>
+                  <span style="color:var(--txt-2)">${r.titulo}:</span>
+                  <strong style="color:var(--txt)">${r.persona}</strong>
+                  <span style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;margin-left:4px">${r.valor}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  // ALERTAS: solo dirección
+  if (esDireccion(USER)) {
+    const alertas = detectarAlertasDireccion();
+    if (alertas.length > 0) {
+      html += `
+        <div style="background:rgba(232,176,74,.06);border:1px solid rgba(232,176,74,.3);padding:20px 24px;margin-bottom:20px">
+          <div style="font-family:var(--mono);font-size:11px;color:var(--warn);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px">🚩 atención</div>
+          ${alertas.map(a => `
+            <div style="padding:8px 0;border-bottom:1px solid rgba(232,176,74,.15);font-size:13px;color:var(--txt-2)">
+              ${a.mensaje} ${a.severidad === 'alta' ? '<span style="color:var(--acc)">·</span>' : ''}
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+  }
+
+  $('content').innerHTML = html;
+}
+
 // Calcular estadísticas de cumplimiento por recurrente
 function calcularCumplimiento(recur, semanasAtras = 12) {
   const fechas = calcularFechasEsperadas(recur, semanasAtras);
@@ -4746,6 +5209,88 @@ async function marcarAnuncioVisto(anuncioId) {
 }
 
 // Banner arriba del dashboard (solo no vistos, máximo 2)
+// Banner de podio: visible los primeros 5 días del mes con el podio del mes anterior
+function renderBannerPodio() {
+  const cont = $('banner-podio');
+  if (!cont) return;
+
+  const hoy = new Date();
+  const diaDelMes = hoy.getDate();
+
+  // Solo mostrar los primeros 5 días del mes
+  if (diaDelMes > 5) {
+    cont.innerHTML = '';
+    cont.style.display = 'none';
+    return;
+  }
+
+  // No mostrar a quienes no compiten
+  if (!competeEnLeaderboard(USER) && !esDireccion(USER) && USER.nivel !== 'head') {
+    cont.innerHTML = '';
+    cont.style.display = 'none';
+    return;
+  }
+
+  // Verificar si ya descartó el banner este mes (localStorage)
+  const mesActual = hoy.toISOString().slice(0, 7);
+  const dismissKey = `movdi-podio-dismissed-${USER.nombre}-${mesActual}`;
+  try {
+    if (localStorage.getItem(dismissKey) === '1') {
+      cont.innerHTML = '';
+      cont.style.display = 'none';
+      return;
+    }
+  } catch (e) {}
+
+  // Calcular podio del mes anterior
+  const mesAntDate = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  const mesAnt = mesAntDate.toISOString().slice(0, 7);
+  const mesAntNombre = mesAntDate.toLocaleDateString('es-MX', { month: 'long' });
+
+  const lb = calcularLeaderboardMes({ mes: mesAnt });
+  const top3 = lb.ranking.slice(0, 3);
+
+  if (top3.length === 0) {
+    cont.innerHTML = '';
+    cont.style.display = 'none';
+    return;
+  }
+
+  cont.style.display = 'block';
+  cont.innerHTML = `
+    <div style="background:linear-gradient(135deg,rgba(255,70,18,.08),rgba(232,176,74,.08));border:1px solid rgba(232,176,74,.3);padding:18px 24px;display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--warn);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">🏆 podio de ${mesAntNombre}</div>
+        <div style="font-size:14px;color:var(--txt-2)">felicidades al equipo \u2014 estos fueron los más constantes del mes pasado</div>
+      </div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap">
+        ${top3.map((r, i) => {
+          const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
+          return `
+            <div style="text-align:center;min-width:90px">
+              <div style="font-size:24px;line-height:1">${medal}</div>
+              <div style="font-size:13px;color:var(--txt);margin-top:4px">${r.persona.nombre}</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase">${r.porcentaje}%</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      <button onclick="cerrarBannerPodio()" style="background:transparent;border:1px solid var(--line);color:var(--txt-2);padding:6px 10px;cursor:pointer;font-family:var(--mono);font-size:11px;text-transform:uppercase">✕ cerrar</button>
+    </div>
+  `;
+}
+
+function cerrarBannerPodio() {
+  const mesActual = new Date().toISOString().slice(0, 7);
+  const dismissKey = `movdi-podio-dismissed-${USER.nombre}-${mesActual}`;
+  try { localStorage.setItem(dismissKey, '1'); } catch (e) {}
+  const cont = $('banner-podio');
+  if (cont) {
+    cont.innerHTML = '';
+    cont.style.display = 'none';
+  }
+}
+
 function renderBannerAnuncios() {
   const cont = $('banner-anuncios');
   if (!cont) return;
