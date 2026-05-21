@@ -605,6 +605,11 @@ button{cursor:pointer}
   50% { opacity: 0.6; }
 }
 
+/* Filas ocultas (soft-delete) */
+.fila-oculta { opacity: 0.45; }
+.fila-oculta:hover { opacity: 0.75; }
+.fila-oculta .tname { font-style: italic; }
+
 /* === Notificaciones === */
 .notif-btn {
   position: relative;
@@ -1401,6 +1406,13 @@ const puedeCrearRecurrentes = u => {
   return false;
 };
 
+// Verificar si una petición está oculta para el usuario actual
+const estaOcultaParaMi = t => {
+  if (!t || !USER) return false;
+  if (!t.ocultaPara || !Array.isArray(t.ocultaPara)) return false;
+  return t.ocultaPara.includes(USER.nombre);
+};
+
 // Helper centralizado: ¿esta persona es dirección/co-founder?
 // Usar SIEMPRE esto en lugar de hardcoded "Dani"/"Emmanuel"
 const esDireccion = u => u && (u.esDireccion === true || u.nivel === 'ceo');
@@ -1751,6 +1763,7 @@ const mapPeticionRow = r => ({
   cambioVistoPorCreador: r.cambio_visto_por_creador !== false,
   linkEntrega: r.link_entrega || null,
   notaEntrega: r.nota_entrega || null,
+  ocultaPara: r.oculta_para || [],
 });
 const mapRecurRow = r => ({
   id: r.id,
@@ -2395,10 +2408,12 @@ function renderTabla(lista, opts = {}) {
 function renderFila(t, opts = {}) {
   const isRecur = t._recurOrigen;
   const puedeConfirmar = USER && t.creadoPor === USER.nombre;
+  const oculta = estaOcultaParaMi(t);
   return `
-    <tr class="det-clickable-row" onclick="abrirDetalle('${t.id}', ${isRecur ? 'true' : 'false'})">
+    <tr class="det-clickable-row${oculta ? ' fila-oculta' : ''}" onclick="abrirDetalle('${t.id}', ${isRecur ? 'true' : 'false'})">
       <td>
         <div class="tname">
+          ${oculta ? '<span style="font-size:11px;color:var(--txt-3);margin-right:4px" title="oculta de tu vista">🙈</span>' : ''}
           ${t.nombre}
           ${isRecur ? '<span class="recur-icon">↻</span>' : ''}
           ${t.privada ? '<span class="tag" style="margin-left:4px;background:rgba(255,70,18,.1);border-color:rgba(255,70,18,.3);color:var(--acc)">🔒 privada</span>' : ''}
@@ -2414,7 +2429,8 @@ function renderFila(t, opts = {}) {
       <td onclick="event.stopPropagation()">${renderEstatusSelect(t)}</td>
       <td onclick="event.stopPropagation()">
         <div class="row-actions">
-          ${puedeConfirmar && !isRecur ? `<button class="icon-btn danger" onclick="eliminarPeticion('${t.id}')" title="eliminar">✕</button>` : ''}
+          ${oculta ? `<button class="icon-btn" onclick="desocultarPeticion('${t.id}')" title="mostrar de nuevo">👁</button>` : ''}
+          ${puedeConfirmar && !isRecur && t.estatus !== 'entregado' ? `<button class="icon-btn danger" onclick="eliminarPeticion('${t.id}')" title="eliminar">✕</button>` : ''}
         </div>
       </td>
     </tr>
@@ -2538,9 +2554,16 @@ async function cambiarEstatus(id, nuevo, esRecur) {
   // Detectar si es REABRIR (estaba entregado, ahora se vuelve pendiente o proceso)
   const esReabrir = t.estatus === 'entregado' && nuevo !== 'entregado';
 
-  const { error } = await sb.from('peticiones').update({ estatus: nuevo }).eq('id', id);
+  // Si es reabrir, también limpiamos oculta_para para que vuelva a verse para todos
+  const updateData = { estatus: nuevo };
+  if (esReabrir) {
+    updateData.oculta_para = [];
+  }
+
+  const { error } = await sb.from('peticiones').update(updateData).eq('id', id);
   if (!error) {
     t.estatus = nuevo;
+    if (esReabrir) t.ocultaPara = [];
     renderActiveTab();
 
     // Si fue reabrir, notificar al destinatario
@@ -2567,16 +2590,77 @@ async function eliminarPeticion(id) {
 }
 
 async function limpiarEntregadas(scope) {
-  if (!confirm('¿borrar todas las peticiones marcadas como entregadas?')) return;
-  let query = sb.from('peticiones').delete().eq('estatus', 'entregado');
-  if (scope === 'pedi') query = query.eq('creado_por', USER.nombre);
-  if (scope === 'general') query = query.eq('zona', 'general').eq('privada', false);
-  const { error } = await query;
+  // ✨ Soft-delete: en lugar de DELETE, agrega el nombre del usuario a oculta_para
+  // Esto preserva el progreso/stats pero limpia la vista del usuario actual.
+  if (!confirm('¿ocultar todas las peticiones entregadas de tu vista?\n\nseguirán contando para tu progreso pero ya no se mostrarán aquí. puedes volver a mostrarlas con el botón "👁 mostrar ocultas".')) return;
+
+  // Filtrar las entregadas según el scope
+  let candidatas = DB.general.filter(t => t.estatus === 'entregado' && !estaOcultaParaMi(t));
+  if (scope === 'pedi') candidatas = candidatas.filter(t => t.creadoPor === USER.nombre);
+  else if (scope === 'general') candidatas = candidatas.filter(t => t.zona === 'general' && !t.privada);
+  else if (scope === 'mis') candidatas = candidatas.filter(t => matchNombre(t.para, USER.nombre));
+
+  if (!candidatas.length) {
+    showInfo('nada que ocultar', 'no hay peticiones entregadas visibles');
+    return;
+  }
+
+  showLoading(`ocultando ${candidatas.length} ${candidatas.length === 1 ? 'petición' : 'peticiones'}...`);
+
+  // Actualizar en BD: agregar USER.nombre al array oculta_para de cada una
+  const promesas = candidatas.map(async t => {
+    const nuevoArray = [...(t.ocultaPara || []), USER.nombre];
+    const { error } = await sb.from('peticiones')
+      .update({ oculta_para: nuevoArray })
+      .eq('id', t.id);
+    if (!error) t.ocultaPara = nuevoArray;
+    return error;
+  });
+
+  const resultados = await Promise.all(promesas);
+  hideLoading();
+
+  const errores = resultados.filter(e => e);
+  if (errores.length) {
+    showInfo('parcialmente exitoso', `${candidatas.length - errores.length} ocultadas, ${errores.length} con error`);
+  }
+  renderActiveTab();
+}
+
+// Ocultar una petición individual para el usuario actual
+async function ocultarPeticion(id) {
+  const t = DB.general.find(x => x.id === id);
+  if (!t) return;
+  if (estaOcultaParaMi(t)) {
+    showInfo('ya está oculta', 'esta petición ya está oculta de tu vista');
+    return;
+  }
+  const nuevoArray = [...(t.ocultaPara || []), USER.nombre];
+  const { error } = await sb.from('peticiones')
+    .update({ oculta_para: nuevoArray })
+    .eq('id', id);
   if (error) {
     showInfo('error', error.message);
     return;
   }
-  await cargarTodosLosDatos();
+  t.ocultaPara = nuevoArray;
+  cerrarDetalle();
+  renderActiveTab();
+}
+
+// Volver a mostrar una petición previamente oculta
+async function desocultarPeticion(id) {
+  const t = DB.general.find(x => x.id === id);
+  if (!t) return;
+  const nuevoArray = (t.ocultaPara || []).filter(n => n !== USER.nombre);
+  const { error } = await sb.from('peticiones')
+    .update({ oculta_para: nuevoArray })
+    .eq('id', id);
+  if (error) {
+    showInfo('error', error.message);
+    return;
+  }
+  t.ocultaPara = nuevoArray;
   renderActiveTab();
 }
 
@@ -2641,22 +2725,32 @@ function renderPorPersona() {
 // ============================================================
 // VISTAS: MIS, PEDI
 // ============================================================
+let mostrarOcultasMis = false;
+let mostrarOcultasPedi = false;
+
 function renderMis() {
   // Peticiones únicas (no instancias de recurrentes)
-  // Incluye privadas si soy el destinatario o creador (puedoVerPeticion lo valida)
-  const lista = DB.general.filter(t => matchNombre(t.para, USER.nombre) && puedoVerPeticion(t) && !t.origenRecur);
-  // Instancias de recurrentes
-  const recurInst = obtenerInstanciasRecur(USER.nombre);
+  const todasAsignadas = DB.general.filter(t => matchNombre(t.para, USER.nombre) && puedoVerPeticion(t) && !t.origenRecur);
+  const ocultasCount = todasAsignadas.filter(t => estaOcultaParaMi(t)).length;
+  const lista = mostrarOcultasMis
+    ? todasAsignadas
+    : todasAsignadas.filter(t => !estaOcultaParaMi(t));
+  // Instancias de recurrentes (también filtran ocultas)
+  const recurInst = obtenerInstanciasRecur(USER.nombre).filter(t => mostrarOcultasMis || !estaOcultaParaMi(t));
   const todas = [...lista, ...recurInst];
   const k = calcKpis(todas);
 
-  // Cuántas recurrentes vencen hoy o están pendientes
   const recurPendientes = recurInst.filter(t => t.estatus !== 'entregado').length;
 
   $('content').innerHTML = `
     ${renderKpisExtended(k, recurPendientes)}
     <div class="section-head">
       <div><h2>mis peticiones</h2><div class="sub">tareas asignadas a mí</div></div>
+      ${ocultasCount > 0 ? `
+        <button class="btn ghost sm" onclick="mostrarOcultasMis=${!mostrarOcultasMis};renderActiveTab()">
+          ${mostrarOcultasMis ? `🙈 ocultar (${ocultasCount})` : `👁 mostrar ocultas (${ocultasCount})`}
+        </button>
+      ` : ''}
     </div>
     ${recurInst.length ? `
       <div style="margin-bottom:32px">
@@ -2693,7 +2787,11 @@ function renderKpisExtended(k, recurPend) {
 
 function renderPedi() {
   // Excluir instancias de recurrentes (las gestiona el tab de recurrentes)
-  const lista = DB.general.filter(t => t.creadoPor === USER.nombre && !t.origenRecur);
+  const todasCreadas = DB.general.filter(t => t.creadoPor === USER.nombre && !t.origenRecur);
+  const ocultasCount = todasCreadas.filter(t => estaOcultaParaMi(t)).length;
+  const lista = mostrarOcultasPedi
+    ? todasCreadas
+    : todasCreadas.filter(t => !estaOcultaParaMi(t));
 
   // Separar peticiones individuales vs grupales
   const individuales = lista.filter(t => !t.grupoId);
@@ -2730,6 +2828,11 @@ function renderPedi() {
     <div class="section-head">
       <div><h2>lo que yo pedí</h2><div class="sub">peticiones que creé · puedo confirmar entregas</div></div>
       <div style="display:flex;gap:8px">
+        ${ocultasCount > 0 ? `
+          <button class="btn ghost sm" onclick="mostrarOcultasPedi=${!mostrarOcultasPedi};renderActiveTab()">
+            ${mostrarOcultasPedi ? `🙈 ocultar (${ocultasCount})` : `👁 mostrar ocultas (${ocultasCount})`}
+          </button>
+        ` : ''}
         <button class="btn ghost sm" onclick="limpiarEntregadas('pedi')">🗑 limpiar entregadas</button>
         <button class="btn primary sm" onclick="abrirPeticion('general')">+ nueva petición</button>
       </div>
@@ -3351,7 +3454,18 @@ function abrirDetalle(id, esRecur) {
   if (esAsignado && !puedeConfirmar && !isRecur && t.estatus !== 'entregado') {
     actions += `<button class="btn ghost" onclick="abrirCambioFecha('${t.id}')">📅 cambiar fecha</button>`;
   }
-  if (puedeConfirmar && !isRecur) {
+
+  // Botón ocultar/des-ocultar (cualquiera puede ocultar de su vista si está implicado)
+  if (!isRecur && (puedeConfirmar || esAsignado)) {
+    if (estaOcultaParaMi(t)) {
+      actions += `<button class="btn ghost" onclick="desocultarPeticion('${t.id}');cerrarDetalle()">👁 mostrar de nuevo</button>`;
+    } else {
+      actions += `<button class="btn ghost" onclick="ocultarPeticion('${t.id}')" title="oculta de tu vista, sigue contando en progreso">🙈 ocultar</button>`;
+    }
+  }
+
+  // Eliminar real: solo creador, y solo si NO está entregada (preserva integridad del progreso)
+  if (puedeConfirmar && !isRecur && t.estatus !== 'entregado') {
     actions += `<button class="btn danger" onclick="eliminarPeticionDesdeDetalle('${t.id}')">eliminar</button>`;
   }
   $('det-foot').innerHTML = actions;
