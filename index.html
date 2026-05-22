@@ -3945,7 +3945,11 @@ function abrirPeticion(zona) {
   $('pet-desc').value = '';
   $('pet-fecha').value = dx(7);
   $('pet-prio').value = 'media';
-  $('pet-area').value = USER.areas && USER.areas[0] && AREAS_LABEL[USER.areas[0]] ? USER.areas[0] : 'imkt';
+  // Área por defecto: la primera área del usuario SOLO si es un área operativa válida.
+  // Áreas válidas del dropdown (heads NO es una — es un rol legacy, no un área de trabajo).
+  const AREAS_VALIDAS = ['imkt', 'pm', 'legal', 'admi', 'ventas', 'digital', 'rh'];
+  const miAreaValida = (USER.areas || []).find(a => AREAS_VALIDAS.includes(a));
+  $('pet-area').value = miAreaValida || 'imkt';
 
   // Toggle de privada — default ON para RH/Admi (peticiones suelen ser sensibles)
   const candadoPorDefault = USER.nivel === 'rh' || USER.nombre === 'Salvador';
