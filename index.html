@@ -4743,15 +4743,23 @@ const LOGROS = [
   { id: 'volumen_25', nombre: '25 entregas', icono: '🌳', categoria: 'volumen', criterio: s => s.entregadasTotales >= 25, desc: '25 peticiones entregadas' },
   { id: 'volumen_50', nombre: '50 entregas', icono: '🏔️', categoria: 'volumen', criterio: s => s.entregadasTotales >= 50, desc: '50 peticiones entregadas' },
   { id: 'volumen_100', nombre: 'centenario', icono: '⭐', categoria: 'volumen', criterio: s => s.entregadasTotales >= 100, desc: '100 peticiones entregadas' },
+  { id: 'volumen_200', nombre: '200 entregas', icono: '🥇', categoria: 'volumen', criterio: s => s.entregadasTotales >= 200, desc: '200 peticiones entregadas' },
   // Rachas
   { id: 'racha_5', nombre: 'racha de 5', icono: '🔥', categoria: 'racha', criterio: s => s.mejorRacha >= 5, desc: '5 entregas seguidas sin retraso' },
   { id: 'racha_10', nombre: 'racha de 10', icono: '🔥🔥', categoria: 'racha', criterio: s => s.mejorRacha >= 10, desc: '10 entregas seguidas sin retraso' },
   { id: 'racha_20', nombre: 'racha de 20', icono: '🔥🔥🔥', categoria: 'racha', criterio: s => s.mejorRacha >= 20, desc: '20 entregas seguidas sin retraso' },
+  { id: 'racha_30', nombre: 'racha de 30', icono: '👑', categoria: 'racha', criterio: s => s.mejorRacha >= 30, desc: '30 entregas seguidas sin retraso' },
   // Calidad
   { id: 'sin_reabrir_10', nombre: 'sin reabrir', icono: '💎', categoria: 'calidad', criterio: s => s.entregadasTotales >= 10 && s.reabiertas === 0, desc: '10+ entregas sin que ninguna se reabra' },
+  // Colaboración (estrellas)
+  { id: 'estrella_1', nombre: 'primera estrella', icono: '✨', categoria: 'colaboracion', criterio: s => s.estrellasRecibidasTotal >= 1, desc: 'recibiste tu primera estrella de un compañero' },
+  { id: 'querido_equipo', nombre: 'querido del equipo', icono: '❤️', categoria: 'colaboracion', criterio: s => s.estrellasRecibidasMes >= 5, desc: 'recibiste 5 estrellas en un mismo mes' },
+  { id: 'el_que_apoya', nombre: 'el que apoya', icono: '🤝', categoria: 'colaboracion', criterio: s => s.estrellasDadasTotal >= 10, desc: 'diste 10 estrellas a compañeros' },
   // Especiales
   { id: 'variedad_5', nombre: 'variedad', icono: '🌍', categoria: 'especial', criterio: s => s.areasUnicas >= 3, desc: 'entregas en 3+ áreas distintas' },
+  { id: 'todologo', nombre: 'todólogo', icono: '🗂️', categoria: 'especial', criterio: s => s.areasUnicas >= 5, desc: 'entregas en 5+ áreas distintas' },
   { id: 'mes_perfecto', nombre: 'mes perfecto', icono: '🏆', categoria: 'especial', criterio: s => s.mesPerfecto, desc: 'un mes completo sin tareas vencidas' },
+  { id: 'constancia', nombre: 'constancia', icono: '🏛️', categoria: 'especial', criterio: s => s.mesesNivel3 >= 2, desc: 'nivel 3 o más en 2 meses cerrados' },
 ];
 
 // Calcular logros desbloqueados de una persona
@@ -4785,6 +4793,15 @@ function calcularLogros(nombre) {
   const vencidasDelMesAnt = peticionesDelMesAnt.filter(t => t.estatus !== 'entregado');
   const mesPerfecto = peticionesDelMesAnt.length >= 3 && vencidasDelMesAnt.length === 0;
 
+  // Datos de estrellas de colaboración
+  const mesActualStr = hoy.toISOString().slice(0, 7);
+  const estrellasRecibidasTotal = ESTRELLAS.filter(e => e.para === nombre).length;
+  const estrellasRecibidasMes = ESTRELLAS.filter(e => e.para === nombre && (e.creadaEn || '').slice(0, 7) === mesActualStr).length;
+  const estrellasDadasTotal = ESTRELLAS.filter(e => e.de === nombre).length;
+
+  // Meses con nivel 3+ en el historial cerrado
+  const mesesNivel3 = HISTORIAL_MENSUAL.filter(h => h.persona === nombre && h.nivelAlcanzado >= 3).length;
+
   const stats = {
     entregadasTotales: todasEntregadas.length,
     mejorRacha: calcularMejorRacha(nombre),
@@ -4792,6 +4809,10 @@ function calcularLogros(nombre) {
     areasUnicas,
     reabiertas,
     mesPerfecto,
+    estrellasRecibidasTotal,
+    estrellasRecibidasMes,
+    estrellasDadasTotal,
+    mesesNivel3,
   };
 
   const desbloqueados = LOGROS.filter(l => {
