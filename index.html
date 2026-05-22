@@ -1799,6 +1799,7 @@ const mapPeticionRow = r => ({
   notaEntrega: r.nota_entrega || null,
   ocultaPara: r.oculta_para || [],
   fechaEntrega: r.fecha_entrega || null,
+  extensionJustificada: r.extension_justificada,
 });
 const mapRecurRow = r => ({
   id: r.id,
@@ -3482,6 +3483,8 @@ function abrirDetalle(id, esRecur) {
       const pe = estadoPuntualidad(t);
       if (pe === 'sin_dato' || pe === null) return '';
       const dr = diasRetraso(t);
+      // ¿Se está midiendo contra la fecha original por extensión no justificada?
+      const midiendoContraOriginal = t.extensionJustificada === false && t.fechaOriginal;
       let texto, color;
       if (pe === 'a_tiempo') {
         if (dr <= -3) { texto = `entregada ${Math.abs(dr)} días antes`; }
@@ -3492,7 +3495,10 @@ function abrirDetalle(id, esRecur) {
         texto = `entregada con ${dr} ${dr === 1 ? 'día' : 'días'} de retraso`;
         color = 'var(--warn)';
       }
-      return `<div style="font-family:var(--mono);font-size:11px;color:${color};margin-top:10px">${pe === 'tarde' ? '⚠ ' : ''}${texto} · entregada el ${fechaCorta(t.fechaEntrega)}</div>`;
+      const notaExtension = midiendoContraOriginal
+        ? `<div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:3px">se mide contra la fecha original (${fechaCorta(t.fechaOriginal)}) — la extensión no contaba como a tiempo</div>`
+        : '';
+      return `<div style="margin-top:10px"><div style="font-family:var(--mono);font-size:11px;color:${color}">${pe === 'tarde' ? '⚠ ' : ''}${texto} · entregada el ${fechaCorta(t.fechaEntrega)}</div>${notaExtension}</div>`;
     })()}
     <div class="det-status-block">
       <label>cambiar estatus</label>
@@ -3798,6 +3804,28 @@ function abrirCambioFecha(id) {
       <textarea id="cf-motivo" rows="3" placeholder="${motivoPlaceholder}" style="width:100%;padding:10px 12px;background:var(--bg-1);border:1px solid var(--line);font-size:13px;color:var(--txt);font-family:inherit;resize:vertical"></textarea>
       <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px">${motivoNota}</div>
     </div>
+
+    ${soyCreador ? `
+      <div class="field">
+        <label>¿esta extensión cuenta como entrega a tiempo?</label>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+          <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:var(--bg-1);border:1px solid var(--line);cursor:pointer">
+            <input type="radio" name="cf-justif" value="si" checked style="margin-top:2px">
+            <span style="font-size:13px;color:var(--txt)">
+              <strong>sí</strong> · causa justificada (enfermedad, algo externo)
+              <span style="display:block;font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:2px">la puntualidad se mide contra la fecha nueva</span>
+            </span>
+          </label>
+          <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:var(--bg-1);border:1px solid var(--line);cursor:pointer">
+            <input type="radio" name="cf-justif" value="no" style="margin-top:2px">
+            <span style="font-size:13px;color:var(--txt)">
+              <strong>no</strong> · se les pasó, pero igual les das chance
+              <span style="display:block;font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:2px">la puntualidad se mide contra la fecha original · cuenta como tarde</span>
+            </span>
+          </label>
+        </div>
+      </div>
+    ` : ''}
   `;
   $('ov-cambiofecha').classList.add('show');
   requestAnimationFrame(() => $('cf-fecha').focus());
@@ -3823,15 +3851,28 @@ async function confirmarCambioFecha() {
   // Si es la primera vez que se cambia, guardar la fecha original
   const fechaOriginal = t.fechaOriginal || t.fecha;
 
+  // Si lo extiende el creador: leer el toggle de "cuenta como a tiempo"
+  // true = justificada (mide contra fecha nueva) · false = no justificada (mide contra original)
+  let extensionJustificada = null;
+  if (soyCreador) {
+    const radio = document.querySelector('input[name="cf-justif"]:checked');
+    extensionJustificada = radio ? (radio.value === 'si') : true;
+  }
+
   showLoading('actualizando fecha...');
   // Si lo cambia el creador, no hay alerta para el creador (él lo hizo).
   // Si lo cambia el destinatario, sí se marca alerta para el creador.
-  const { error } = await sb.from('peticiones').update({
+  const updatePayload = {
     fecha: nuevaFecha,
     fecha_original: fechaOriginal,
     motivo_cambio_fecha: motivo,
     cambio_visto_por_creador: soyCreador ? true : false
-  }).eq('id', t.id);
+  };
+  // Solo el creador define la justificación; el destinatario no toca ese campo
+  if (soyCreador) {
+    updatePayload.extension_justificada = extensionJustificada;
+  }
+  const { error } = await sb.from('peticiones').update(updatePayload).eq('id', t.id);
   hideLoading();
 
   if (error) {
@@ -3844,6 +3885,7 @@ async function confirmarCambioFecha() {
   t.fechaOriginal = fechaOriginal;
   t.motivoCambioFecha = motivo;
   t.cambioVistoPorCreador = soyCreador ? true : false;
+  if (soyCreador) t.extensionJustificada = extensionJustificada;
 
   cerrarCambioFecha();
   cerrarDetalle();
@@ -3851,9 +3893,10 @@ async function confirmarCambioFecha() {
 
   if (soyCreador) {
     // El creador extendió el plazo → notificar al destinatario
+    const notaJustif = extensionJustificada ? '' : ' · cuenta contra la fecha original';
     crearNotificacion(t.para, 'fecha_cambiada',
       `${USER.nombre} extendió el plazo de "${t.nombre}"`,
-      `nueva fecha: ${fechaCorta(nuevaFecha)} · motivo: ${motivo}`,
+      `nueva fecha: ${fechaCorta(nuevaFecha)} · motivo: ${motivo}${notaJustif}`,
       t.id);
     showInfo('plazo extendido ✓', `${t.para} verá la nueva fecha y tu motivo.`);
   } else {
@@ -4741,20 +4784,35 @@ function nivelDesdeXP(xp) {
   return resultado;
 }
 
+// Fecha límite contra la que se mide la puntualidad.
+// Normalmente es t.fecha (la fecha vigente), PERO si el creador extendió el plazo
+// y marcó la extensión como NO justificada, se mide contra la fecha original.
+function fechaLimiteParaPuntualidad(t) {
+  if (!t) return null;
+  // extensionJustificada === false → el creador extendió pero no perdona el retraso
+  if (t.extensionJustificada === false && t.fechaOriginal) {
+    return t.fechaOriginal;
+  }
+  return t.fecha;
+}
+
 // Estado de puntualidad de una petición entregada
 // Devuelve: 'a_tiempo', 'tarde', o 'sin_dato' (entregas viejas sin fecha_entrega)
 function estadoPuntualidad(t) {
   if (!t || t.estatus !== 'entregado') return null;
   if (!t.fechaEntrega) return 'sin_dato';   // Opción B: entregas viejas no cuentan
-  if (t.fechaEntrega <= t.fecha) return 'a_tiempo';
+  const limite = fechaLimiteParaPuntualidad(t);
+  if (t.fechaEntrega <= limite) return 'a_tiempo';
   return 'tarde';
 }
 
 // Días de retraso (positivo = tarde, negativo = anticipado, 0 = justo)
 function diasRetraso(t) {
-  if (!t || !t.fechaEntrega || !t.fecha) return null;
+  if (!t || !t.fechaEntrega) return null;
+  const limite = fechaLimiteParaPuntualidad(t);
+  if (!limite) return null;
   const fe = new Date(t.fechaEntrega);
-  const fl = new Date(t.fecha);
+  const fl = new Date(limite);
   return Math.round((fe - fl) / (24 * 3600 * 1000));
 }
 
