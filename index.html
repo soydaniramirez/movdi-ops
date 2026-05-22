@@ -1085,6 +1085,39 @@ button{cursor:pointer}
   </div>
 </div>
 
+<!-- Modal Dar Estrella de colaboración -->
+<div class="ov" id="ov-estrella" onclick="cerrarDarEstrella()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div>
+        <h3>⭐ dar una estrella</h3>
+        <div class="mh-sub" id="estrella-restantes">reconoce a alguien del equipo</div>
+      </div>
+      <button class="modal-x" onclick="cerrarDarEstrella()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>¿a quién?</label>
+        <select id="estrella-para">
+          <option value="">elige a quién...</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>motivo</label>
+        <textarea id="estrella-motivo" rows="2" maxlength="60" placeholder="ej: me ayudó con la entrega de último momento" style="width:100%;padding:10px 12px;background:var(--bg-1);border:1px solid var(--line);font-size:13px;color:var(--txt);font-family:inherit;resize:vertical" oninput="$('estrella-contador').textContent = this.value.length + ' / 60'"></textarea>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px"><span id="estrella-contador">0 / 60</span> · será visible para todo el equipo</div>
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em;margin-top:8px">
+        💡 puedes dar máximo 2 estrellas por semana
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="cerrarDarEstrella()">cancelar</button>
+      <button class="btn primary" onclick="confirmarDarEstrella()">enviar estrella ⭐</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal Cambio de Fecha (destinatario solicita prórroga con motivo) -->
 <div class="ov" id="ov-cambiofecha" onclick="cerrarCambioFecha()">
   <div class="modal" onclick="event.stopPropagation()">
@@ -1683,6 +1716,7 @@ function iconoNotif(tipo) {
   if (tipo === 'nueva_peticion') return '📥';
   if (tipo === 'fecha_cambiada') return '📅';
   if (tipo === 'reabierta') return '🔄';
+  if (tipo === 'estrella') return '⭐';
   return '🔔';
 }
 
@@ -4613,6 +4647,9 @@ function calcularMejorRacha(nombre) {
 // SISTEMA DE XP Y NIVELES
 // ============================================================
 
+// Estrellas de colaboración (se cargan en cargarGamificacion)
+let ESTRELLAS = [];
+
 // Niveles mensuales: XP mínimo y nombre
 const NIVELES = [
   { nivel: 1, xpMin: 0,   nombre: 'en arranque' },
@@ -4658,10 +4695,14 @@ function calcularXPMes(nombre, mes) {
     // El bonus de anticipación se activará plenamente cuando exista fecha_entrega.
   });
 
+  // XP por estrellas de colaboración recibidas en el mes (+15 cada una)
+  const xpEstrellas = xpPorEstrellas(nombre, m);
+
   return {
-    xpTotal: xp + bonusAnticipacion,
+    xpTotal: xp + bonusAnticipacion + xpEstrellas,
     xpBase: xp,
     bonusAnticipacion,
+    xpEstrellas,
     entregadas: entregadas.length,
   };
 }
@@ -4921,15 +4962,156 @@ const mapHistorialRow = r => ({
 // Cargar recompensas e historial
 async function cargarGamificacion() {
   try {
-    const [recompRes, histRes] = await Promise.all([
+    const [recompRes, histRes, estrellasRes] = await Promise.all([
       sb.from('recompensas').select('*').order('nivel'),
       sb.from('historial_mensual').select('*').order('mes', { ascending: false }),
+      sb.from('estrellas_colaboracion').select('*').order('creada_en', { ascending: false }),
     ]);
     if (recompRes.data) RECOMPENSAS = recompRes.data.map(mapRecompensaRow);
     if (histRes.data) HISTORIAL_MENSUAL = histRes.data.map(mapHistorialRow);
+    if (estrellasRes.data) ESTRELLAS = estrellasRes.data.map(mapEstrellaRow);
   } catch (e) {
     console.warn('Error cargando gamificación:', e);
   }
+}
+
+// ============================================================
+// ESTRELLAS DE COLABORACIÓN
+// ============================================================
+
+const mapEstrellaRow = r => ({
+  id: r.id,
+  de: r.de_persona,
+  para: r.para_persona,
+  motivo: r.motivo,
+  semana: r.semana,
+  creadaEn: r.creada_en,
+});
+
+// Calcular la semana ISO actual en formato 'YYYY-Www'
+function semanaActual(fecha) {
+  const d = fecha ? new Date(fecha) : new Date();
+  // Algoritmo ISO 8601: jueves de la semana define el año
+  const target = new Date(d.valueOf());
+  const dayNr = (d.getDay() + 6) % 7; // lunes=0 ... domingo=6
+  target.setDate(target.getDate() - dayNr + 3); // jueves de esta semana
+  const firstThursday = new Date(target.getFullYear(), 0, 4);
+  const firstDayNr = (firstThursday.getDay() + 6) % 7;
+  firstThursday.setDate(firstThursday.getDate() - firstDayNr + 3);
+  const semana = 1 + Math.round((target - firstThursday) / (7 * 24 * 3600 * 1000));
+  return `${target.getFullYear()}-W${String(semana).padStart(2, '0')}`;
+}
+
+// Estrellas que YO he dado esta semana
+function misEstrellasEstaSemana() {
+  const sem = semanaActual();
+  return ESTRELLAS.filter(e => e.de === USER.nombre && e.semana === sem);
+}
+
+// Estrellas recibidas por una persona (opcionalmente filtradas por mes)
+function estrellasRecibidas(nombre, mes) {
+  let lista = ESTRELLAS.filter(e => e.para === nombre);
+  if (mes) lista = lista.filter(e => (e.creadaEn || '').slice(0, 7) === mes);
+  return lista;
+}
+
+// XP por estrellas recibidas en un mes (+15 cada una)
+function xpPorEstrellas(nombre, mes) {
+  return estrellasRecibidas(nombre, mes).length * 15;
+}
+
+// ¿Puedo dar estrella a esta persona ahora mismo? Devuelve {ok, razon}
+function puedoDarEstrella(paraNombre) {
+  if (paraNombre === USER.nombre) {
+    return { ok: false, razon: 'no puedes darte una estrella a ti misma' };
+  }
+  const misEstrellas = misEstrellasEstaSemana();
+  if (misEstrellas.length >= 2) {
+    return { ok: false, razon: 'ya diste tus 2 estrellas de esta semana' };
+  }
+  if (misEstrellas.some(e => e.para === paraNombre)) {
+    return { ok: false, razon: `ya le diste una estrella a ${paraNombre} esta semana` };
+  }
+  return { ok: true };
+}
+
+// Dar una estrella
+async function confirmarDarEstrella() {
+  const paraNombre = $('estrella-para').value;
+  const motivo = ($('estrella-motivo').value || '').trim();
+
+  if (!paraNombre) {
+    showInfo('falta destinatario', 'elige a quién darle la estrella');
+    return;
+  }
+  if (!motivo) {
+    showInfo('falta motivo', 'escribe un motivo breve para la estrella');
+    return;
+  }
+  if (motivo.length > 60) {
+    showInfo('motivo muy largo', 'el motivo no puede pasar de 60 caracteres');
+    return;
+  }
+
+  // Revalidar reglas (por si cambió algo)
+  const check = puedoDarEstrella(paraNombre);
+  if (!check.ok) {
+    showInfo('no se puede', check.razon);
+    return;
+  }
+
+  const sem = semanaActual();
+  const { data, error } = await sb.from('estrellas_colaboracion').insert({
+    de_persona: USER.nombre,
+    para_persona: paraNombre,
+    motivo: motivo,
+    semana: sem,
+  }).select();
+
+  if (error) {
+    showInfo('error', 'no se pudo dar la estrella: ' + error.message);
+    return;
+  }
+
+  if (data && data[0]) {
+    ESTRELLAS.unshift(mapEstrellaRow(data[0]));
+    // Notificar a quien recibió la estrella
+    crearNotificacion(paraNombre, 'estrella',
+      `${USER.nombre} te dio una estrella ⭐`,
+      `"${motivo}"`,
+      null);
+  }
+
+  cerrarDarEstrella();
+  showInfo('estrella enviada ⭐', `${paraNombre} recibió tu reconocimiento`);
+  renderActiveTab();
+}
+
+// Abrir modal de dar estrella
+function abrirDarEstrella() {
+  const restantes = 2 - misEstrellasEstaSemana().length;
+  if (restantes <= 0) {
+    showInfo('sin estrellas', 'ya diste tus 2 estrellas de esta semana · se renuevan el lunes');
+    return;
+  }
+
+  // Personas a las que puedo dar estrella (todas menos yo, y menos a quienes ya di esta semana)
+  const yaDadas = misEstrellasEstaSemana().map(e => e.para);
+  const candidatos = PERSONAS
+    .filter(p => p.activo !== false && p.nombre !== USER.nombre && !yaDadas.includes(p.nombre))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+  const modal = $('ov-estrella');
+  $('estrella-restantes').textContent = `te ${restantes === 1 ? 'queda' : 'quedan'} ${restantes} ${restantes === 1 ? 'estrella' : 'estrellas'} esta semana`;
+  $('estrella-para').innerHTML = `<option value="">elige a quién...</option>` +
+    candidatos.map(p => `<option value="${p.nombre}">${fullName(p)}</option>`).join('');
+  $('estrella-motivo').value = '';
+  $('estrella-contador').textContent = '0 / 60';
+  modal.classList.add('show');
+}
+
+function cerrarDarEstrella() {
+  $('ov-estrella').classList.remove('show');
 }
 
 // Obtener descripción de recompensa para un nivel
@@ -5085,7 +5267,7 @@ async function renderProgreso() {
       `}
 
       <div style="margin-top:14px;font-family:var(--mono);font-size:10px;color:var(--txt-3)">
-        +10 XP por entrega · el XP se reinicia cada mes
+        +10 XP por entrega · +15 XP por estrella recibida · el XP se reinicia cada mes
       </div>
     </div>
 
@@ -5137,6 +5319,44 @@ async function renderProgreso() {
           `;
         }).join('')}
       </div>
+    </div>
+  `;
+
+  // ESTRELLAS DE COLABORACIÓN
+  const misEstrellas = estrellasRecibidas(persona.nombre).sort((a, b) => (b.creadaEn || '').localeCompare(a.creadaEn || ''));
+  const estrellasMes = estrellasRecibidas(persona.nombre, mes);
+  const restantesSemana = 2 - misEstrellasEstaSemana().length;
+
+  html += `
+    <div style="background:var(--bg-1);border:1px solid var(--line);padding:24px 28px;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px">
+        <div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em">⭐ estrellas de colaboración</div>
+          <div style="font-size:12px;color:var(--txt-3);margin-top:4px">${misEstrellas.length} ${misEstrellas.length === 1 ? 'recibida en total' : 'recibidas en total'} · ${estrellasMes.length} este mes (+${estrellasMes.length * 15} XP)</div>
+        </div>
+        <button class="btn primary sm" onclick="abrirDarEstrella()">
+          ⭐ dar estrella ${restantesSemana > 0 ? `(${restantesSemana})` : ''}
+        </button>
+      </div>
+
+      ${misEstrellas.length === 0 ? `
+        <div style="color:var(--txt-3);font-size:13px;padding:16px 0;text-align:center">
+          aún no has recibido estrellas · cuando un compañero reconozca tu trabajo, aparecerá aquí
+        </div>
+      ` : `
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${misEstrellas.slice(0, 8).map(e => `
+            <div style="display:flex;gap:12px;align-items:flex-start;padding:10px 14px;background:var(--bg-0);border:1px solid var(--line)">
+              <div style="font-size:18px;line-height:1.2">⭐</div>
+              <div style="flex:1">
+                <div style="font-size:13px;color:var(--txt)">"${e.motivo}"</div>
+                <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;margin-top:3px">de ${e.de} · ${tiempoRelativo(e.creadaEn)}</div>
+              </div>
+            </div>
+          `).join('')}
+          ${misEstrellas.length > 8 ? `<div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);padding:4px 0">+ ${misEstrellas.length - 8} más</div>` : ''}
+        </div>
+      `}
     </div>
   `;
 
@@ -5255,18 +5475,17 @@ async function renderProgreso() {
       // Mostrar botón de cierre con preview
       const reporte = calcularReporteCierre(mesAnt);
       const conRecompensa = reporte.filter(r => r.recompensa).length;
-      html += `
-        <div style="background:rgba(255,70,18,.05);border:1px solid rgba(255,70,18,.25);padding:24px 28px;margin-bottom:20px">
-          <div style="font-family:var(--mono);font-size:11px;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">
-            📋 cierre de mes pendiente
-          </div>
-          <div style="font-size:14px;color:var(--txt-2);margin-bottom:16px">
-            el mes <strong style="color:var(--txt)">${mesAntNombre}</strong> aún no se cierra.
-            ${reporte.length > 0
-              ? `al cerrarlo se archivará el progreso de ${reporte.length} personas y ${conRecompensa} calificarán para recompensa.`
-              : 'no hay entregas registradas en ese mes.'}
-          </div>
-          ${reporte.length > 0 ? `
+      // Si el mes no tuvo entregas, no mostramos nada (evita ruido visual de meses vacíos)
+      if (reporte.length > 0) {
+        html += `
+          <div style="background:rgba(255,70,18,.05);border:1px solid rgba(255,70,18,.25);padding:24px 28px;margin-bottom:20px">
+            <div style="font-family:var(--mono);font-size:11px;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">
+              📋 cierre de mes pendiente
+            </div>
+            <div style="font-size:14px;color:var(--txt-2);margin-bottom:16px">
+              el mes <strong style="color:var(--txt)">${mesAntNombre}</strong> aún no se cierra.
+              al cerrarlo se archivará el progreso de ${reporte.length} personas y ${conRecompensa} calificarán para recompensa.
+            </div>
             <div style="margin-bottom:16px">
               <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;margin-bottom:8px">vista previa</div>
               <div style="display:flex;flex-direction:column;gap:4px">
@@ -5281,9 +5500,9 @@ async function renderProgreso() {
               </div>
             </div>
             <button class="btn primary" onclick="ejecutarCierreMes()">cerrar ${mesAntNombre} y generar recompensas</button>
-          ` : ''}
-        </div>
-      `;
+          </div>
+        `;
+      }
     }
   }
 
