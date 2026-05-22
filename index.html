@@ -2009,6 +2009,8 @@ function prepararAppUI() {
   suscribirNotificaciones();
   // Pedir permiso de notificaciones del SO (silencioso, no bloquea)
   pedirPermisoNotificaciones();
+  // Cargar datos de gamificación (recompensas e historial)
+  cargarGamificacion();
 }
 
 async function cerrarSesion() {
@@ -4607,6 +4609,91 @@ function calcularMejorRacha(nombre) {
   return mejor;
 }
 
+// ============================================================
+// SISTEMA DE XP Y NIVELES
+// ============================================================
+
+// Niveles mensuales: XP mínimo y nombre
+const NIVELES = [
+  { nivel: 1, xpMin: 0,   nombre: 'en arranque' },
+  { nivel: 2, xpMin: 80,  nombre: 'constante' },
+  { nivel: 3, xpMin: 200, nombre: 'confiable' },
+  { nivel: 4, xpMin: 400, nombre: 'referente' },
+  { nivel: 5, xpMin: 700, nombre: 'élite MOVDI' },
+];
+
+// Determinar nivel a partir de XP
+function nivelDesdeXP(xp) {
+  let resultado = NIVELES[0];
+  for (const n of NIVELES) {
+    if (xp >= n.xpMin) resultado = n;
+  }
+  return resultado;
+}
+
+// Calcular XP de una persona en un mes dado (derivado al vuelo)
+// XP = +10 por entrega, +3 bonus si se entregó 3+ días antes de la fecha límite
+function calcularXPMes(nombre, mes) {
+  const m = mes || new Date().toISOString().slice(0, 7);
+  const desde = m + '-01';
+  const [y, mm] = m.split('-').map(Number);
+  const hasta = new Date(y, mm, 0).toISOString().slice(0, 10);
+
+  // Peticiones entregadas de esta persona en el mes
+  const entregadas = DB.general.filter(t =>
+    matchNombre(t.para, nombre) &&
+    t.estatus === 'entregado' &&
+    t.fecha >= desde &&
+    t.fecha <= hasta
+  );
+
+  let xp = 0;
+  let bonusAnticipacion = 0;
+
+  entregadas.forEach(t => {
+    xp += 10; // base por entrega
+    // Bonus de anticipación: si tiene fecha de entrega registrada y fue 3+ días antes
+    // Como aún no guardamos fecha_entrega real, usamos heurística:
+    // si la petición NO está vencida (fecha límite >= hoy cuando se entregó), asumimos a tiempo.
+    // El bonus de anticipación se activará plenamente cuando exista fecha_entrega.
+  });
+
+  return {
+    xpTotal: xp + bonusAnticipacion,
+    xpBase: xp,
+    bonusAnticipacion,
+    entregadas: entregadas.length,
+  };
+}
+
+// Stats completos de gamificación de una persona (mes actual)
+function calcularGamePersona(nombre, mes) {
+  const m = mes || new Date().toISOString().slice(0, 7);
+  const xpData = calcularXPMes(nombre, m);
+  const nivelData = nivelDesdeXP(xpData.xpTotal);
+
+  // XP necesario para el siguiente nivel
+  const idxActual = NIVELES.findIndex(n => n.nivel === nivelData.nivel);
+  const siguienteNivel = idxActual < NIVELES.length - 1 ? NIVELES[idxActual + 1] : null;
+  const xpParaSiguiente = siguienteNivel ? siguienteNivel.xpMin - xpData.xpTotal : 0;
+  const progresoNivel = siguienteNivel
+    ? Math.round(((xpData.xpTotal - nivelData.xpMin) / (siguienteNivel.xpMin - nivelData.xpMin)) * 100)
+    : 100;
+
+  return {
+    nombre,
+    mes: m,
+    xp: xpData.xpTotal,
+    xpBase: xpData.xpBase,
+    nivel: nivelData.nivel,
+    nivelNombre: nivelData.nombre,
+    siguienteNivel,
+    xpParaSiguiente,
+    progresoNivel,
+    entregadas: xpData.entregadas,
+  };
+}
+
 // Definición de todos los logros del sistema
 const LOGROS = [
   // Volumen
@@ -4804,9 +4891,143 @@ function detectarAlertasDireccion() {
 }
 
 // ============================================================
+// CIERRE DE MES Y RECOMPENSAS
+// ============================================================
+
+let RECOMPENSAS = [];     // cargadas de la tabla recompensas
+let HISTORIAL_MENSUAL = []; // snapshots de meses cerrados
+
+// Mapear recompensa
+const mapRecompensaRow = r => ({
+  id: r.id,
+  nivel: r.nivel,
+  descripcion: r.descripcion,
+  activa: r.activa !== false,
+});
+
+const mapHistorialRow = r => ({
+  id: r.id,
+  persona: r.persona,
+  mes: r.mes,
+  xpTotal: r.xp_total,
+  nivelAlcanzado: r.nivel_alcanzado,
+  entregadas: r.entregadas,
+  cumplimiento: r.cumplimiento,
+  mejorRacha: r.mejor_racha,
+  recompensa: r.recompensa,
+  cerradoEn: r.cerrado_en,
+});
+
+// Cargar recompensas e historial
+async function cargarGamificacion() {
+  try {
+    const [recompRes, histRes] = await Promise.all([
+      sb.from('recompensas').select('*').order('nivel'),
+      sb.from('historial_mensual').select('*').order('mes', { ascending: false }),
+    ]);
+    if (recompRes.data) RECOMPENSAS = recompRes.data.map(mapRecompensaRow);
+    if (histRes.data) HISTORIAL_MENSUAL = histRes.data.map(mapHistorialRow);
+  } catch (e) {
+    console.warn('Error cargando gamificación:', e);
+  }
+}
+
+// Obtener descripción de recompensa para un nivel
+function recompensaParaNivel(nivel) {
+  // Una persona en nivel N recibe la recompensa de nivel N (la más alta que alcanzó)
+  const r = RECOMPENSAS.find(x => x.nivel === nivel && x.activa);
+  return r ? r.descripcion : null;
+}
+
+// ¿El mes anterior ya fue cerrado?
+function mesAnteriorCerrado() {
+  const hoy = new Date();
+  const mesAnt = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1).toISOString().slice(0, 7);
+  return HISTORIAL_MENSUAL.some(h => h.mes === mesAnt);
+}
+
+// Calcular el reporte de cierre del mes anterior (sin guardar todavía)
+function calcularReporteCierre(mes) {
+  const candidatos = PERSONAS.filter(p => competeEnLeaderboard(p));
+  const filas = candidatos.map(p => {
+    const game = calcularGamePersona(p.nombre, mes);
+    const desde = mes + '-01';
+    const [y, mm] = mes.split('-').map(Number);
+    const hasta = new Date(y, mm, 0).toISOString().slice(0, 10);
+    const stats = calcularStatsPersona(p.nombre, { desde, hasta });
+    return {
+      persona: p.nombre,
+      apellido: p.apellido,
+      xp: game.xp,
+      nivel: game.nivel,
+      nivelNombre: game.nivelNombre,
+      entregadas: stats.entregadas,
+      cumplimiento: stats.porcentaje,
+      mejorRacha: calcularMejorRacha(p.nombre),
+      recompensa: recompensaParaNivel(game.nivel),
+    };
+  }).filter(f => f.entregadas > 0)
+    .sort((a, b) => b.xp - a.xp);
+  return filas;
+}
+
+// Ejecutar el cierre de mes: guarda snapshot en historial_mensual
+async function ejecutarCierreMes() {
+  const hoy = new Date();
+  const mesAnt = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1).toISOString().slice(0, 7);
+
+  if (mesAnteriorCerrado()) {
+    showInfo('ya cerrado', `el mes ${mesAnt} ya fue cerrado anteriormente`);
+    return;
+  }
+
+  const reporte = calcularReporteCierre(mesAnt);
+  if (reporte.length === 0) {
+    showInfo('sin datos', `no hay entregas registradas en ${mesAnt} para cerrar`);
+    return;
+  }
+
+  if (!confirm(`¿cerrar el mes ${mesAnt}?\n\nse archivará el progreso de ${reporte.length} personas y se generará el reporte de recompensas. esta acción no se puede deshacer.`)) {
+    return;
+  }
+
+  showLoading('cerrando mes y archivando progreso...');
+
+  const filas = reporte.map(r => ({
+    persona: r.persona,
+    mes: mesAnt,
+    xp_total: r.xp,
+    nivel_alcanzado: r.nivel,
+    entregadas: r.entregadas,
+    cumplimiento: r.cumplimiento,
+    mejor_racha: r.mejorRacha,
+    recompensa: r.recompensa,
+  }));
+
+  const { data, error } = await sb.from('historial_mensual').insert(filas).select();
+  hideLoading();
+
+  if (error) {
+    showInfo('error', 'no se pudo cerrar el mes: ' + error.message);
+    return;
+  }
+
+  if (data) {
+    data.forEach(d => HISTORIAL_MENSUAL.push(mapHistorialRow(d)));
+  }
+
+  showInfo('mes cerrado ✓', `${mesAnt} archivado. ${reporte.filter(r => r.recompensa).length} personas calificaron para recompensa.`);
+  renderActiveTab();
+}
+
+// ============================================================
 // VISTA: 🏆 PROGRESO (gamificación)
 // ============================================================
-function renderProgreso() {
+async function renderProgreso() {
+  // Asegurar que las recompensas estén cargadas (la primera vez puede no estarlo)
+  if (RECOMPENSAS.length === 0) {
+    await cargarGamificacion();
+  }
   const persona = USER;
   const compite = competeEnLeaderboard(persona);
   const mes = new Date().toISOString().slice(0, 7);
@@ -4823,11 +5044,48 @@ function renderProgreso() {
   const statsTotal = calcularStatsPersona(persona.nombre);
   const mejorRacha = calcularMejorRacha(persona.nombre);
 
+  // Gamificación: XP y nivel del mes
+  const game = calcularGamePersona(persona.nombre, mes);
+
   let html = `
     <div class="section-head">
       <div>
         <h2>🏆 mi progreso</h2>
         <div class="sub">tu evolución personal · ${mesNombre}</div>
+      </div>
+    </div>
+
+    <!-- Card de NIVEL Y XP -->
+    <div style="background:linear-gradient(135deg,rgba(255,70,18,.1),rgba(232,176,74,.06));border:1px solid rgba(255,70,18,.25);padding:24px 28px;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px">
+        <div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">nivel ${game.nivel} · ${mesNombre.split(' ')[0]}</div>
+          <div style="font-size:28px;font-weight:300;color:var(--txt);line-height:1.1">${game.nivelNombre}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:32px;font-weight:300;color:var(--acc);line-height:1">${game.xp} <span style="font-size:14px;color:var(--txt-3)">XP</span></div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;margin-top:4px">este mes</div>
+        </div>
+      </div>
+
+      ${game.siguienteNivel ? `
+        <div style="margin-top:18px">
+          <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;margin-bottom:6px">
+            <span>nivel ${game.nivel}</span>
+            <span>${game.xpParaSiguiente} XP para "${game.siguienteNivel.nombre}"</span>
+          </div>
+          <div style="height:8px;background:var(--bg-0);border:1px solid var(--line);overflow:hidden">
+            <div style="height:100%;width:${Math.max(2, Math.min(100, game.progresoNivel))}%;background:linear-gradient(90deg,var(--acc),var(--warn));transition:width .4s"></div>
+          </div>
+        </div>
+      ` : `
+        <div style="margin-top:18px;padding:8px 12px;background:rgba(232,176,74,.12);border:1px solid rgba(232,176,74,.3);font-size:12px;color:var(--warn);text-align:center">
+          🏆 alcanzaste el nivel máximo este mes — ¡eres élite MOVDI!
+        </div>
+      `}
+
+      <div style="margin-top:14px;font-family:var(--mono);font-size:10px;color:var(--txt-3)">
+        +10 XP por entrega · el XP se reinicia cada mes
       </div>
     </div>
 
@@ -4903,12 +5161,17 @@ function renderProgreso() {
             ${lb.ranking.map((r, i) => {
               const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
               const esYo = r.persona.nombre === USER.nombre;
+              const g = calcularGamePersona(r.persona.nombre, mes);
               return `
-                <div style="display:grid;grid-template-columns:50px 1fr auto auto;gap:14px;align-items:center;padding:10px 14px;background:${esYo ? 'rgba(255,70,18,.06)' : 'var(--bg-0)'};border:1px solid ${esYo ? 'rgba(255,70,18,.3)' : 'transparent'}">
+                <div style="display:grid;grid-template-columns:50px 1fr auto auto auto;gap:14px;align-items:center;padding:10px 14px;background:${esYo ? 'rgba(255,70,18,.06)' : 'var(--bg-0)'};border:1px solid ${esYo ? 'rgba(255,70,18,.3)' : 'transparent'}">
                   <div style="font-size:18px">${medal}</div>
                   <div>
                     <div style="font-size:14px;color:var(--txt)">${fullName(r.persona)}${esYo ? ' <span style="font-family:var(--mono);font-size:10px;color:var(--acc);text-transform:uppercase">tú</span>' : ''}</div>
-                    <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase">${r.entregadas} entregadas \u00b7 ${r.pendientesVencidas} vencidas</div>
+                    <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase">nivel ${g.nivel} · ${g.nivelNombre}</div>
+                  </div>
+                  <div style="text-align:right">
+                    <div style="font-size:15px;font-weight:300;color:var(--acc)">${g.xp}</div>
+                    <div style="font-family:var(--mono);font-size:9px;color:var(--txt-3);text-transform:uppercase">XP</div>
                   </div>
                   <div style="font-family:var(--mono);font-size:11px;color:var(--txt-2)">${r.aTiempo}/${r.total}</div>
                   <div style="font-size:18px;font-weight:300;color:${r.porcentaje >= 80 ? 'var(--ok)' : r.porcentaje >= 50 ? 'var(--warn)' : 'var(--acc)'}">${r.porcentaje}%</div>
@@ -4949,6 +5212,76 @@ function renderProgreso() {
               ${a.mensaje} ${a.severidad === 'alta' ? '<span style="color:var(--acc)">·</span>' : ''}
             </div>
           `).join('')}
+        </div>
+      `;
+    }
+  }
+
+  // CIERRE DE MES Y RECOMPENSAS: solo dirección
+  if (esDireccion(USER)) {
+    const hoy = new Date();
+    const mesAnt = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1).toISOString().slice(0, 7);
+    const mesAntNombre = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1).toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
+    const yaCerrado = mesAnteriorCerrado();
+
+    if (yaCerrado) {
+      // Mostrar el snapshot archivado del mes anterior
+      const snapshot = HISTORIAL_MENSUAL.filter(h => h.mes === mesAnt).sort((a, b) => b.xpTotal - a.xpTotal);
+      html += `
+        <div style="background:var(--bg-1);border:1px solid var(--line);padding:24px 28px;margin-bottom:20px">
+          <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:14px">
+            📋 reporte de recompensas · ${mesAntNombre} <span style="color:var(--ok)">✓ cerrado</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            ${snapshot.map(s => `
+              <div style="display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;padding:10px 14px;background:var(--bg-0)">
+                <div>
+                  <div style="font-size:13px;color:var(--txt)">${s.persona}</div>
+                  <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase">nivel ${s.nivelAlcanzado} · ${s.xpTotal} XP</div>
+                </div>
+                <div style="font-size:12px;color:${s.recompensa ? 'var(--ok)' : 'var(--txt-3)'};max-width:280px;text-align:right">
+                  ${s.recompensa || 'sin recompensa este mes'}
+                </div>
+                <div style="font-size:16px">${s.recompensa ? '🎁' : '—'}</div>
+              </div>
+            `).join('')}
+          </div>
+          <div style="margin-top:12px;font-family:var(--mono);font-size:10px;color:var(--txt-3)">
+            las recompensas se entregan manualmente por dirección / rh
+          </div>
+        </div>
+      `;
+    } else {
+      // Mostrar botón de cierre con preview
+      const reporte = calcularReporteCierre(mesAnt);
+      const conRecompensa = reporte.filter(r => r.recompensa).length;
+      html += `
+        <div style="background:rgba(255,70,18,.05);border:1px solid rgba(255,70,18,.25);padding:24px 28px;margin-bottom:20px">
+          <div style="font-family:var(--mono);font-size:11px;color:var(--acc);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">
+            📋 cierre de mes pendiente
+          </div>
+          <div style="font-size:14px;color:var(--txt-2);margin-bottom:16px">
+            el mes <strong style="color:var(--txt)">${mesAntNombre}</strong> aún no se cierra.
+            ${reporte.length > 0
+              ? `al cerrarlo se archivará el progreso de ${reporte.length} personas y ${conRecompensa} calificarán para recompensa.`
+              : 'no hay entregas registradas en ese mes.'}
+          </div>
+          ${reporte.length > 0 ? `
+            <div style="margin-bottom:16px">
+              <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;margin-bottom:8px">vista previa</div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                ${reporte.slice(0, 5).map((r, i) => `
+                  <div style="display:grid;grid-template-columns:24px 1fr auto;gap:10px;align-items:center;padding:6px 10px;background:var(--bg-0);font-size:12px">
+                    <span>${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1) + '.'}</span>
+                    <span style="color:var(--txt)">${r.persona} · nivel ${r.nivel}</span>
+                    <span style="color:${r.recompensa ? 'var(--ok)' : 'var(--txt-3)'};font-family:var(--mono);font-size:10px">${r.recompensa ? '🎁 recompensa' : 'sin recompensa'}</span>
+                  </div>
+                `).join('')}
+                ${reporte.length > 5 ? `<div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);padding:4px 10px">+ ${reporte.length - 5} más</div>` : ''}
+              </div>
+            </div>
+            <button class="btn primary" onclick="ejecutarCierreMes()">cerrar ${mesAntNombre} y generar recompensas</button>
+          ` : ''}
         </div>
       `;
     }
