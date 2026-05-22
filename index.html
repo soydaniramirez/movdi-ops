@@ -3509,9 +3509,15 @@ function abrirDetalle(id, esRecur) {
 
   // Foot con acciones
   let actions = `<button class="btn ghost" onclick="cerrarDetalle()">cerrar</button>`;
-  // El destinatario puede cambiar fecha (con motivo) si la petición no está entregada
-  if (esAsignado && !puedeConfirmar && !isRecur && t.estatus !== 'entregado') {
-    actions += `<button class="btn ghost" onclick="abrirCambioFecha('${t.id}')">📅 cambiar fecha</button>`;
+  // Cambiar fecha si la petición no está entregada:
+  // - el destinatario puede pedir prórroga
+  // - el creador puede extender el plazo (ej: dar días por enfermedad)
+  if (!isRecur && t.estatus !== 'entregado') {
+    if (esAsignado && !puedeConfirmar) {
+      actions += `<button class="btn ghost" onclick="abrirCambioFecha('${t.id}')">📅 cambiar fecha</button>`;
+    } else if (puedeConfirmar) {
+      actions += `<button class="btn ghost" onclick="abrirCambioFecha('${t.id}')">📅 extender plazo</button>`;
+    }
   }
 
   // Botón ocultar/des-ocultar (cualquiera puede ocultar de su vista si está implicado)
@@ -3737,8 +3743,10 @@ let _cambioFechaContext = null;
 function abrirCambioFecha(id) {
   const t = DB.general.find(x => x.id === id);
   if (!t) return;
-  if (!matchNombre(t.para, USER.nombre)) {
-    showInfo('no permitido', 'solo el destinatario puede cambiar la fecha');
+  const soyDestinatario = matchNombre(t.para, USER.nombre);
+  const soyCreador = t.creadoPor === USER.nombre;
+  if (!soyDestinatario && !soyCreador) {
+    showInfo('no permitido', 'solo el creador o el destinatario pueden cambiar la fecha');
     return;
   }
   _cambioFechaContext = t;
@@ -3748,15 +3756,37 @@ function abrirCambioFecha(id) {
   f.setDate(f.getDate() + 7);
   const sugerida = f.toISOString().slice(0, 10);
 
+  // El texto del encabezado depende de quién hace el cambio
+  const encabezado = soyCreador
+    ? `
+      <div style="background:rgba(255,70,18,.06);border:1px solid rgba(255,70,18,.25);padding:12px 14px;margin-bottom:18px">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--acc);text-transform:uppercase;letter-spacing:.15em;margin-bottom:6px">extender plazo</div>
+        <div style="font-size:13px;line-height:1.6">
+          tú creaste esta petición para <strong>${t.para}</strong> con fecha <strong>${fechaCorta(t.fecha)}</strong>.
+          <br>al cambiarla le das más tiempo \u2014 ${t.para} verá la nueva fecha y tu motivo.
+        </div>
+      </div>
+    `
+    : `
+      <div style="background:rgba(232,176,74,.08);border:1px solid rgba(232,176,74,.3);padding:12px 14px;margin-bottom:18px">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--warn);text-transform:uppercase;letter-spacing:.15em;margin-bottom:6px">cambio de fecha</div>
+        <div style="font-size:13px;line-height:1.6">
+          esta petición fue creada por <strong>${t.creadoPor}</strong> con fecha <strong>${fechaCorta(t.fecha)}</strong>.
+          <br>al cambiarla, le aparecerá una alerta visual con tu motivo.
+        </div>
+      </div>
+    `;
+
+  const motivoPlaceholder = soyCreador
+    ? 'ej: le di unos días más a Sofía por incapacidad médica...'
+    : 'ej: el cliente aún no nos manda los archivos finales...';
+  const motivoNota = soyCreador
+    ? 'queda registrado para tener mapeado por qué se extendió el plazo'
+    : 'explica brevemente por qué necesitas más tiempo';
+
   $('cf-titulo').textContent = `cambiar fecha · ${t.nombre}`;
   $('cf-body').innerHTML = `
-    <div style="background:rgba(232,176,74,.08);border:1px solid rgba(232,176,74,.3);padding:12px 14px;margin-bottom:18px">
-      <div style="font-family:var(--mono);font-size:11px;color:var(--warn);text-transform:uppercase;letter-spacing:.15em;margin-bottom:6px">cambio de fecha</div>
-      <div style="font-size:13px;line-height:1.6">
-        esta petición fue creada por <strong>${t.creadoPor}</strong> con fecha <strong>${fechaCorta(t.fecha)}</strong>.
-        <br>al cambiarla, le aparecerá una alerta visual con tu motivo.
-      </div>
-    </div>
+    ${encabezado}
 
     <div class="field">
       <label>nueva fecha</label>
@@ -3765,8 +3795,8 @@ function abrirCambioFecha(id) {
 
     <div class="field">
       <label>motivo del cambio (obligatorio)</label>
-      <textarea id="cf-motivo" rows="3" placeholder="ej: el cliente aún no nos manda los archivos finales..." style="width:100%;padding:10px 12px;background:var(--bg-1);border:1px solid var(--line);font-size:13px;color:var(--txt);font-family:inherit;resize:vertical"></textarea>
-      <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px">explica brevemente por qué necesitas más tiempo</div>
+      <textarea id="cf-motivo" rows="3" placeholder="${motivoPlaceholder}" style="width:100%;padding:10px 12px;background:var(--bg-1);border:1px solid var(--line);font-size:13px;color:var(--txt);font-family:inherit;resize:vertical"></textarea>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px">${motivoNota}</div>
     </div>
   `;
   $('ov-cambiofecha').classList.add('show');
@@ -3788,15 +3818,19 @@ async function confirmarCambioFecha() {
   if (!motivo) { showInfo('falta dato', 'el motivo es obligatorio'); return; }
   if (motivo.length < 10) { showInfo('motivo muy corto', 'escribe al menos 10 caracteres explicando el motivo'); return; }
 
+  const soyCreador = t.creadoPor === USER.nombre;
+
   // Si es la primera vez que se cambia, guardar la fecha original
   const fechaOriginal = t.fechaOriginal || t.fecha;
 
   showLoading('actualizando fecha...');
+  // Si lo cambia el creador, no hay alerta para el creador (él lo hizo).
+  // Si lo cambia el destinatario, sí se marca alerta para el creador.
   const { error } = await sb.from('peticiones').update({
     fecha: nuevaFecha,
     fecha_original: fechaOriginal,
     motivo_cambio_fecha: motivo,
-    cambio_visto_por_creador: false  // alerta para el creador
+    cambio_visto_por_creador: soyCreador ? true : false
   }).eq('id', t.id);
   hideLoading();
 
@@ -3809,19 +3843,27 @@ async function confirmarCambioFecha() {
   t.fecha = nuevaFecha;
   t.fechaOriginal = fechaOriginal;
   t.motivoCambioFecha = motivo;
-  t.cambioVistoPorCreador = false;
+  t.cambioVistoPorCreador = soyCreador ? true : false;
 
   cerrarCambioFecha();
   cerrarDetalle();
   renderActiveTab();
 
-  // Notificar al creador
-  crearNotificacion(t.creadoPor, 'fecha_cambiada',
-    `${USER.nombre} cambió la fecha de "${t.nombre}"`,
-    `nueva fecha: ${fechaCorta(nuevaFecha)} · motivo: ${motivo}`,
-    t.id);
-
-  showInfo('fecha actualizada ✓', `${t.creadoPor} verá una alerta con tu motivo cuando entre.`);
+  if (soyCreador) {
+    // El creador extendió el plazo → notificar al destinatario
+    crearNotificacion(t.para, 'fecha_cambiada',
+      `${USER.nombre} extendió el plazo de "${t.nombre}"`,
+      `nueva fecha: ${fechaCorta(nuevaFecha)} · motivo: ${motivo}`,
+      t.id);
+    showInfo('plazo extendido ✓', `${t.para} verá la nueva fecha y tu motivo.`);
+  } else {
+    // El destinatario pidió prórroga → notificar al creador
+    crearNotificacion(t.creadoPor, 'fecha_cambiada',
+      `${USER.nombre} cambió la fecha de "${t.nombre}"`,
+      `nueva fecha: ${fechaCorta(nuevaFecha)} · motivo: ${motivo}`,
+      t.id);
+    showInfo('fecha actualizada ✓', `${t.creadoPor} verá una alerta con tu motivo cuando entre.`);
+  }
 }
 
 // Marca como visto cuando el creador abre la petición con cambio
