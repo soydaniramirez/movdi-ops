@@ -4843,6 +4843,10 @@ const LOGROS = [
   { id: 'racha_30', nombre: 'racha de 30', icono: '👑', categoria: 'racha', criterio: s => s.mejorRacha >= 30, desc: '30 entregas seguidas sin retraso' },
   // Calidad
   { id: 'sin_reabrir_10', nombre: 'sin reabrir', icono: '💎', categoria: 'calidad', criterio: s => s.entregadasTotales >= 10 && s.reabiertas === 0, desc: '10+ entregas sin que ninguna se reabra' },
+  // Velocidad
+  { id: 'anticipado_5', nombre: 'anticipado', icono: '⚡', categoria: 'velocidad', criterio: s => s.entregasAnticipadas >= 5, desc: '5 entregas hechas 3+ días antes de la fecha límite' },
+  { id: 'anticipado_15', nombre: 'adelantado crónico', icono: '🏎️', categoria: 'velocidad', criterio: s => s.entregasAnticipadas >= 15, desc: '15 entregas anticipadas' },
+  { id: 'mes_puntual', nombre: 'mes puntual', icono: '🎯', categoria: 'velocidad', criterio: s => s.mesPuntual, desc: 'un mes con 100% de entregas a tiempo (mín. 5)' },
   // Colaboración (estrellas)
   { id: 'estrella_1', nombre: 'primera estrella', icono: '✨', categoria: 'colaboracion', criterio: s => s.estrellasRecibidasTotal >= 1, desc: 'recibiste tu primera estrella de un compañero' },
   { id: 'querido_equipo', nombre: 'querido del equipo', icono: '❤️', categoria: 'colaboracion', criterio: s => s.estrellasRecibidasMes >= 5, desc: 'recibiste 5 estrellas en un mismo mes' },
@@ -4894,6 +4898,22 @@ function calcularLogros(nombre) {
   // Meses con nivel 3+ en el historial cerrado
   const mesesNivel3 = HISTORIAL_MENSUAL.filter(h => h.persona === nombre && h.nivelAlcanzado >= 3).length;
 
+  // Datos de velocidad (entregas anticipadas) — solo con fecha_entrega real
+  const entregasAnticipadas = todasEntregadas.filter(t => {
+    const dr = diasRetraso(t);
+    return dr !== null && dr <= -3;
+  }).length;
+
+  // Mes puntual: 100% a tiempo en el mes anterior, con mínimo 5 entregas con dato real
+  const entregadasMesAnt = DB.general.filter(t =>
+    matchNombre(t.para, nombre) &&
+    t.estatus === 'entregado' &&
+    t.fecha >= inicioMesAnt && t.fecha <= finMesAnt
+  );
+  const conDatoMesAnt = entregadasMesAnt.filter(t => estadoPuntualidad(t) !== 'sin_dato');
+  const tardeMesAnt = conDatoMesAnt.filter(t => estadoPuntualidad(t) === 'tarde').length;
+  const mesPuntual = conDatoMesAnt.length >= 5 && tardeMesAnt === 0;
+
   const stats = {
     entregadasTotales: todasEntregadas.length,
     mejorRacha: calcularMejorRacha(nombre),
@@ -4905,6 +4925,8 @@ function calcularLogros(nombre) {
     estrellasRecibidasMes,
     estrellasDadasTotal,
     mesesNivel3,
+    entregasAnticipadas,
+    mesPuntual,
   };
 
   const desbloqueados = LOGROS.filter(l => {
