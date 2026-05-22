@@ -1798,6 +1798,7 @@ const mapPeticionRow = r => ({
   linkEntrega: r.link_entrega || null,
   notaEntrega: r.nota_entrega || null,
   ocultaPara: r.oculta_para || [],
+  fechaEntrega: r.fecha_entrega || null,
 });
 const mapRecurRow = r => ({
   id: r.id,
@@ -2590,16 +2591,20 @@ async function cambiarEstatus(id, nuevo, esRecur) {
   // Detectar si es REABRIR (estaba entregado, ahora se vuelve pendiente o proceso)
   const esReabrir = t.estatus === 'entregado' && nuevo !== 'entregado';
 
-  // Si es reabrir, también limpiamos oculta_para para que vuelva a verse para todos
+  // Si es reabrir, también limpiamos oculta_para y fecha_entrega
   const updateData = { estatus: nuevo };
   if (esReabrir) {
     updateData.oculta_para = [];
+    updateData.fecha_entrega = null;
   }
 
   const { error } = await sb.from('peticiones').update(updateData).eq('id', id);
   if (!error) {
     t.estatus = nuevo;
-    if (esReabrir) t.ocultaPara = [];
+    if (esReabrir) {
+      t.ocultaPara = [];
+      t.fechaEntrega = null;
+    }
     renderActiveTab();
 
     // Si fue reabrir, notificar al destinatario
@@ -3471,6 +3476,24 @@ function abrirDetalle(id, esRecur) {
         </div>
       </div>
     ` : ''}
+    ${(() => {
+      // Indicador discreto de puntualidad (solo entregadas con fecha_entrega real)
+      if (t.estatus !== 'entregado') return '';
+      const pe = estadoPuntualidad(t);
+      if (pe === 'sin_dato' || pe === null) return '';
+      const dr = diasRetraso(t);
+      let texto, color;
+      if (pe === 'a_tiempo') {
+        if (dr <= -3) { texto = `entregada ${Math.abs(dr)} días antes`; }
+        else if (dr < 0) { texto = `entregada ${Math.abs(dr)} ${Math.abs(dr) === 1 ? 'día' : 'días'} antes`; }
+        else { texto = 'entregada a tiempo'; }
+        color = 'var(--txt-3)';
+      } else {
+        texto = `entregada con ${dr} ${dr === 1 ? 'día' : 'días'} de retraso`;
+        color = 'var(--warn)';
+      }
+      return `<div style="font-family:var(--mono);font-size:11px;color:${color};margin-top:10px">${pe === 'tarde' ? '⚠ ' : ''}${texto} · entregada el ${fechaCorta(t.fechaEntrega)}</div>`;
+    })()}
     <div class="det-status-block">
       <label>cambiar estatus</label>
       ${renderEstatusSelectDetalle(t, isRecur)}
@@ -3611,6 +3634,9 @@ async function confirmarEntrega() {
   let link = $('entrega-link').value.trim();
   const nota = $('entrega-nota').value.trim();
 
+  // Fecha de entrega = hoy (cuando se marca como entregado)
+  const hoyEntrega = new Date(new Date().toDateString()).toISOString().slice(0, 10);
+
   // Auto-detectar si pegaron URL sin https://
   if (link && !link.startsWith('http://') && !link.startsWith('https://') && link.includes('.')) {
     link = 'https://' + link;
@@ -3640,7 +3666,8 @@ async function confirmarEntrega() {
       const { error } = await sb.from('peticiones').update({
         estatus: 'entregado',
         link_entrega: link || null,
-        nota_entrega: nota || null
+        nota_entrega: nota || null,
+        fecha_entrega: hoyEntrega
       }).eq('id', inst.id);
       if (error) {
         showInfo('error', 'no se pudo actualizar: ' + error.message);
@@ -3650,13 +3677,15 @@ async function confirmarEntrega() {
       inst.estatus = 'entregado';
       inst.linkEntrega = link || null;
       inst.notaEntrega = nota || null;
+      inst.fechaEntrega = hoyEntrega;
     } else {
       const nueva = {
         zona: 'general',
         nombre: recur.nombre, descripcion: recur.desc, creado_por: recur.creadoPor,
         para: recur.para, area: recur.area, fecha: fechaR, prioridad: 'media',
         estatus: 'entregado', privada: false, origen_recur: recur.id,
-        link_entrega: link || null, nota_entrega: nota || null
+        link_entrega: link || null, nota_entrega: nota || null,
+        fecha_entrega: hoyEntrega
       };
       const { data, error } = await sb.from('peticiones').insert(nueva).select().single();
       if (error) {
@@ -3685,7 +3714,8 @@ async function confirmarEntrega() {
   const { error } = await sb.from('peticiones').update({
     estatus: 'entregado',
     link_entrega: link || null,
-    nota_entrega: nota || null
+    nota_entrega: nota || null,
+    fecha_entrega: hoyEntrega
   }).eq('id', id);
   if (error) {
     showInfo('error', 'no se pudo actualizar: ' + error.message);
@@ -3695,6 +3725,7 @@ async function confirmarEntrega() {
   t.estatus = 'entregado';
   t.linkEntrega = link || null;
   t.notaEntrega = nota || null;
+  t.fechaEntrega = hoyEntrega;
   renderActiveTab();
 }
 
@@ -4668,6 +4699,23 @@ function nivelDesdeXP(xp) {
   return resultado;
 }
 
+// Estado de puntualidad de una petición entregada
+// Devuelve: 'a_tiempo', 'tarde', o 'sin_dato' (entregas viejas sin fecha_entrega)
+function estadoPuntualidad(t) {
+  if (!t || t.estatus !== 'entregado') return null;
+  if (!t.fechaEntrega) return 'sin_dato';   // Opción B: entregas viejas no cuentan
+  if (t.fechaEntrega <= t.fecha) return 'a_tiempo';
+  return 'tarde';
+}
+
+// Días de retraso (positivo = tarde, negativo = anticipado, 0 = justo)
+function diasRetraso(t) {
+  if (!t || !t.fechaEntrega || !t.fecha) return null;
+  const fe = new Date(t.fechaEntrega);
+  const fl = new Date(t.fecha);
+  return Math.round((fe - fl) / (24 * 3600 * 1000));
+}
+
 // Calcular XP de una persona en un mes dado (derivado al vuelo)
 // XP = +10 por entrega, +3 bonus si se entregó 3+ días antes de la fecha límite
 function calcularXPMes(nombre, mes) {
@@ -4689,10 +4737,12 @@ function calcularXPMes(nombre, mes) {
 
   entregadas.forEach(t => {
     xp += 10; // base por entrega
-    // Bonus de anticipación: si tiene fecha de entrega registrada y fue 3+ días antes
-    // Como aún no guardamos fecha_entrega real, usamos heurística:
-    // si la petición NO está vencida (fecha límite >= hoy cuando se entregó), asumimos a tiempo.
-    // El bonus de anticipación se activará plenamente cuando exista fecha_entrega.
+    // Bonus de anticipación: +3 XP si se entregó 3+ días antes de la fecha límite.
+    // Solo aplica a entregas con fecha_entrega real (las viejas no dan bonus retroactivo).
+    const dr = diasRetraso(t);
+    if (dr !== null && dr <= -3) {
+      bonusAnticipacion += 3;
+    }
   });
 
   // XP por estrellas de colaboración recibidas en el mes (+15 cada una)
@@ -5243,6 +5293,23 @@ async function renderProgreso() {
   const logros = calcularLogros(persona.nombre);
   const totalLogros = LOGROS.length;
 
+  // Puntualidad del mes: entregas con fecha_entrega real
+  const finMes = (() => {
+    const [yy, mmm] = mes.split('-').map(Number);
+    return new Date(yy, mmm, 0).toISOString().slice(0, 10);
+  })();
+  const entregadasMes = DB.general.filter(t =>
+    matchNombre(t.para, persona.nombre) &&
+    t.estatus === 'entregado' &&
+    t.fecha >= inicioMes && t.fecha <= finMes
+  );
+  const conDatoPuntualidad = entregadasMes.filter(t => estadoPuntualidad(t) !== 'sin_dato');
+  const aTiempoMes = conDatoPuntualidad.filter(t => estadoPuntualidad(t) === 'a_tiempo').length;
+  const tardeMes = conDatoPuntualidad.filter(t => estadoPuntualidad(t) === 'tarde').length;
+  const pctPuntualidad = conDatoPuntualidad.length > 0
+    ? Math.round((aTiempoMes / conDatoPuntualidad.length) * 100)
+    : null;
+
   // Stats globales (sin filtro de fecha)
   const statsTotal = calcularStatsPersona(persona.nombre);
   const mejorRacha = calcularMejorRacha(persona.nombre);
@@ -5320,6 +5387,22 @@ async function renderProgreso() {
           tienes <strong style="color:var(--acc)">${statsMes.pendientesVencidas}</strong> ${statsMes.pendientesVencidas === 1 ? 'tarea vencida' : 'tareas vencidas'} \u2014 ponte al corriente para subir tu cumplimiento
         </div>
       ` : ''}
+
+      ${pctPuntualidad !== null ? `
+        <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line)">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+            <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em">puntualidad de entregas</div>
+            <div style="font-size:13px;color:${pctPuntualidad >= 80 ? 'var(--ok)' : pctPuntualidad >= 50 ? 'var(--warn)' : 'var(--acc)'}">
+              ${pctPuntualidad}% a tiempo
+              <span style="font-family:var(--mono);font-size:10px;color:var(--txt-3)">· ${aTiempoMes} a tiempo${tardeMes > 0 ? ` · ${tardeMes} tarde` : ''}</span>
+            </div>
+          </div>
+        </div>
+      ` : `
+        <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line);font-family:var(--mono);font-size:10px;color:var(--txt-3)">
+          la puntualidad se empieza a medir con las entregas nuevas
+        </div>
+      `}
     </div>
 
     <!-- Logros -->
