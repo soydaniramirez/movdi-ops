@@ -2351,6 +2351,12 @@ function renderGeneral() {
   else if (filtroActual === 'semana') lista = lista.filter(t => { const d = diasHasta(t.fecha); return d >= 0 && d <= 7 && t.estatus !== 'entregado'; });
   else if (['imkt', 'pm', 'legal', 'admi', 'ventas', 'digital', 'rh'].includes(filtroActual)) lista = lista.filter(t => t.area === filtroActual);
 
+  // Filtrar peticiones ocultas para mí (a menos que el toggle esté activo)
+  const ocultasCount = lista.filter(t => estaOcultaParaMi(t)).length;
+  if (!mostrarOcultasGeneral) {
+    lista = lista.filter(t => !estaOcultaParaMi(t));
+  }
+
   const kpis = calcKpis(DB.general.filter(t => {
     if (t.origenRecur) return false;
     if (t.privada) return puedoVerPeticion(t);
@@ -2382,6 +2388,11 @@ function renderGeneral() {
         <div class="sub">vista admin · todas las áreas</div>
       </div>
       <div style="display:flex;gap:8px">
+        ${ocultasCount > 0 ? `
+          <button class="btn ghost sm" onclick="mostrarOcultasGeneral=${!mostrarOcultasGeneral};renderActiveTab()">
+            ${mostrarOcultasGeneral ? `🙈 ocultar (${ocultasCount})` : `👁 mostrar ocultas (${ocultasCount})`}
+          </button>
+        ` : ''}
         <button class="btn ghost sm" onclick="limpiarEntregadas('general')">🗑 limpiar entregadas</button>
         <button class="btn primary sm" onclick="abrirPeticion('general')">+ nueva petición</button>
       </div>
@@ -2769,6 +2780,7 @@ function renderPorPersona() {
 // ============================================================
 let mostrarOcultasMis = false;
 let mostrarOcultasPedi = false;
+let mostrarOcultasGeneral = false;
 
 function renderMis() {
   // Peticiones únicas (no instancias de recurrentes)
