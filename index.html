@@ -637,15 +637,16 @@ button{cursor:pointer}
   border-radius: 8px;
 }
 .panel-notif {
-  position: absolute;
+  position: fixed;
   top: 64px; right: 24px;
   width: 380px;
-  max-height: 480px;
+  max-height: 70vh;
   background: var(--bg-1);
   border: 1px solid var(--line);
   z-index: 1000;
   display: flex; flex-direction: column;
   box-shadow: 0 8px 32px rgba(0,0,0,.4);
+  overflow: hidden;
 }
 .panel-notif-head {
   display: flex; justify-content: space-between; align-items: center;
@@ -669,7 +670,7 @@ button{cursor:pointer}
 .notif-item.sinver { background: rgba(255,70,18,.05); }
 .notif-item.sinver:hover { background: rgba(255,70,18,.1); }
 .notif-icon { font-size: 18px; flex-shrink: 0; }
-.notif-content { flex: 1; min-width: 0; }
+.notif-content { flex: 1; min-width: 0; padding-right: 18px; }
 .notif-titulo { font-size: 13px; color: var(--txt); margin-bottom: 2px; word-break: break-word; }
 .notif-detalle {
   font-size: 12px; color: var(--txt-2);
@@ -693,6 +694,21 @@ button{cursor:pointer}
   flex-shrink: 0;
   margin-top: 6px;
 }
+.notif-del {
+  position: absolute;
+  top: 8px; right: 10px;
+  background: transparent;
+  border: none;
+  color: var(--txt-3);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity .15s, color .15s;
+}
+.notif-item:hover .notif-del { opacity: 1; }
+.notif-del:hover { color: var(--acc); }
 </style>
 </head>
 <body>
@@ -1692,7 +1708,8 @@ function renderPanelNotif() {
     <div class="panel-notif-head">
       <strong>notificaciones</strong>
       <div style="display:flex;gap:8px;align-items:center">
-        ${sinVer > 0 ? `<button class="btn ghost sm" onclick="marcarTodasVistas()" style="font-size:11px">marcar todas vistas</button>` : ''}
+        ${sinVer > 0 ? `<button class="btn ghost sm" onclick="marcarTodasVistas()" style="font-size:11px">marcar vistas</button>` : ''}
+        <button class="btn ghost sm" onclick="borrarTodasNotif()" style="font-size:11px">🗑 borrar todas</button>
         <button class="modal-x" onclick="cerrarPanelNotif()" style="font-size:14px">✕</button>
       </div>
     </div>
@@ -1706,6 +1723,7 @@ function renderPanelNotif() {
             <div class="notif-time">${tiempoRelativo(n.creadaEn)}</div>
           </div>
           ${!n.vista ? '<div class="notif-dot"></div>' : ''}
+          <button class="notif-del" onclick="event.stopPropagation();borrarNotif('${n.id}')" title="borrar">✕</button>
         </div>
       `).join('')}
     </div>
@@ -1756,6 +1774,35 @@ async function marcarTodasVistas() {
   const ids = sinVer.map(n => n.id);
   await sb.from('notificaciones').update({ vista: true }).in('id', ids);
   NOTIFICACIONES.forEach(n => { if (ids.includes(n.id)) n.vista = true; });
+  actualizarTituloPestana();
+  renderBadgeNotif();
+  renderPanelNotif();
+}
+
+// Borrar una notificación individual
+async function borrarNotif(id) {
+  const { error } = await sb.from('notificaciones').delete().eq('id', id);
+  if (error) {
+    showInfo('error', 'no se pudo borrar: ' + error.message);
+    return;
+  }
+  NOTIFICACIONES = NOTIFICACIONES.filter(n => n.id !== id);
+  actualizarTituloPestana();
+  renderBadgeNotif();
+  renderPanelNotif();
+}
+
+// Borrar todas las notificaciones del usuario actual
+async function borrarTodasNotif() {
+  if (!NOTIFICACIONES.length) return;
+  if (!confirm(`¿borrar todas las notificaciones?\n\nse eliminarán ${NOTIFICACIONES.length} ${NOTIFICACIONES.length === 1 ? 'notificación' : 'notificaciones'}. esta acción no se puede deshacer.`)) return;
+  const ids = NOTIFICACIONES.map(n => n.id);
+  const { error } = await sb.from('notificaciones').delete().in('id', ids);
+  if (error) {
+    showInfo('error', 'no se pudieron borrar: ' + error.message);
+    return;
+  }
+  NOTIFICACIONES = [];
   actualizarTituloPestana();
   renderBadgeNotif();
   renderPanelNotif();
