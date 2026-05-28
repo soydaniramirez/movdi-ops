@@ -338,9 +338,13 @@ button{cursor:pointer}
 .date-cell{font-family:var(--mono);font-size:12px;display:flex;flex-direction:column;gap:2px}
 .date-cell.vencida{color:var(--acc);font-weight:500}
 .date-cell.proxima{color:var(--warn)}
+.date-cell.entregada-ok{color:var(--ok)}
+.date-cell.entregada-tarde{color:var(--warn)}
 .date-cell .dsub{font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.1em}
 .date-cell.vencida .dsub{color:var(--acc)}
 .date-cell.proxima .dsub{color:var(--warn)}
+.date-cell.entregada-ok .dsub{color:var(--ok)}
+.date-cell.entregada-tarde .dsub{color:var(--warn)}
 
 /* row actions */
 .row-actions{display:flex;gap:4px;justify-content:flex-end}
@@ -640,7 +644,7 @@ button{cursor:pointer}
   position: fixed;
   top: 64px; right: 24px;
   width: 380px;
-  max-height: 70vh;
+  max-height: 82vh;
   background: var(--bg-1);
   border: 1px solid var(--line);
   z-index: 1000;
@@ -657,7 +661,7 @@ button{cursor:pointer}
   text-transform: uppercase;
   letter-spacing: .1em;
 }
-.panel-notif-list { overflow-y: auto; flex: 1; }
+.panel-notif-list { overflow-y: auto; flex: 1; min-height: 240px; }
 .notif-item {
   display: flex; gap: 12px; align-items: flex-start;
   padding: 12px 18px;
@@ -1427,7 +1431,16 @@ const fechaCorta = s => {
   const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
   return `${d.getDate()} ${meses[d.getMonth()]}`;
 };
-const labelFecha = s => {
+const labelFecha = (s, t) => {
+  // Si recibimos la tarea completa y está entregada, mostramos estado de entrega
+  if (t && typeof t === 'object' && t.estatus === 'entregado') {
+    const pe = estadoPuntualidad(t);
+    if (pe === 'tarde') {
+      const dr = diasRetraso(t);
+      return `entregada · ${dr}d tarde`;
+    }
+    return 'entregada ✓';
+  }
   const d = diasHasta(s);
   if (d < 0) return `vencida ${Math.abs(d)}d`;
   if (d === 0) return 'hoy';
@@ -1435,7 +1448,12 @@ const labelFecha = s => {
   if (d <= 7) return `en ${d}d`;
   return fechaCorta(s);
 };
-const claseFecha = s => {
+const claseFecha = (s, t) => {
+  // Si está entregada, no es "vencida" — es entregada (a tiempo o tarde)
+  if (t && typeof t === 'object' && t.estatus === 'entregado') {
+    const pe = estadoPuntualidad(t);
+    return pe === 'tarde' ? 'entregada-tarde' : 'entregada-ok';
+  }
   const d = diasHasta(s);
   if (d < 0) return 'vencida';
   if (d <= 7) return 'proxima';
@@ -2520,7 +2538,7 @@ function renderFila(t, opts = {}) {
       </td>
       <td><span style="font-family:var(--mono);font-size:11px;color:var(--txt-3)">${t.creadoPor}</span> → <strong>${t.para}</strong></td>
       <td><span class="tag area-${t.area || 'general'}">${AREAS_LABEL[t.area] || t.area || '-'}</span></td>
-      <td><div class="date-cell ${claseFecha(t.fecha)}">${fechaCorta(t.fecha)}<span class="dsub">${labelFecha(t.fecha)}</span></div></td>
+      <td><div class="date-cell ${claseFecha(t.fecha, t)}">${fechaCorta(t.fecha)}<span class="dsub">${labelFecha(t.fecha, t)}</span></div></td>
       <td><span class="tag prio-${t.prioridad}">${t.prioridad}</span></td>
       <td onclick="event.stopPropagation()">${renderEstatusSelect(t)}</td>
       <td onclick="event.stopPropagation()">
@@ -3500,9 +3518,9 @@ function abrirDetalle(id, esRecur) {
       <div class="det-section" style="margin:0">
         <div class="det-label">fecha límite</div>
         <div class="det-value">
-          <div class="date-cell ${claseFecha(t.fecha)}" style="display:inline-flex;flex-direction:row;gap:10px;align-items:baseline">
+          <div class="date-cell ${claseFecha(t.fecha, t)}" style="display:inline-flex;flex-direction:row;gap:10px;align-items:baseline">
             <span style="font-size:16px;font-weight:500">${fechaCorta(t.fecha)}</span>
-            <span class="dsub">${labelFecha(t.fecha)}</span>
+            <span class="dsub">${labelFecha(t.fecha, t)}</span>
           </div>
         </div>
       </div>
