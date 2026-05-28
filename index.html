@@ -1460,6 +1460,15 @@ const claseFecha = (s, t) => {
   return '';
 };
 const dx = (offset) => { const d = new Date(); d.setDate(d.getDate() + offset); return d.toISOString().slice(0, 10) };
+// Margen de la petición: días entre cuando se pidió y la fecha límite (original)
+function margenPeticion(t) {
+  if (!t || !t.creadaEn || !t.fecha) return null;
+  const pedida = new Date((t.creadaEn || '').slice(0, 10));
+  // Usar la fecha original si hubo cambios, para reflejar el plazo con que nació
+  const limite = new Date(t.fechaOriginal || t.fecha);
+  if (isNaN(pedida) || isNaN(limite)) return null;
+  return Math.round((limite - pedida) / (24 * 3600 * 1000));
+}
 const isAdmin = u => u && (u.nivel === 'ceo' || u.nivel === 'head');
 // RH también puede crear recurrentes (nóminas, reportes, etc)
 // Quién puede crear/administrar recurrentes
@@ -1865,6 +1874,7 @@ const mapPeticionRow = r => ({
   ocultaPara: r.oculta_para || [],
   fechaEntrega: r.fecha_entrega || null,
   extensionJustificada: r.extension_justificada,
+  creadaEn: r.created_at || r.creada_en || null,
 });
 const mapRecurRow = r => ({
   id: r.id,
@@ -3522,6 +3532,17 @@ function abrirDetalle(id, esRecur) {
             <span style="font-size:16px;font-weight:500">${fechaCorta(t.fecha)}</span>
             <span class="dsub">${labelFecha(t.fecha, t)}</span>
           </div>
+          ${(() => {
+            if (!t.creadaEn) return '';
+            const margen = margenPeticion(t);
+            if (margen === null) return '';
+            // Indicador de plazo: ajustado si fue muy corto
+            let nota = '';
+            if (margen <= 1) nota = ' · ⚠ plazo muy ajustado';
+            else if (margen <= 2) nota = ' · ⚠ plazo ajustado';
+            const color = margen <= 2 ? 'var(--warn)' : 'var(--txt-3)';
+            return `<div style="font-family:var(--mono);font-size:10px;color:${color};margin-top:6px;text-transform:uppercase;letter-spacing:.05em">pedida el ${fechaCorta(t.creadaEn.slice(0,10))} · ${margen} ${margen === 1 ? 'día' : 'días'} de margen${nota}</div>`;
+          })()}
         </div>
       </div>
       <div class="det-section" style="margin:0">
