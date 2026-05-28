@@ -2543,6 +2543,14 @@ function renderFila(t, opts = {}) {
           ${t.privada ? '<span class="tag" style="margin-left:4px;background:rgba(255,70,18,.1);border-color:rgba(255,70,18,.3);color:var(--acc)">🔒 privada</span>' : ''}
           ${t.cambioVistoPorCreador === false && t.fechaOriginal && t.motivoCambioFecha && puedeConfirmar ? '<span class="tag" style="margin-left:4px;background:rgba(232,176,74,.15);border-color:rgba(232,176,74,.4);color:var(--warn);animation:pulse 2s infinite">⚠ fecha cambiada</span>' : ''}
           ${t.estatus === 'entregado' && (t.linkEntrega || t.notaEntrega) ? '<span style="margin-left:4px;color:var(--ok);font-size:11px" title="con evidencia de entrega">📎</span>' : ''}
+          ${(() => {
+            // ⚠ plazo ajustado: solo si nació con poco margen y aún no está entregada
+            if (t.estatus === 'entregado' || isRecur) return '';
+            const margen = margenPeticion(t);
+            if (margen === null || margen > 2) return '';
+            const txt = margen <= 1 ? 'plazo muy ajustado' : 'plazo ajustado';
+            return `<span style="margin-left:4px;color:var(--warn);font-size:11px" title="${txt}: pedida con ${margen} ${margen === 1 ? 'día' : 'días'} de margen">⚠</span>`;
+          })()}
         </div>
         ${t.desc ? `<div class="tdesc">${t.desc}</div>` : ''}
       </td>
