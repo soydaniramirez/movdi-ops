@@ -5273,6 +5273,11 @@ async function cargarGamificacion() {
     if (recompRes.data) RECOMPENSAS = recompRes.data.map(mapRecompensaRow);
     if (histRes.data) HISTORIAL_MENSUAL = histRes.data.map(mapHistorialRow);
     if (estrellasRes.data) ESTRELLAS = estrellasRes.data.map(mapEstrellaRow);
+    // Re-renderizar el banner de podio con los datos oficiales ya cargados
+    // (importante: el banner se llama al entrar, pero el historial llega async)
+    if (typeof renderBannerPodio === 'function' && USER) {
+      renderBannerPodio();
+    }
   } catch (e) {
     console.warn('Error cargando gamificación:', e);
   }
@@ -6249,8 +6254,28 @@ function renderBannerPodio() {
   const mesAnt = mesAntDate.toISOString().slice(0, 7);
   const mesAntNombre = mesAntDate.toLocaleDateString('es-MX', { month: 'long' });
 
-  const lb = calcularLeaderboardMes({ mes: mesAnt });
-  const top3 = lb.ranking.slice(0, 3);
+  // ✨ Si el mes ya fue CERRADO, leer del snapshot oficial (historial_mensual).
+  // Eso garantiza que TODOS vean exactamente el mismo podio — el archivado por dirección,
+  // no uno calculado al vuelo (que varía según lo que cada sesión puede ver por RLS).
+  const snapshot = HISTORIAL_MENSUAL
+    .filter(h => h.mes === mesAnt)
+    .sort((a, b) => b.xpTotal - a.xpTotal);
+
+  let top3;
+  let esOficial = false;
+  if (snapshot.length > 0) {
+    // Hay snapshot oficial → usarlo
+    esOficial = true;
+    top3 = snapshot.slice(0, 3).map(s => ({
+      persona: { nombre: s.persona },
+      porcentaje: s.cumplimiento,
+      xp: s.xpTotal,
+    }));
+  } else {
+    // No hay cierre todavía → cálculo provisional al vuelo (puede variar entre usuarios)
+    const lb = calcularLeaderboardMes({ mes: mesAnt });
+    top3 = lb.ranking.slice(0, 3);
+  }
 
   if (top3.length === 0) {
     cont.innerHTML = '';
@@ -6262,7 +6287,7 @@ function renderBannerPodio() {
   cont.innerHTML = `
     <div style="background:linear-gradient(135deg,rgba(255,70,18,.08),rgba(232,176,74,.08));border:1px solid rgba(232,176,74,.3);padding:18px 24px;display:flex;align-items:center;gap:24px;flex-wrap:wrap">
       <div style="flex:1;min-width:200px">
-        <div style="font-family:var(--mono);font-size:11px;color:var(--warn);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">🏆 podio de ${mesAntNombre}</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--warn);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">🏆 podio de ${mesAntNombre}${esOficial ? '' : ' <span style="color:var(--txt-3)">· provisional</span>'}</div>
         <div style="font-size:14px;color:var(--txt-2)">felicidades al equipo \u2014 estos fueron los más constantes del mes pasado</div>
       </div>
       <div style="display:flex;gap:18px;flex-wrap:wrap">
