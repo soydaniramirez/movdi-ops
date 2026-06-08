@@ -2468,7 +2468,7 @@ function renderGeneral() {
             ${mostrarOcultasGeneral ? `🙈 ocultar (${ocultasCount})` : `👁 mostrar ocultas (${ocultasCount})`}
           </button>
         ` : ''}
-        <button class="btn ghost sm" onclick="limpiarEntregadas('general')">🗑 limpiar entregadas</button>
+        <button class="btn ghost sm" onclick="limpiarEntregadas('general')" title="oculta de tu vista las que ya están entregadas · siguen contando en tu progreso">🙈 ocultar entregadas</button>
         <button class="btn primary sm" onclick="abrirPeticion('general')">+ nueva petición</button>
       </div>
     </div>
@@ -2970,7 +2970,7 @@ function renderPedi() {
             ${mostrarOcultasPedi ? `🙈 ocultar (${ocultasCount})` : `👁 mostrar ocultas (${ocultasCount})`}
           </button>
         ` : ''}
-        <button class="btn ghost sm" onclick="limpiarEntregadas('pedi')">🗑 limpiar entregadas</button>
+        <button class="btn ghost sm" onclick="limpiarEntregadas('pedi')" title="oculta de tu vista las que ya están entregadas · siguen contando en el progreso">🙈 ocultar entregadas</button>
         <button class="btn primary sm" onclick="abrirPeticion('general')">+ nueva petición</button>
       </div>
     </div>
