@@ -3136,19 +3136,50 @@ function renderTablaRecur(lista) {
       <tbody>
         ${recs.map(r => {
     const prox = proximaFecha(r);
+    const esMia = r.creadoPor === USER.nombre || isAdmin(USER);
+    const cursor = esMia ? 'cursor:pointer' : '';
+    const onclick = esMia ? `onclick="abrirProximaInstanciaRecur('${r.id}')"` : '';
     return `
-            <tr>
+            <tr ${onclick} style="${cursor}" title="${esMia ? 'abrir próxima instancia' : ''}">
               <td><div class="tname">${r.nombre}</div>${r.desc ? `<div class="tdesc">${r.desc}</div>` : ''}</td>
               <td><strong>${r.para}</strong></td>
               <td><span class="tag">${r.frecuencia}${r.frecuencia === 'mensual' ? ` día ${r.diaMes}` : ` ${diasNombres[r.diaSemana]}`}</span></td>
               <td><div class="date-cell ${claseFecha(prox)}">${fechaCorta(prox)}<span class="dsub">${labelFecha(prox)}</span></div></td>
               <td><span style="font-family:var(--mono);font-size:11px;color:var(--txt-3)">${r.creadoPor}</span></td>
               <td><span class="tag" style="color:${r.activa ? 'var(--ok)' : 'var(--txt-3)'};border-color:${r.activa ? 'rgba(123,196,127,.3)' : 'var(--line-2)'}">${r.activa ? 'activa' : 'pausada'}</span></td>
-              <td><div class="row-actions">${r.creadoPor === USER.nombre ? `<button class="icon-btn" onclick="toggleRecur('${r.id}')" title="${r.activa ? 'pausar' : 'activar'}">${r.activa ? '⏸' : '▶'}</button><button class="icon-btn danger" onclick="eliminarRecur('${r.id}')">✕</button>` : `<span style="font-family:var(--mono);font-size:10px;color:var(--txt-3)">solo ${r.creadoPor} edita</span>`}</div></td>
+              <td><div class="row-actions">${r.creadoPor === USER.nombre ? `<button class="icon-btn" onclick="event.stopPropagation();toggleRecur('${r.id}')" title="${r.activa ? 'pausar' : 'activar'}">${r.activa ? '⏸' : '▶'}</button><button class="icon-btn danger" onclick="event.stopPropagation();eliminarRecur('${r.id}')">✕</button>` : `<span style="font-family:var(--mono);font-size:10px;color:var(--txt-3)">solo ${r.creadoPor} edita</span>`}</div></td>
             </tr>`;
   }).join('')}
       </tbody>
     </table>`;
+}
+
+// Abrir el detalle de la próxima instancia de una recurrente
+// (creador/admin lo usa para moverla o gestionarla)
+function abrirProximaInstanciaRecur(recurId) {
+  const r = RECURRENTES.find(x => x.id === recurId);
+  if (!r) return;
+  // Solo creador o admin
+  if (r.creadoPor !== USER.nombre && !isAdmin(USER)) {
+    showInfo('sin permiso', 'solo el creador o dirección pueden abrir esta vista.');
+    return;
+  }
+  // Buscar la próxima instancia pendiente del destinatario
+  const instancias = obtenerInstanciasRecur(r.para);
+  const proxima = instancias.find(x => x._recurOrigen === r.id);
+  if (!proxima) {
+    showInfo('sin instancia activa', `no hay una entrega pendiente próxima de ${r.para} para esta recurrente. quizás la persona está pausada/inactiva.`);
+    return;
+  }
+  // Si es virtual (no existe en BD aún), la agregamos temporalmente para que abrirDetalle la encuentre
+  if (String(proxima.id).startsWith('rec__')) {
+    // Insertar en DB.general temporalmente como instancia "viva" para que abrirDetalle la encuentre.
+    // No se guarda en BD — solo en memoria local de esta sesión.
+    if (!DB.general.find(x => x.id === proxima.id)) {
+      DB.general.push({ ...proxima, _esVirtual: true });
+    }
+  }
+  abrirDetalle(proxima.id, true);
 }
 async function toggleRecur(id) {
   const r = RECURRENTES.find(x => x.id === id);
