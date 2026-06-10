@@ -4220,6 +4220,7 @@ async function confirmarMoverInstancia() {
       return;
     }
     result = await sb.from('peticiones').insert({
+      zona: 'general',
       nombre: recur.nombre,
       descripcion: recur.desc || null,
       creado_por: recur.creadoPor,
