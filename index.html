@@ -1158,6 +1158,26 @@ button{cursor:pointer}
   </div>
 </div>
 
+<!-- Modal Mover Instancia Recurrente -->
+<div class="ov" id="ov-mover-inst" onclick="cerrarMoverInstancia()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div>
+        <h3 id="mi-titulo">mover esta instancia</h3>
+        <div class="mh-sub">una sola entrega · la siguiente del patrón llega normal</div>
+      </div>
+      <button class="modal-x" onclick="cerrarMoverInstancia()">✕</button>
+    </div>
+    <div class="modal-body" id="mi-body">
+      <!-- contenido dinámico -->
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="cerrarMoverInstancia()">cancelar</button>
+      <button class="btn primary" onclick="confirmarMoverInstancia()">mover entrega</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal Reasignación (al desactivar persona) -->
 <div class="ov" id="ov-reasign" onclick="cerrarReasignacion()">
   <div class="modal" onclick="event.stopPropagation()">
@@ -3173,17 +3193,28 @@ function obtenerInstanciasRecur(nombre) {
   if (!persona || persona.activo === false) return out;
   if (estaPausada(persona)) return out;
 
+  // Helper: encuentra la instancia "efectiva" para una fecha esperada del patrón.
+  // Una instancia es efectiva si:
+  //   a) tiene la misma fecha exacta (caso normal), o
+  //   b) fue MOVIDA desde esa fecha (tiene fecha_original = fechaR)
+  // Esto evita que generemos una instancia virtual fantasma cuando la real ya fue movida.
+  const instanciaEfectivaPara = (r, fechaR) => {
+    return DB.general.find(x =>
+      x.origenRecur === r.id &&
+      (x.fecha === fechaR || x.fechaOriginal === fechaR)
+    );
+  };
+
   RECURRENTES.forEach(r => {
     if (!r.activa) return;
     if (!matchNombre(r.para, nombre)) return;
 
     let fechaR = r._fechaActual;
+    let inst = instanciaEfectivaPara(r, fechaR);
 
-    // Si la instancia para esa fecha YA está entregada o archivada,
-    // calcular la SIGUIENTE fecha futura
-    const instActual = DB.general.find(x => x.origenRecur === r.id && x.fecha === fechaR);
-    if (instActual && (instActual.estatus === 'entregado' || instActual.estatus === 'archivada')) {
-      // Calcular siguiente fecha según frecuencia
+    // Si la instancia (movida o normal) YA está entregada/archivada,
+    // calcular la SIGUIENTE fecha futura y volver a buscar
+    if (inst && (inst.estatus === 'entregado' || inst.estatus === 'archivada')) {
       const d = new Date(fechaR + 'T00:00:00');
       if (r.frecuencia === 'mensual') {
         d.setMonth(d.getMonth() + 1);
@@ -3191,15 +3222,15 @@ function obtenerInstanciasRecur(nombre) {
         d.setDate(d.getDate() + 7);
       }
       fechaR = d.toISOString().slice(0, 10);
+      inst = instanciaEfectivaPara(r, fechaR);
     }
 
-    // Buscar la instancia en BD para la fecha resultante
-    const inst = DB.general.find(x => x.origenRecur === r.id && x.fecha === fechaR);
     if (inst) {
       // Si la siguiente también está entregada/archivada, no la mostramos
       if (inst.estatus === 'entregado' || inst.estatus === 'archivada') return;
       out.push({ ...inst, _recurOrigen: r.id });
     } else {
+      // No hay instancia real ni movida — generar virtual para fechaR
       out.push({
         id: 'rec__' + r.id + '__' + fechaR,
         nombre: r.nombre, desc: r.desc, creadoPor: r.creadoPor,
@@ -3564,16 +3595,24 @@ function abrirDetalle(id, esRecur) {
         <div class="det-tags"><span class="tag area-${t.area}">${AREAS_LABEL[t.area] || t.area}</span></div>
       </div>
     ` : ''}
-    ${t.fechaOriginal && t.motivoCambioFecha ? `
+    ${t.fechaOriginal && t.motivoCambioFecha ? (() => {
+      // Distinguir instancia recurrente movida vs cambio de fecha en petición normal
+      const esRecurMovida = !!t.origenRecur;
+      const titulo = esRecurMovida ? '📅 instancia movida' : '⚠ fecha modificada';
+      const lineaPrincipal = esRecurMovida
+        ? `movida desde el <strong>${fechaCorta(t.fechaOriginal)}</strong> al <strong>${fechaCorta(t.fecha)}</strong>`
+        : `fecha original: <strong>${fechaCorta(t.fechaOriginal)}</strong> → nueva: <strong>${fechaCorta(t.fecha)}</strong>`;
+      return `
       <div class="det-section" style="background:rgba(232,176,74,.08);border:1px solid rgba(232,176,74,.3);padding:12px 14px;margin-top:14px">
-        <div class="det-label" style="color:var(--warn)">⚠ fecha modificada</div>
+        <div class="det-label" style="color:var(--warn)">${titulo}</div>
         <div style="font-size:13px;line-height:1.6;margin-top:4px">
-          fecha original: <strong>${fechaCorta(t.fechaOriginal)}</strong> → nueva: <strong>${fechaCorta(t.fecha)}</strong>
+          ${lineaPrincipal}
           <br>
           <span style="color:var(--txt-2)">motivo:</span> ${escapeHtml(t.motivoCambioFecha)}
         </div>
       </div>
-    ` : ''}
+    `;
+    })() : ''}
     ${t.estatus === 'entregado' && (t.linkEntrega || t.notaEntrega) ? `
       <div class="det-section" style="background:rgba(102,194,89,.08);border:1px solid rgba(102,194,89,.3);padding:12px 14px;margin-top:14px">
         <div class="det-label" style="color:var(--ok)">✓ evidencia de entrega</div>
@@ -3630,6 +3669,13 @@ function abrirDetalle(id, esRecur) {
     } else if (puedeConfirmar) {
       actions += `<button class="btn ghost" onclick="abrirCambioFecha('${t.id}')">📅 extender plazo</button>`;
     }
+  }
+
+  // Mover una instancia específica de recurrente:
+  // - solo el creador puede hacerlo (heads/ceo o quien la creó)
+  // - solo si la instancia NO está entregada
+  if (isRecur && puedeConfirmar && t.estatus !== 'entregado') {
+    actions += `<button class="btn ghost" onclick="abrirMoverInstancia('${t.id}')" title="mover esta entrega a otra fecha por una causa puntual (la siguiente del patrón llega normal)">📅 mover esta instancia</button>`;
   }
 
   // Botón ocultar/des-ocultar (cualquiera puede ocultar de su vista si está implicado)
@@ -4013,6 +4059,189 @@ async function confirmarCambioFecha() {
       t.id);
     showInfo('fecha actualizada ✓', `${t.creadoPor} verá una alerta con tu motivo cuando entre.`);
   }
+}
+
+// ============================================================
+// MOVER INSTANCIA DE RECURRENTE
+// Solo el creador (heads/ceo) puede mover una instancia específica.
+// El patrón sigue corriendo normal: la siguiente fecha del ciclo llega como siempre.
+// ============================================================
+let _moverInstContext = null;
+
+function abrirMoverInstancia(id) {
+  // Buscar la tarea: puede ser virtual ('rec__id__fecha') o real en DB.general
+  let t = DB.general.find(x => x.id === id);
+  if (!t) {
+    // Es virtual — buscar en instancias generadas al vuelo
+    // Para usuarios distintos, hay que regenerar
+    for (const p of PERSONAS) {
+      const inst = obtenerInstanciasRecur(p.nombre).find(x => x.id === id);
+      if (inst) { t = inst; break; }
+    }
+  }
+  if (!t) {
+    showInfo('error', 'no se encontró esa instancia.');
+    return;
+  }
+  // Validar que es una instancia recurrente
+  if (!t.origenRecur && !t._recurOrigen && !String(t.id).startsWith('rec__')) {
+    showInfo('error', 'esta no es una instancia recurrente.');
+    return;
+  }
+  // Validar permiso: solo creador o admin
+  if (t.creadoPor !== USER.nombre && !isAdmin(USER)) {
+    showInfo('sin permiso', 'solo el creador o dirección puede mover una instancia.');
+    return;
+  }
+
+  _moverInstContext = t;
+
+  // Fecha sugerida: 2 días después de la fecha original
+  const sug = new Date(t.fecha + 'T00:00:00');
+  sug.setDate(sug.getDate() + 2);
+  const sugerida = sug.toISOString().slice(0, 10);
+
+  $('mi-titulo').textContent = `mover entrega · ${t.nombre}`;
+  $('mi-body').innerHTML = `
+    <div style="background:var(--bg-1);border:1px solid var(--line);padding:12px 14px;margin-bottom:14px">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">para</div>
+      <div style="font-size:14px;color:var(--txt)"><strong>${t.para}</strong></div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--txt-3);margin-top:8px">fecha original de esta entrega: ${fechaCorta(t.fecha)}</div>
+    </div>
+
+    <div class="field">
+      <label>nueva fecha</label>
+      <input type="date" id="mi-fecha" value="${sugerida}" min="${dx(0)}">
+    </div>
+
+    <div class="field">
+      <label>motivo (obligatorio)</label>
+      <textarea id="mi-motivo" rows="3" placeholder="ej: ${t.para} está enferma esta semana" style="width:100%;padding:10px 12px;background:var(--bg-1);border:1px solid var(--line);font-size:13px;color:var(--txt);font-family:inherit;resize:vertical"></textarea>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px">mínimo 10 caracteres · ${t.para} verá este motivo</div>
+    </div>
+
+    <div class="field">
+      <label>¿esta extensión cuenta como entrega a tiempo?</label>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+        <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:var(--bg-1);border:1px solid var(--line);cursor:pointer">
+          <input type="radio" name="mi-justif" value="si" checked style="margin-top:2px">
+          <span style="font-size:13px;color:var(--txt)">
+            <strong>sí</strong> · causa justificada (enfermedad, algo externo)
+            <span style="display:block;font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:2px">la puntualidad se mide contra la fecha nueva</span>
+          </span>
+        </label>
+        <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:var(--bg-1);border:1px solid var(--line);cursor:pointer">
+          <input type="radio" name="mi-justif" value="no" style="margin-top:2px">
+          <span style="font-size:13px;color:var(--txt)">
+            <strong>no</strong> · se le pasó, le doy chance
+            <span style="display:block;font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:2px">cuenta contra la fecha original — la entrega contará como tarde</span>
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.05em;margin-top:12px;padding:10px 12px;background:rgba(232,176,74,.06);border:1px solid rgba(232,176,74,.2)">
+      ℹ la siguiente entrega del patrón llegará en su fecha habitual
+    </div>
+  `;
+  $('ov-mover-inst').classList.add('show');
+  requestAnimationFrame(() => $('mi-fecha').focus());
+}
+
+function cerrarMoverInstancia() {
+  _moverInstContext = null;
+  $('ov-mover-inst').classList.remove('show');
+}
+
+async function confirmarMoverInstancia() {
+  if (!_moverInstContext) return;
+  const t = _moverInstContext;
+  const nuevaFecha = $('mi-fecha').value;
+  const motivo = ($('mi-motivo').value || '').trim();
+  const radio = document.querySelector('input[name="mi-justif"]:checked');
+  const justificada = radio ? (radio.value === 'si') : true;
+
+  // Validaciones
+  if (!nuevaFecha) { showInfo('falta la fecha', 'selecciona una nueva fecha para esta entrega.'); return; }
+  if (nuevaFecha === t.fecha) { showInfo('misma fecha', 'la nueva fecha es igual a la actual. elige otra.'); return; }
+  if (motivo.length < 10) { showInfo('motivo muy corto', 'el motivo debe tener al menos 10 caracteres.'); return; }
+  if (nuevaFecha < dx(0)) { showInfo('fecha pasada', 'no puedes mover la entrega a una fecha que ya pasó.'); return; }
+
+  // Identificar la recurrente origen
+  const origenRecurId = t.origenRecur || t._recurOrigen ||
+    (String(t.id).startsWith('rec__') ? t.id.split('__')[1] : null);
+  if (!origenRecurId) {
+    showInfo('error', 'no se pudo identificar la recurrente origen.');
+    return;
+  }
+
+  showLoading('moviendo instancia...');
+
+  // Si la instancia ya existe en BD (no es virtual), hacemos UPDATE
+  // Si es virtual (id empieza con 'rec__'), hacemos INSERT
+  let result;
+  if (String(t.id).startsWith('rec__')) {
+    // INSERT — crear fila nueva con la fecha movida
+    const recur = RECURRENTES.find(r => r.id === origenRecurId);
+    if (!recur) {
+      hideLoading();
+      showInfo('error', 'no se encontró la recurrente origen.');
+      return;
+    }
+    result = await sb.from('peticiones').insert({
+      nombre: recur.nombre,
+      descripcion: recur.desc || null,
+      creado_por: recur.creadoPor,
+      para: recur.para,
+      area: recur.area,
+      fecha: nuevaFecha,
+      fecha_original: t.fecha,
+      motivo_cambio_fecha: motivo,
+      extension_justificada: justificada,
+      prioridad: 'media',
+      estatus: 'pendiente',
+      privada: false,
+      origen_recur: origenRecurId,
+      cambio_visto_por_creador: true,
+    }).select().single();
+  } else {
+    // UPDATE — la instancia ya existe en BD
+    result = await sb.from('peticiones').update({
+      fecha: nuevaFecha,
+      fecha_original: t.fechaOriginal || t.fecha,
+      motivo_cambio_fecha: motivo,
+      extension_justificada: justificada,
+      cambio_visto_por_creador: true,
+    }).eq('id', t.id).select().single();
+  }
+
+  hideLoading();
+
+  if (result.error) {
+    showInfo('error', 'no se pudo mover: ' + result.error.message);
+    return;
+  }
+
+  // Actualizar estado local
+  if (result.data) {
+    const mapped = mapPeticionRow(result.data);
+    const idx = DB.general.findIndex(x => x.id === mapped.id);
+    if (idx >= 0) DB.general[idx] = mapped;
+    else DB.general.push(mapped);
+  }
+
+  cerrarMoverInstancia();
+  cerrarDetalle();
+  renderActiveTab();
+
+  // Notificar al destinatario
+  const notaJustif = justificada ? '' : ' · cuenta contra la fecha original';
+  crearNotificacion(t.para, 'fecha_cambiada',
+    `${USER.nombre} movió tu entrega de "${t.nombre}"`,
+    `del ${fechaCorta(t.fecha)} al ${fechaCorta(nuevaFecha)} · motivo: ${motivo}${notaJustif}`,
+    null);
+
+  showInfo('instancia movida ✓', `${t.para} verá la nueva fecha. la siguiente entrega del patrón llegará normal.`);
 }
 
 // Marca como visto cuando el creador abre la petición con cambio
