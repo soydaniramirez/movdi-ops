@@ -3026,10 +3026,13 @@ function renderPedi() {
 function renderGrupoPedi(g) {
   const colorBarra = g.porcentaje >= 100 ? 'var(--ok)' : g.porcentaje >= 50 ? 'var(--warn)' : 'var(--acc)';
   const expandido = window._gruposExpandidos && window._gruposExpandidos[g.grupoId];
+  // Mostrar el botón "ocultar grupo" solo cuando está 100% entregado
+  // (si está parcial, ocultarlo te quita visibilidad de lo que falta)
+  const grupoCompleto = g.entregadas === g.total;
 
   return `
     <div style="background:var(--bg-1);border:1px solid var(--line);overflow:hidden">
-      <div onclick="toggleGrupoPedi('${g.grupoId}')" style="cursor:pointer;padding:14px 18px;display:grid;grid-template-columns:auto 1fr auto auto;gap:14px;align-items:center;border-left:3px solid var(--acc)">
+      <div onclick="toggleGrupoPedi('${g.grupoId}')" style="cursor:pointer;padding:14px 18px;display:grid;grid-template-columns:auto 1fr auto auto auto;gap:14px;align-items:center;border-left:3px solid var(--acc)">
         <div style="font-size:18px">📦</div>
         <div>
           <div style="font-weight:600;font-size:14px;margin-bottom:2px">${g.nombre}</div>
@@ -3045,6 +3048,7 @@ function renderGrupoPedi(g) {
           <div style="font-family:var(--mono);font-size:11px;color:var(--txt-2)">${fechaCorta(g.fecha)}</div>
           <span class="tag prio-${g.prioridad}" style="margin-top:4px;display:inline-block">${g.prioridad}</span>
         </div>
+        ${grupoCompleto ? `<button class="icon-btn" onclick="event.stopPropagation();ocultarGrupoCompleto('${g.grupoId}')" title="ocultar todo el grupo (${g.total} filas) · sigue contando en el progreso">🙈</button>` : '<div></div>'}
         <div style="font-family:var(--mono);font-size:14px;color:var(--txt-3)">${expandido ? '▲' : '▼'}</div>
       </div>
       ${expandido ? `
@@ -3101,6 +3105,36 @@ async function eliminarGrupoCompleto(grupoId) {
   const { error } = await sb.from('peticiones').delete().eq('grupo_id', grupoId);
   if (error) { showInfo('error', error.message); return; }
   DB.general = DB.general.filter(t => t.grupoId !== grupoId);
+  renderActiveTab();
+}
+
+// Ocultar todo el grupo de la vista del usuario actual (soft-delete)
+// No borra los datos: agrega USER.nombre al array oculta_para de cada fila.
+// El progreso/stats sigue contando, solo desaparece de la vista personal.
+async function ocultarGrupoCompleto(grupoId) {
+  const items = DB.general.filter(t => t.grupoId === grupoId && !estaOcultaParaMi(t));
+  if (items.length === 0) {
+    showInfo('nada que ocultar', 'este grupo ya está oculto de tu vista');
+    return;
+  }
+  if (!confirm(`¿ocultar este grupo de tu vista?\n\n${items.length} ${items.length === 1 ? 'fila' : 'filas'} dejarán de mostrarse aquí. seguirán contando en el progreso. puedes volver a mostrarlas con el botón "👁 mostrar ocultas".`)) return;
+
+  showLoading(`ocultando ${items.length} ${items.length === 1 ? 'fila' : 'filas'}...`);
+  const promesas = items.map(async t => {
+    const nuevoArray = [...(t.ocultaPara || []), USER.nombre];
+    const { error } = await sb.from('peticiones')
+      .update({ oculta_para: nuevoArray })
+      .eq('id', t.id);
+    if (!error) t.ocultaPara = nuevoArray;
+    return error;
+  });
+  const resultados = await Promise.all(promesas);
+  hideLoading();
+
+  const errores = resultados.filter(e => e);
+  if (errores.length) {
+    showInfo('parcialmente exitoso', `${items.length - errores.length} ocultadas, ${errores.length} con error`);
+  }
   renderActiveTab();
 }
 
