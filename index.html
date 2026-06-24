@@ -1026,6 +1026,11 @@ button{cursor:pointer}
         <label>rol</label>
         <input type="text" id="per-rol" placeholder="ej: ejecutiva cuentas/PM">
       </div>
+      <div class="field">
+        <label>correo electrónico</label>
+        <input type="email" id="per-email" placeholder="nombre@movdi.mx" autocomplete="off">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--txt-3);margin-top:4px">se usa para vincular su cuenta de login · sin correo no puede entrar al ops</div>
+      </div>
       <div class="field-row">
         <div class="field">
           <label>área principal</label>
@@ -4535,13 +4540,15 @@ function abrirPersona(id) {
     $('per-nombre').value = p.nombre;
     $('per-apellido').value = p.apellido;
     $('per-rol').value = p.rol;
+    $('per-email').value = p.email || '';
     $('per-area').value = (p.areas && p.areas[0]) || 'imkt';
     $('per-nivel').value = p.nivel === 'rh' ? 'rh' : p.nivel;
     managersActuales = p.managers || [];
     principalActual = p.managerPrincipal || '';
   } else {
     $('per-nombre').value = ''; $('per-apellido').value = '';
-    $('per-rol').value = ''; $('per-area').value = 'imkt';
+    $('per-rol').value = ''; $('per-email').value = '';
+    $('per-area').value = 'imkt';
     $('per-nivel').value = 'ejecutivo';
   }
   // Renderizar dropdown de manager principal
@@ -4578,7 +4585,13 @@ async function guardarPersona() {
   const nombre = $('per-nombre').value.trim();
   const apellido = $('per-apellido').value.trim();
   const rol = $('per-rol').value.trim();
+  const email = $('per-email').value.trim().toLowerCase();
   if (!nombre || !apellido || !rol) { showInfo('falta dato', 'completa nombre, apellido y rol'); return; }
+  // Validación suave del correo: si lo escriben, debe tener formato razonable
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showInfo('correo inválido', 'revisa el formato del correo (ej: nombre@movdi.mx)');
+    return;
+  }
   const area = $('per-area').value;
   const nivelSel = $('per-nivel').value;
   const nivel = nivelSel === 'rh' ? 'rh' : nivelSel;
@@ -4595,17 +4608,32 @@ async function guardarPersona() {
   if (editandoPersonaId) {
     const p = PERSONAS.find(x => x.id === editandoPersonaId);
     const areas = needs_pass ? [...new Set([...(p.areas || []), area, 'rh'])] : [area];
-    payload = { nombre, apellido, rol, areas, nivel, needs_pass, managers: managersChecked, manager_principal: principalSel };
+    payload = { nombre, apellido, rol, email: email || null, areas, nivel, needs_pass, managers: managersChecked, manager_principal: principalSel };
     const { error } = await sb.from('personas').update(payload).eq('id', editandoPersonaId);
     if (error) { showInfo('error', error.message); return; }
   } else {
-    payload = { nombre, apellido, rol, areas: needs_pass ? [area, 'rh'] : [area], nivel, needs_pass, managers: managersChecked, manager_principal: principalSel };
+    payload = { nombre, apellido, rol, email: email || null, areas: needs_pass ? [area, 'rh'] : [area], nivel, needs_pass, managers: managersChecked, manager_principal: principalSel };
     const { error } = await sb.from('personas').insert(payload);
     if (error) { showInfo('error', error.message); return; }
   }
   cerrarPersona();
   await cargarTodosLosDatos();
   renderActiveTab();
+  // Si pusieron correo nuevo y la persona aún no tiene auth_user_id vinculado,
+  // recordarles que falta invitarla en Supabase para que pueda hacer login.
+  if (email) {
+    const personaGuardada = editandoPersonaId
+      ? PERSONAS.find(p => p.id === editandoPersonaId)
+      : PERSONAS.find(p => p.nombre === nombre && p.apellido === apellido);
+    if (personaGuardada && !personaGuardada.authUserId) {
+      setTimeout(() => {
+        showInfo(
+          'falta vincular su login',
+          `${nombre} aún no tiene cuenta para entrar al ops. ve a supabase → authentication → users → invite user, usa el correo "${email}" y después pega su UID en la columna auth_user_id de personas.`
+        );
+      }, 600);
+    }
+  }
 }
 async function eliminarPersona(id) {
   const persona = PERSONAS.find(p => p.id === id);
