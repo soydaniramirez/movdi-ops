@@ -5,6 +5,9 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
+  // El mock comparte estado entre tests (reset en beforeEach): secuencial.
+  workers: 1,
+  fullyParallel: false,
   use: {
     baseURL: 'http://127.0.0.1:3100',
     // Chromium preinstalado del entorno; en local puedes quitar executablePath

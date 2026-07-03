@@ -27,8 +27,13 @@ export default async function DashboardPage() {
           <p className="text-sm text-neutral-300">
             sesión activa: <strong data-testid="user-email">{user?.email}</strong>
           </p>
-          <p className="mt-2 font-mono text-xs text-neutral-500">
-            fase 2 (auth con cookies) — los módulos de la app se migran en la fase 4.
+          <nav className="mt-4">
+            <a href="/peticiones" className="inline-block border border-orange-600/50 px-4 py-2 font-mono text-xs text-orange-500 hover:bg-orange-600/10">
+              📋 peticiones →
+            </a>
+          </nav>
+          <p className="mt-4 font-mono text-xs text-neutral-500">
+            fase 4 en curso — los demás módulos se migran uno por uno.
           </p>
         </section>
       </div>

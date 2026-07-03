@@ -15,7 +15,7 @@ Sistema interno de operaciones de MOVDI (gestión de peticiones, tareas, equipo)
 - .env.local está en .gitignore. Solo se commitea .env.example con valores vacíos.
 - RLS es la única barrera real. La anon key es pública; toda autorización se hace con políticas RLS basadas en auth.uid() y el nivel/área de la persona, no con lógica solo del cliente.
 - El login NO muestra la lista de personas. Se pide email + contraseña. Cualquier listado de personas requiere sesión autenticada; un usuario anónimo no debe recibir ningún nombre ni email.
-- Panel RH: la verificación de la contraseña adicional se hace en el servidor (Route Handler contra RH_ACCESS_SECRET o Edge Function con RLS). Los datos de RH nunca llegan al navegador sin pasar esa verificación.
+- Panel RH: NO hay contraseña extra (decisión 2026-07-03). El acceso RH se controla por nivel='rh' en personas + políticas RLS. Los datos de RH nunca deben depender de lógica solo-cliente.
 - Peticiones privadas: visibles solo para creador y destinatario, ni siquiera dirección.
 ## Hallazgo crítico — RESUELTO (2026-07-03)
 La tabla personas era legible de forma anónima (política RLS de SELECT abierta a anon exponía a las 21 personas con email, rol, nivel y área). Cerrado en dos pasos: (1) PR #1 a main eliminó el grid de login que dependía de esa lectura (login por email+contraseña), (2) migración cerrar_personas_select_anon aplicada: drop policy personas_select_anon + revoke select from anon. Verificado: petición anónima → permission denied; usuarios autenticados siguen leyendo. También resueltos: tablas ventas_* huérfanas públicas (respaldadas en backups/ y eliminadas), policies always-true (notificaciones/historial/estrellas/recompensas) y search_path/EXECUTE de las funciones mi_*.
@@ -27,7 +27,6 @@ La tabla personas era legible de forma anónima (política RLS de SELECT abierta
 NEXT_PUBLIC_SUPABASE_URL=          # público
 NEXT_PUBLIC_SUPABASE_ANON_KEY=     # público (publishable)
 SUPABASE_SERVICE_ROLE_KEY=         # SECRETO — solo servidor
-RH_ACCESS_SECRET=                  # SECRETO — verificación panel RH
 ## Arquitectura destino
 app/(auth)/login/        · login por email, sin listar personas
 app/(app)/...            · rutas protegidas por middleware
