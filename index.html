@@ -729,18 +729,31 @@ button{cursor:pointer}
   <div class="login-hero">
     <div class="login-eyebrow">/ acceso interno</div>
     <h1 class="login-title">centro de <em>operaciones</em><br><b>MOVDI</b></h1>
-    <p class="login-desc">sistema interno de gestión de peticiones, tareas operativas y seguimiento de equipo. selecciona tu nombre para entrar.</p>
+    <p class="login-desc">sistema interno de gestión de peticiones, tareas operativas y seguimiento de equipo. ingresa con tu correo y contraseña.</p>
   </div>
   <div class="login-section">
     <div class="login-section-head">
-      <h3>equipo</h3>
+      <h3>acceso</h3>
       <span class="ln"></span>
-      <span class="ct" id="login-count">—</span>
     </div>
-    <div id="pgrid"></div>
-    <div class="login-action">
-      <span class="login-hint" id="login-hint">elige una persona para continuar</span>
-      <button class="btn primary" id="btn-enter" disabled>entrar →</button>
+    <div style="max-width:420px">
+      <div class="field" style="margin-bottom:14px">
+        <label>correo</label>
+        <input type="email" id="login-email" placeholder="tucorreo@movdi.mx" autocomplete="username"
+          style="width:100%;padding:12px 14px;background:var(--bg-1);border:1px solid var(--line);font-size:14px;color:var(--txt)"
+          onkeydown="if(event.key==='Enter')$('login-password').focus()">
+      </div>
+      <div class="field" style="margin-bottom:14px">
+        <label>contraseña</label>
+        <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password"
+          style="width:100%;padding:12px 14px;background:var(--bg-1);border:1px solid var(--line);font-size:14px;color:var(--txt)"
+          onkeydown="if(event.key==='Enter')iniciarLoginEmail()">
+      </div>
+      <div id="login-err" style="color:var(--acc);font-family:var(--mono);font-size:11px;display:none;margin-bottom:10px"></div>
+      <div class="login-action">
+        <button class="btn ghost xs" onclick="solicitarReset()" style="font-family:var(--mono);font-size:11px">¿olvidaste tu contraseña?</button>
+        <button class="btn primary" id="btn-enter" onclick="iniciarLoginEmail()">entrar →</button>
+      </div>
     </div>
   </div>
 </div>
@@ -759,11 +772,11 @@ button{cursor:pointer}
       <p id="login-pass-helper" style="color:var(--txt-3);margin-bottom:18px;font-size:13px"></p>
       <div class="field">
         <label id="login-pass-label">contraseña</label>
-        <input type="password" id="login-pass-input" onkeydown="if(event.key==='Enter')validarLoginPass()" placeholder="••••••••">
+        <input type="password" id="login-pass-input" onkeydown="if(event.key==='Enter')$('btn-login-confirm').click()" placeholder="••••••••">
       </div>
       <div class="field" id="login-pass-confirm-field" style="display:none">
         <label>confirmar contraseña</label>
-        <input type="password" id="login-pass-confirm" onkeydown="if(event.key==='Enter')validarLoginPass()" placeholder="••••••••">
+        <input type="password" id="login-pass-confirm" onkeydown="if(event.key==='Enter')$('btn-login-confirm').click()" placeholder="••••••••">
       </div>
       <div id="login-pass-err" style="color:var(--acc);font-family:var(--mono);font-size:11px;display:none"></div>
       <div style="margin-top:14px;text-align:center">
@@ -772,7 +785,7 @@ button{cursor:pointer}
     </div>
     <div class="modal-foot">
       <button class="btn ghost" onclick="cerrarLoginPass()">cancelar</button>
-      <button class="btn primary" onclick="validarLoginPass()" id="btn-login-confirm">acceder</button>
+      <button class="btn primary" id="btn-login-confirm">acceder</button>
     </div>
   </div>
 </div>
@@ -1391,7 +1404,6 @@ sb.auth.onAuthStateChange((event, session) => {
   if (event === 'SIGNED_OUT' && USER !== null) {
     // Hubo logout pero USER aún existe = sesión zombie
     USER = null;
-    pendingLogin = null;
     PERSONAS = [];
     DB = { general: [] };
     RECURRENTES = [];
@@ -1402,7 +1414,7 @@ sb.auth.onAuthStateChange((event, session) => {
     setTimeout(() => {
       $('screen-app').style.display = 'none';
       $('screen-login').style.display = 'flex';
-      cargarPersonasParaLogin();
+      renderLogin();
     }, 1500);
   }
 });
@@ -1421,7 +1433,6 @@ let _notifChannel = null; // canal de realtime
 let _notifPermisoSO = null; // 'granted' | 'denied' | 'default' | null si no se preguntó
 
 let USER = null;          // persona logueada (con datos de la tabla personas + sesión auth)
-let pendingLogin = null;  // persona seleccionada en login screen
 let activeTab = 'general';
 let filtroActual = 'todas';
 let personaFiltro = null;
@@ -2015,27 +2026,8 @@ async function checkSession() {
     await iniciarSesion();
   } else {
     hideLoading();
-    await cargarPersonasParaLogin();
+    renderLogin();
   }
-}
-
-// Carga las personas para mostrar en el grid de login (sin auth)
-async function cargarPersonasParaLogin() {
-  // Las personas son lectura pública para mostrar el grid
-  // (RLS lo permite a usuarios autenticados, pero también podemos tener una vista pública)
-  // Como fallback, si no hay sesión usamos los datos básicos hardcoded
-  try {
-    const { data, error } = await sb.from('personas').select('id, nombre, apellido, rol, nivel, areas, needs_pass, email, activo, pausada_hasta, es_direccion').order('nivel');
-    if (error) {
-      console.warn('No se pudo leer personas sin auth, usando lista mínima');
-      throw error;
-    }
-    PERSONAS = data.map(mapPersonaRow);
-  } catch (e) {
-    // Si las RLS no permiten lectura sin auth, mostramos un grid mínimo desde lista local
-    PERSONAS = [];
-  }
-  renderLogin();
 }
 
 async function iniciarSesion() {
@@ -2044,7 +2036,7 @@ async function iniciarSesion() {
   const { data: { user } } = await sb.auth.getUser();
   if (!user) {
     hideLoading();
-    await cargarPersonasParaLogin();
+    renderLogin();
     return;
   }
   const { data: persona, error } = await sb.from('personas').select('*').eq('email', user.email).maybeSingle();
@@ -2052,7 +2044,7 @@ async function iniciarSesion() {
     hideLoading();
     showInfo('cuenta no vinculada', `tu cuenta ${user.email} existe en el sistema de auth, pero no está ligada a una persona del equipo. avisa a dirección.`);
     await sb.auth.signOut();
-    await cargarPersonasParaLogin();
+    renderLogin();
     return;
   }
   // Bloquear acceso si la persona fue archivada (activo = false)
@@ -2060,7 +2052,7 @@ async function iniciarSesion() {
     hideLoading();
     showInfo('acceso revocado', `tu cuenta ha sido archivada en MOVDI. si esto es un error, contacta a dirección.`);
     await sb.auth.signOut();
-    await cargarPersonasParaLogin();
+    renderLogin();
     return;
   }
   // Vincular auth_user_id si no estaba (primer login)
@@ -2172,7 +2164,6 @@ async function cerrarSesion() {
 
   // Limpieza local SIEMPRE (aunque haya fallado el signOut del servidor)
   USER = null;
-  pendingLogin = null;
   PERSONAS = [];
   DB = { general: [] };
   RECURRENTES = [];
@@ -2194,55 +2185,15 @@ async function cerrarSesion() {
   hideLoading();
   $('screen-app').style.display = 'none';
   $('screen-login').style.display = 'flex';
-  $('btn-enter').disabled = true;
-  $('login-hint').textContent = 'elige una persona para continuar';
-  await cargarPersonasParaLogin();
+  renderLogin();
 }
 
 // ============================================================
-// LOGIN UI
+// LOGIN UI (email + contraseña — NO se lista ninguna persona antes de autenticarse)
 // ============================================================
 function renderLogin() {
-  const grid = $('pgrid');
-  // Solo mostrar personas activas (no archivadas) en el grid de login
-  const personasVisibles = PERSONAS.filter(p => p.activo !== false);
-
-  if (!personasVisibles.length) {
-    grid.innerHTML = `
-      <div style="padding:40px;text-align:center;color:var(--txt-3);grid-column:1/-1">
-        <div style="font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.2em;margin-bottom:8px">primera vez</div>
-        <div style="font-size:14px;margin-bottom:16px">aún no hay personas conectadas. ingresa tu correo:</div>
-        <div style="display:flex;gap:8px;max-width:380px;margin:0 auto">
-          <input id="email-direct" type="email" placeholder="tucorreo@movdi.mx" style="flex:1;padding:10px 12px;background:var(--bg-1);border:1px solid var(--line);font-size:13px;color:var(--txt)">
-          <button class="btn primary sm" onclick="loginDirecto()">entrar</button>
-        </div>
-      </div>
-    `;
-    $('login-count').textContent = `0 personas`;
-    return;
-  }
-  grid.innerHTML = personasVisibles.map(p => `
-    <div class="pcard${pendingLogin && pendingLogin.id === p.id ? ' sel' : ''}" data-id="${p.id}">
-      <div class="pavatar">${inicial(p.nombre, p.apellido)}</div>
-      ${p.needsPass ? '<div class="plock">🔒</div>' : ''}
-      <div class="pname">${fullName(p)}</div>
-      <div class="prol">${p.rol}</div>
-      <div class="pbadge">${p.nivel === 'ceo' ? '/ dirección' : p.nivel === 'head' ? '/ head' : p.nivel === 'rh' ? '/ recursos humanos' : '/ ejecutivo'}</div>
-    </div>
-  `).join('');
-  $('login-count').textContent = `${personasVisibles.length} personas`;
-
-  if (grid._loginHandler) grid.removeEventListener('click', grid._loginHandler);
-  grid._loginHandler = e => {
-    const card = e.target.closest('.pcard');
-    if (!card) return;
-    const id = card.dataset.id;
-    pendingLogin = personasVisibles.find(p => p.id === id);
-    $('btn-enter').disabled = false;
-    $('login-hint').textContent = `entrar como ${fullName(pendingLogin)}`;
-    renderLogin();
-  };
-  grid.addEventListener('click', grid._loginHandler);
+  $('login-err').style.display = 'none';
+  $('login-password').value = '';
 
   const updClock = () => {
     const d = new Date();
@@ -2251,73 +2202,39 @@ function renderLogin() {
   };
   updClock();
   if (!window._clockInt) window._clockInt = setInterval(updClock, 30000);
+
+  requestAnimationFrame(() => $('login-email').focus());
 }
 
-async function loginDirecto() {
-  const email = $('email-direct').value.trim();
-  if (!email) return;
-  pendingLogin = { email, nombre: email.split('@')[0] };
-  abrirLoginPass();
-}
-
-$('btn-enter').addEventListener('click', () => {
-  if (!pendingLogin) return;
-  abrirLoginPass();
-});
-
-function abrirLoginPass() {
-  $('login-pass-title').textContent = `acceder como ${pendingLogin.nombre}`;
-  $('login-pass-sub').textContent = 'contraseña personal';
-  $('login-pass-helper').innerHTML = pendingLogin.email
-    ? `cuenta: <strong>${pendingLogin.email}</strong>`
-    : '';
-  $('login-pass-label').textContent = 'contraseña';
-  $('login-pass-input').value = '';
-  $('login-pass-confirm-field').style.display = 'none';
-  $('login-pass-err').style.display = 'none';
-  $('btn-login-confirm').textContent = 'acceder';
-  $('btn-login-confirm').onclick = validarLoginPass;
-  $('btn-forgot').style.display = 'inline-flex';
-  $('ov-login-pass').classList.add('show');
-  requestAnimationFrame(() => $('login-pass-input').focus());
-}
-function cerrarLoginPass() {
-  $('ov-login-pass').classList.remove('show');
-}
-
-async function validarLoginPass() {
-  const password = $('login-pass-input').value;
-  const err = $('login-pass-err');
+async function iniciarLoginEmail() {
+  const email = $('login-email').value.trim().toLowerCase();
+  const password = $('login-password').value;
+  const err = $('login-err');
   err.style.display = 'none';
-  if (!password) {
-    err.textContent = 'ingresa tu contraseña';
-    err.style.display = 'block';
-    return;
-  }
-  if (!pendingLogin.email) {
-    err.textContent = 'esta persona no tiene email asignado. avisa a dirección.';
+  if (!email || !password) {
+    err.textContent = 'ingresa tu correo y contraseña';
     err.style.display = 'block';
     return;
   }
   showLoading('autenticando...');
-  const { error } = await sb.auth.signInWithPassword({
-    email: pendingLogin.email,
-    password
-  });
+  const { error } = await sb.auth.signInWithPassword({ email, password });
   hideLoading();
   if (error) {
-    err.textContent = 'contraseña incorrecta';
+    err.textContent = 'correo o contraseña incorrectos';
     err.style.display = 'block';
     return;
   }
-  cerrarLoginPass();
   await iniciarSesion();
 }
 
+function cerrarLoginPass() {
+  $('ov-login-pass').classList.remove('show');
+}
+
 async function solicitarReset() {
-  const email = pendingLogin && pendingLogin.email;
+  const email = $('login-email').value.trim().toLowerCase();
   if (!email) {
-    showInfo('email no disponible', 'esta persona aún no tiene email asignado. contacta a dirección.');
+    showInfo('escribe tu correo', 'escribe tu correo en el campo de arriba y vuelve a dar clic en "¿olvidaste tu contraseña?".');
     return;
   }
   showLoading('enviando link...');
@@ -2325,11 +2242,10 @@ async function solicitarReset() {
     redirectTo: window.location.origin + window.location.pathname
   });
   hideLoading();
-  cerrarLoginPass();
   if (error) {
     showInfo('error', 'no se pudo enviar el email: ' + error.message);
   } else {
-    showInfo('link enviado', `revisa tu correo ${email}. recibirás un link para definir una nueva contraseña.`);
+    showInfo('link enviado', `si ${email} está registrado, recibirás un link para restablecer tu contraseña.`);
   }
 }
 
