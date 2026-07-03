@@ -35,7 +35,7 @@ app/api/...              · Route Handlers para acciones sensibles
 lib/supabase/client.ts   · createBrowserClient (anon)
 lib/supabase/server.ts   · createServerClient (cookies)
 lib/supabase/admin.ts    · service_role — SOLO server
-middleware.ts            · protege rutas y refresca sesión
+proxy.ts                 · protege rutas y refresca sesión (Next 16 renombró middleware→proxy; la lógica vive en lib/supabase/middleware.ts)
 supabase/migrations/     · esquema y RLS versionados
 
 Usar @supabase/ssr con cookies (no localStorage). Migrar la UI módulo por módulo conservando paridad de funciones con el index.html viejo.
