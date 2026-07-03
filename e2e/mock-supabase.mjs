@@ -51,11 +51,24 @@ let db
 function reset() {
   db = {
     personas: structuredClone(PERSONAS_BASE),
-    recurrentes: [{
-      id: 'rec-1', nombre: 'nómina quincenal', descripcion: 'corrida de nómina',
-      para: 'Antonio', area: 'pm', frecuencia: 'quincenal', dia_semana: null, dia_mes: 15,
-      activa: true, creado_por: 'Dani', created_at: new Date().toISOString(),
-    }],
+    recurrentes: [
+      {
+        id: 'rec-1', nombre: 'nómina quincenal', descripcion: 'corrida de nómina',
+        para: 'Antonio', area: 'pm', frecuencia: 'mensual', dia_semana: null, dia_mes: 15,
+        activa: true, creado_por: 'Dani', created_at: new Date().toISOString(),
+      },
+      {
+        // dia_semana = hoy → la próxima instancia virtual cae HOY (determinista)
+        id: 'rec-2', nombre: 'standup semanal', descripcion: 'minuta del standup',
+        para: 'Antonio', area: 'pm', frecuencia: 'semanal', dia_semana: new Date().getDay(), dia_mes: null,
+        activa: true, creado_por: 'Dani', created_at: new Date().toISOString(),
+      },
+      {
+        id: 'rec-3', nombre: 'reporte rh', descripcion: 'reporte mensual de rh',
+        para: 'Antonio', area: 'rh', frecuencia: 'mensual', dia_semana: null, dia_mes: 28,
+        activa: true, creado_por: 'Sarai', created_at: new Date().toISOString(),
+      },
+    ],
     peticiones: [
       {
         id: 'p-seed-1', zona: 'general', nombre: 'reporte semanal', descripcion: 'kpis de la semana',
@@ -158,7 +171,7 @@ const server = http.createServer(async (req, res) => {
   // ---------- test helpers ----------
   if (url.pathname === '/__test/reset') { reset(); return json(200, { ok: true }) }
   if (url.pathname === '/__test/state') {
-    return json(200, { peticiones: db.peticiones, notificaciones: db.notificaciones })
+    return json(200, { peticiones: db.peticiones, notificaciones: db.notificaciones, recurrentes: db.recurrentes })
   }
 
   // ---------- auth ----------
@@ -207,8 +220,41 @@ const server = http.createServer(async (req, res) => {
       return representar(aplicarFiltros(db.personas, url.searchParams))
     }
 
-    if (tabla === 'recurrentes' && req.method === 'GET') {
-      return representar(aplicarFiltros(db.recurrentes, url.searchParams))
+    if (tabla === 'recurrentes') {
+      // RLS: SELECT true · INSERT creado_por=yo · UPDATE/DELETE creador o ceo|head
+      const puedeAdministrarRec = (r) => r.creado_por === yo.nombre || esAdmin(yo)
+      if (req.method === 'GET') {
+        return representar(aplicarFiltros(db.recurrentes, url.searchParams))
+      }
+      if (req.method === 'POST') {
+        const input = JSON.parse(body || '[]')
+        const filas = Array.isArray(input) ? input : [input]
+        for (const f of filas) {
+          if (f.creado_por !== yo.nombre) {
+            return json(403, { code: '42501', message: 'new row violates row-level security policy for table "recurrentes"' })
+          }
+        }
+        const creadas = filas.map((f) => ({
+          id: uuid(), dia_semana: null, dia_mes: null, descripcion: null, activa: true,
+          created_at: new Date().toISOString(), ...f,
+        }))
+        db.recurrentes.push(...creadas)
+        if (prefer.includes('return=representation')) return representar(creadas)
+        return json(201, [])
+      }
+      if (req.method === 'PATCH') {
+        const cambios = JSON.parse(body || '{}')
+        const objetivo = aplicarFiltros(db.recurrentes, url.searchParams).filter(puedeAdministrarRec)
+        objetivo.forEach((r) => Object.assign(r, cambios))
+        if (prefer.includes('return=representation')) return representar(objetivo)
+        return json(204, [])
+      }
+      if (req.method === 'DELETE') {
+        const objetivo = aplicarFiltros(db.recurrentes, url.searchParams).filter(puedeAdministrarRec)
+        db.recurrentes = db.recurrentes.filter((r) => !objetivo.includes(r))
+        if (prefer.includes('return=representation')) return representar(objetivo)
+        return json(204, [])
+      }
     }
 
     if (tabla === 'peticiones') {
