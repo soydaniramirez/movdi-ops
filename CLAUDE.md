@@ -17,8 +17,12 @@ Sistema interno de operaciones de MOVDI (gestión de peticiones, tareas, equipo)
 - El login NO muestra la lista de personas. Se pide email + contraseña. Cualquier listado de personas requiere sesión autenticada; un usuario anónimo no debe recibir ningún nombre ni email.
 - Panel RH: la verificación de la contraseña adicional se hace en el servidor (Route Handler contra RH_ACCESS_SECRET o Edge Function con RLS). Los datos de RH nunca llegan al navegador sin pasar esa verificación.
 - Peticiones privadas: visibles solo para creador y destinatario, ni siquiera dirección.
-## Hallazgo crítico ya identificado (arreglar en el refactor)
-La tabla personas hoy es legible de forma anónima: con solo la anon key y sin sesión, un SELECT devuelve las 21 personas con email, rol, nivel y área. Causa: política RLS de SELECT abierta a anon. Debe cerrarse para que solo usuarios autenticados lean personas, y solo lo que les corresponda.
+## Hallazgo crítico — RESUELTO (2026-07-03)
+La tabla personas era legible de forma anónima (política RLS de SELECT abierta a anon exponía a las 21 personas con email, rol, nivel y área). Cerrado en dos pasos: (1) PR #1 a main eliminó el grid de login que dependía de esa lectura (login por email+contraseña), (2) migración cerrar_personas_select_anon aplicada: drop policy personas_select_anon + revoke select from anon. Verificado: petición anónima → permission denied; usuarios autenticados siguen leyendo. También resueltos: tablas ventas_* huérfanas públicas (respaldadas en backups/ y eliminadas), policies always-true (notificaciones/historial/estrellas/recompensas) y search_path/EXECUTE de las funciones mi_*.
+## Decisiones acordadas para fases siguientes
+- Fase 4, módulo "agregar persona": la Server Action de alta debe, además de insertar en personas, invitar al usuario a Auth automáticamente (supabase.auth.admin.inviteUserByEmail con service_role, solo en servidor), para cerrar de raíz el hueco de "persona sin cuenta". Ya no debe existir el flujo manual de invitar desde el dashboard.
+- Escrituras sensibles por Server Action (enfoque híbrido): INSERT de notificaciones (su policy interim `mi_nombre() is not null` se endurece cuando este INSERT pase a servidor), historial_mensual, estrellas_colaboracion (límite 2/semana validado en servidor; la RLS ya lo respalda), recompensas y administración de personas. Lecturas siguen client-side con anon key + RLS.
+- Pendiente manual (dashboard): activar leaked password protection en Authentication → Passwords.
 ## Variables de entorno
 NEXT_PUBLIC_SUPABASE_URL=          # público
 NEXT_PUBLIC_SUPABASE_ANON_KEY=     # público (publishable)
