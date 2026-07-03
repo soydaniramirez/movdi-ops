@@ -68,6 +68,13 @@ function reset() {
         para: 'Antonio', area: 'rh', frecuencia: 'mensual', dia_semana: null, dia_mes: 28,
         activa: true, creado_por: 'Sarai', created_at: new Date().toISOString(),
       },
+      {
+        // quincenal REAL: ancla hace 14 días → HOY toca (determinista)
+        id: 'rec-4', nombre: 'objetivos digital', descripcion: 'entrega de objetivos',
+        para: 'Antonio', area: 'pm', frecuencia: 'quincenal',
+        dia_semana: new Date().getDay(), dia_mes: null, fecha_inicio: dx(-14),
+        activa: true, creado_por: 'Karla', created_at: new Date().toISOString(),
+      },
     ],
     peticiones: [
       {
@@ -235,8 +242,8 @@ const server = http.createServer(async (req, res) => {
           }
         }
         const creadas = filas.map((f) => ({
-          id: uuid(), dia_semana: null, dia_mes: null, descripcion: null, activa: true,
-          created_at: new Date().toISOString(), ...f,
+          id: uuid(), dia_semana: null, dia_mes: null, fecha_inicio: null, descripcion: null,
+          activa: true, created_at: new Date().toISOString(), ...f,
         }))
         db.recurrentes.push(...creadas)
         if (prefer.includes('return=representation')) return representar(creadas)

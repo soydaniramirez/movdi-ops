@@ -65,7 +65,7 @@ test('gating de creación: ejecutivo normal no crea; rh crea sin modos admin; ce
 test('visibilidad de patrones: admin ve todas; no-admin solo las de sus áreas', async ({ page, browser }) => {
   await login(page, 'dani@movdi.mx')
   await irARecurrentes(page)
-  await expect(page.getByTestId('fila-recurrente')).toHaveCount(3)
+  await expect(page.getByTestId('fila-recurrente')).toHaveCount(4)
 
   const ctx = await browser.newContext()
   const p2 = await ctx.newPage()
@@ -199,6 +199,49 @@ test('mover próxima instancia VIRTUAL (rama insert): materializa pendiente movi
   await expect(cards).toContainText('instancia programada') // real, ya no virtual
   await expect(cards).toContainText('movida · Antonio está en el offsite del cliente')
   await ctx.close()
+})
+
+// ------------------------------------------------------------
+test('quincenal REAL: instancia hoy (ancla -14d), al entregar avanza +14 (no +7)', async ({ page }) => {
+  await login(page, 'antonio@movdi.mx')
+  await irARecurrentes(page)
+
+  const card = page.getByTestId('card-instancia').filter({ hasText: 'objetivos digital' })
+  await expect(card).toBeVisible()
+  await expect(card).toContainText(hoy()) // (hoy - ancla) = 14 → toca hoy
+
+  await card.getByTestId('btn-entregar-instancia').click()
+  await page.getByTestId('btn-entrega-inst-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  // el motor avanza CATORCE días, no siete
+  const cardNueva = page.getByTestId('card-instancia').filter({ hasText: 'objetivos digital' })
+  await expect(cardNueva).toContainText(dxTest(14))
+  await expect(cardNueva).not.toContainText(dxTest(7))
+})
+
+// ------------------------------------------------------------
+test('crear quincenal: date picker de primera entrega; fecha_inicio y dia_semana derivado', async ({ page }) => {
+  await login(page, 'dani@movdi.mx')
+  await irARecurrentes(page)
+  await page.getByTestId('btn-nueva-recurrente').click()
+
+  const primera = dxTest(3)
+  await page.locator('#rec-nombre').fill('corte quincenal admi')
+  await page.getByText('varias personas · selección manual').click()
+  await page.getByText('Brenda Mora').click()
+  await page.locator('#rec-frec').selectOption('quincenal')
+  await expect(page.locator('#rec-dia')).toHaveCount(0) // sin selector de día: es date picker
+  await page.locator('#rec-fecha-inicio').fill(primera)
+  await page.getByTestId('btn-crear-rec-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  const st = await estado()
+  const r = st.recurrentes.find((x) => x.nombre === 'corte quincenal admi')!
+  expect(r.frecuencia).toBe('quincenal')
+  expect(r.fecha_inicio).toBe(primera)
+  expect(r.dia_semana).toBe(new Date(primera + 'T00:00:00Z').getUTCDay()) // derivado del ancla
+  expect(r.creado_por).toBe('Dani')
 })
 
 // ------------------------------------------------------------

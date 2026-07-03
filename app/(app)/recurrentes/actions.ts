@@ -35,7 +35,8 @@ export async function crearRecurrente(input: {
   nombre: string
   descripcion: string
   frecuencia: 'semanal' | 'quincenal' | 'mensual'
-  dia: number
+  dia?: number
+  fechaInicio?: string // quincenal: fecha de la PRIMERA entrega (ancla de la serie de 14 días)
   modo: ModoAsignacion
   para?: string
   seleccion?: string[]
@@ -52,8 +53,17 @@ export async function crearRecurrente(input: {
     if (!['semanal', 'quincenal', 'mensual'].includes(input.frecuencia)) {
       return { ok: false, error: 'frecuencia inválida' }
     }
-    const dia = Number(input.dia)
-    if (input.frecuencia === 'mensual' ? dia < 1 || dia > 28 : dia < 1 || dia > 5) {
+    let dia = Number(input.dia ?? 0)
+    if (input.frecuencia === 'quincenal') {
+      // dia_semana se deriva del ancla; la fecha define qué semanas "tocan"
+      if (!input.fechaInicio || !/^\d{4}-\d{2}-\d{2}$/.test(input.fechaInicio)) {
+        return { ok: false, error: 'elige la fecha de la primera entrega' }
+      }
+      if (input.fechaInicio < hoyISO()) {
+        return { ok: false, error: 'la primera entrega no puede ser una fecha pasada' }
+      }
+      dia = new Date(input.fechaInicio + 'T00:00:00Z').getUTCDay()
+    } else if (input.frecuencia === 'mensual' ? dia < 1 || dia > 28 : dia < 1 || dia > 5) {
       return { ok: false, error: 'día inválido' }
     }
     if (!MODOS_RECUR.includes(input.modo)) return { ok: false, error: 'modo inválido' }
@@ -89,6 +99,8 @@ export async function crearRecurrente(input: {
       activa: true,
       creado_por: yo.nombre, // derivado de la sesión
       ...(input.frecuencia === 'mensual' ? { dia_mes: dia } : { dia_semana: dia }),
+      // Solo quincenal: requiere la migración de cutover (columna fecha_inicio)
+      ...(input.frecuencia === 'quincenal' ? { fecha_inicio: input.fechaInicio } : {}),
     }))
 
     const { data, error } = await supabase.from('recurrentes').insert(filas).select()

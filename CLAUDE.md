@@ -23,6 +23,7 @@ La tabla personas era legible de forma anónima (política RLS de SELECT abierta
 - Fase 4, módulo "agregar persona": la Server Action de alta debe, además de insertar en personas, invitar al usuario a Auth automáticamente (supabase.auth.admin.inviteUserByEmail con service_role, solo en servidor), para cerrar de raíz el hueco de "persona sin cuenta". Ya no debe existir el flujo manual de invitar desde el dashboard.
 - Escrituras sensibles por Server Action (enfoque híbrido): INSERT de notificaciones (su policy interim `mi_nombre() is not null` se endurece cuando este INSERT pase a servidor), historial_mensual, estrellas_colaboracion (límite 2/semana validado en servidor; la RLS ya lo respalda), recompensas y administración de personas. Lecturas siguen client-side con anon key + RLS.
 - Pendiente manual (dashboard): activar leaked password protection en Authentication → Passwords.
+- Recurrentes 4.2b (quincenal real con fecha_inicio + recordatorio diario por pg_cron): construido y probado, pero las 3 migraciones cutover_* están SIN APLICAR y el cron SIN programar — cambian comportamiento y el check constraint rompería la creación de quincenales del index.html vivo. Checklist completa en docs/CUTOVER.md (incluye backfill de Mariana, encendido del cron y el endurecimiento definitivo de la RLS de notificaciones).
 ## Variables de entorno
 NEXT_PUBLIC_SUPABASE_URL=          # público
 NEXT_PUBLIC_SUPABASE_ANON_KEY=     # público (publishable)

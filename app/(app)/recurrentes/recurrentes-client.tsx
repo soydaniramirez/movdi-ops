@@ -283,6 +283,7 @@ function ModalCrearRecurrente({ yo, personas, admin, onCerrar, onCrear }: {
   const [desc, setDesc] = useState('')
   const [frec, setFrec] = useState<'semanal' | 'quincenal' | 'mensual'>('semanal')
   const [dia, setDia] = useState(1)
+  const [fechaInicio, setFechaInicio] = useState(dx(0)) // quincenal: primera entrega
   const [modo, setModo] = useState<ModoAsignacion>('una')
   const [para, setPara] = useState('')
   const [areaUna, setAreaUna] = useState(areaDefault)
@@ -317,7 +318,9 @@ function ModalCrearRecurrente({ yo, personas, admin, onCerrar, onCrear }: {
       !confirm(`vas a crear esta recurrente para ${destinatarios.length} personas. ¿confirmas?\n\n${destinatarios.join(', ')}\n\ncada una tendrá su propia recurrente independiente.`)) return
     setGuardando(true)
     const ok = await onCrear({
-      nombre, descripcion: desc, frecuencia: frec, dia, modo,
+      nombre, descripcion: desc, frecuencia: frec, modo,
+      dia: frec === 'quincenal' ? undefined : dia,
+      fechaInicio: frec === 'quincenal' ? fechaInicio : undefined,
       para: modo === 'una' ? para : undefined,
       seleccion: modo === 'varias' ? seleccion : undefined,
       area: modo === 'una' ? areaUna : modo === 'area' ? areaGrupo : undefined,
@@ -405,14 +408,23 @@ function ModalCrearRecurrente({ yo, personas, admin, onCerrar, onCrear }: {
               <option value="mensual">mensual</option>
             </select>
           </div>
-          <div>
-            <label className={labelCls} htmlFor="rec-dia">{frec === 'mensual' ? 'día del mes' : 'día de la semana'}</label>
-            <select id="rec-dia" className={inputCls} value={dia} onChange={(e) => setDia(Number(e.target.value))}>
-              {frec === 'mensual'
-                ? Array.from({ length: 28 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)
-                : DIAS.map((d, i) => <option key={i + 1} value={i + 1}>{d}</option>)}
-            </select>
-          </div>
+          {frec === 'quincenal' ? (
+            <div>
+              <label className={labelCls} htmlFor="rec-fecha-inicio">fecha de la primera entrega</label>
+              <input id="rec-fecha-inicio" type="date" className={inputCls} min={dx(0)}
+                value={fechaInicio} onChange={(e) => setFechaInicio(e.target.value)} />
+              <p className="mt-1 font-mono text-[10px] text-neutral-500">después, cada 14 días desde esa fecha</p>
+            </div>
+          ) : (
+            <div>
+              <label className={labelCls} htmlFor="rec-dia">{frec === 'mensual' ? 'día del mes' : 'día de la semana'}</label>
+              <select id="rec-dia" className={inputCls} value={dia} onChange={(e) => setDia(Number(e.target.value))}>
+                {frec === 'mensual'
+                  ? Array.from({ length: 28 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)
+                  : DIAS.map((d, i) => <option key={i + 1} value={i + 1}>{d}</option>)}
+              </select>
+            </div>
+          )}
         </div>
 
         {err && <p role="alert" className="font-mono text-xs text-orange-500">{err}</p>}
