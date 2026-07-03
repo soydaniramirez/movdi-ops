@@ -75,7 +75,7 @@ test('crear a una persona: fila + notificación al destinatario', async ({ page 
   expect(creada.privada).toBe(false)
   expect(creada.zona).toBe('general')
 
-  const notif = st.notificaciones.find((n) => n.tipo === 'nueva_peticion')!
+  const notif = st.notificaciones.find((n) => n.tipo === 'nueva_peticion' && !String(n.id).startsWith('n-seed-'))!
   expect(notif).toBeTruthy()
   expect(notif.para).toBe('Brenda')
   expect(notif.titulo).toBe('nueva petición de Antonio')
@@ -103,7 +103,7 @@ test('crear a todo el equipo (ceo): una fila por persona, grupo_id compartido, n
   expect([...grupos][0]).not.toBeNull()
   expect(filas.every((f) => f.creado_por === 'Dani')).toBe(true)
 
-  const notifs = st.notificaciones.filter((n) => n.tipo === 'nueva_peticion')
+  const notifs = st.notificaciones.filter((n) => n.tipo === 'nueva_peticion' && !String(n.id).startsWith('n-seed-'))
   expect(notifs).toHaveLength(5)
   expect(notifs.every((n) => n.titulo === 'nueva petición de Dani')).toBe(true)
 })
@@ -200,7 +200,7 @@ test('cambiar fecha (destinatario): motivo obligatorio ≥10, alerta al creador 
   expect(p.cambio_visto_por_creador).toBe(false) // lo cambió el destinatario → alerta para el creador
   expect(p.extension_justificada).toBeNull() // el destinatario no toca ese campo
 
-  const notif = st.notificaciones.find((n) => n.tipo === 'fecha_cambiada')!
+  const notif = st.notificaciones.find((n) => n.tipo === 'fecha_cambiada' && !String(n.id).startsWith('n-seed-'))!
   expect(notif.para).toBe('Dani')
   expect(notif.titulo).toContain('Antonio cambió la fecha de "reporte semanal"')
   expect(notif.detalle).toContain('motivo: el cliente aún no manda los archivos finales')
@@ -223,7 +223,7 @@ test('cambiar fecha (creador) con extensión NO justificada', async ({ page }) =
   expect(p.extension_justificada).toBe(false)
   expect(p.cambio_visto_por_creador).toBe(true) // lo cambió el creador, no hay alerta para él
 
-  const notif = st.notificaciones.find((n) => n.tipo === 'fecha_cambiada')!
+  const notif = st.notificaciones.find((n) => n.tipo === 'fecha_cambiada' && !String(n.id).startsWith('n-seed-'))!
   expect(notif.para).toBe('Antonio')
   expect(notif.titulo).toContain('Dani extendió el plazo')
   expect(notif.detalle).toContain('cuenta contra la fecha original')
@@ -251,7 +251,7 @@ test('mover instancia de recurrente (creador): fecha, justificación y notificac
   expect(p.extension_justificada).toBe(true)
   expect(p.cambio_visto_por_creador).toBe(true)
 
-  const notif = st.notificaciones.find((n) => n.tipo === 'fecha_cambiada')!
+  const notif = st.notificaciones.find((n) => n.tipo === 'fecha_cambiada' && !String(n.id).startsWith('n-seed-'))!
   expect(notif.para).toBe('Antonio')
   expect(notif.titulo).toContain('Dani movió tu entrega de "nómina quincenal"')
 })

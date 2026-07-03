@@ -102,7 +102,20 @@ function reset() {
         oculta_para: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       },
     ],
-    notificaciones: [],
+    notificaciones: [
+      { id: 'n-seed-1', para: 'Antonio', tipo: 'nueva_peticion', titulo: 'nueva petición de Dani', detalle: 'reporte semanal', peticion_id: 'p-seed-1', vista: false, creada_en: new Date(Date.now() - 3600e3).toISOString() },
+      { id: 'n-seed-2', para: 'Antonio', tipo: 'fecha_cambiada', titulo: 'Dani extendió el plazo de "reporte semanal"', detalle: 'nueva fecha: 10 jul', peticion_id: 'p-seed-1', vista: false, creada_en: new Date(Date.now() - 7200e3).toISOString() },
+      { id: 'n-seed-3', para: 'Antonio', tipo: 'estrella', titulo: 'Brenda te dio una estrella ⭐', detalle: '"gran apoyo"', peticion_id: null, vista: true, creada_en: new Date(Date.now() - 86400e3).toISOString() },
+    ],
+    anuncios: [
+      { id: 'a-seed-1', titulo: 'junta general viernes', contenido: 'junta de todo el equipo el viernes 10am', tipo: 'importante', audiencia: 'todos', creado_por: 'Dani', creado_en: new Date(Date.now() - 86400e3).toISOString(), expira_en: null, activo: true },
+      { id: 'a-seed-2', titulo: 'revisión de presupuestos', contenido: 'heads: revisar presupuestos q3', tipo: 'urgente', audiencia: 'heads', creado_por: 'Dani', creado_en: new Date(Date.now() - 3600e3).toISOString(), expira_en: null, activo: true },
+      { id: 'a-seed-3', titulo: 'nuevo brandbook imkt', contenido: 'ya está el brandbook actualizado', tipo: 'informativo', audiencia: 'area_imkt', creado_por: 'Sarai', creado_en: new Date(Date.now() - 3600e3).toISOString(), expira_en: null, activo: true },
+      { id: 'a-seed-4', titulo: 'anuncio expirado', contenido: 'esto ya venció', tipo: 'informativo', audiencia: 'todos', creado_por: 'Dani', creado_en: new Date(Date.now() - 172800e3).toISOString(), expira_en: new Date(Date.now() - 86400e3).toISOString(), activo: true },
+    ],
+    anuncios_vistos: [
+      { anuncio_id: 'a-seed-1', persona_nombre: 'Brenda', visto_en: new Date().toISOString() },
+    ],
   }
 }
 reset()
@@ -138,6 +151,9 @@ function aplicarFiltros(rows, sp) {
     if (v.startsWith('eq.')) {
       const val = v.slice(3)
       out = out.filter((r) => String(r[k]) === val)
+    } else if (v.startsWith('in.(')) {
+      const vals = v.slice(4, -1).split(',').map((s) => s.replace(/^"|"$/g, ''))
+      out = out.filter((r) => vals.includes(String(r[k])))
     }
   }
   return out
@@ -178,7 +194,10 @@ const server = http.createServer(async (req, res) => {
   // ---------- test helpers ----------
   if (url.pathname === '/__test/reset') { reset(); return json(200, { ok: true }) }
   if (url.pathname === '/__test/state') {
-    return json(200, { peticiones: db.peticiones, notificaciones: db.notificaciones, recurrentes: db.recurrentes })
+    return json(200, {
+      peticiones: db.peticiones, notificaciones: db.notificaciones, recurrentes: db.recurrentes,
+      anuncios: db.anuncios, anuncios_vistos: db.anuncios_vistos,
+    })
   }
 
   // ---------- auth ----------
@@ -303,6 +322,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (tabla === 'notificaciones') {
+      // RLS: SELECT/UPDATE/DELETE para = mi_nombre() · INSERT autenticado (interim)
       if (req.method === 'GET') {
         const mias = db.notificaciones.filter((n) => n.para === yo.nombre)
         return representar(aplicarFiltros(mias, url.searchParams))
@@ -314,6 +334,69 @@ const server = http.createServer(async (req, res) => {
         }))
         db.notificaciones.push(...filas)
         if (prefer.includes('return=representation')) return representar(filas)
+        return json(201, [])
+      }
+      if (req.method === 'PATCH') {
+        const cambios = JSON.parse(body || '{}')
+        const objetivo = aplicarFiltros(db.notificaciones, url.searchParams).filter((n) => n.para === yo.nombre)
+        objetivo.forEach((n) => Object.assign(n, cambios))
+        if (prefer.includes('return=representation')) return representar(objetivo)
+        return json(204, [])
+      }
+      if (req.method === 'DELETE') {
+        const objetivo = aplicarFiltros(db.notificaciones, url.searchParams).filter((n) => n.para === yo.nombre)
+        db.notificaciones = db.notificaciones.filter((n) => !objetivo.includes(n))
+        if (prefer.includes('return=representation')) return representar(objetivo)
+        return json(204, [])
+      }
+    }
+
+    if (tabla === 'anuncios') {
+      // RLS: SELECT true · INSERT creador+nivel(ceo|head|rh) · UPDATE/DELETE creador
+      if (req.method === 'GET') {
+        return representar(aplicarFiltros(db.anuncios, url.searchParams))
+      }
+      if (req.method === 'POST') {
+        const input = JSON.parse(body || '[]')
+        const filas = Array.isArray(input) ? input : [input]
+        for (const f of filas) {
+          const nivelOk = ['ceo', 'head', 'rh'].includes(yo.nivel)
+          if (f.creado_por !== yo.nombre || !nivelOk) {
+            return json(403, { code: '42501', message: 'new row violates row-level security policy for table "anuncios"' })
+          }
+        }
+        const creadas = filas.map((f) => ({
+          id: uuid(), creado_en: new Date().toISOString(), expira_en: null, activo: true, ...f,
+        }))
+        db.anuncios.push(...creadas)
+        if (prefer.includes('return=representation')) return representar(creadas)
+        return json(201, [])
+      }
+      if (req.method === 'PATCH') {
+        const cambios = JSON.parse(body || '{}')
+        const objetivo = aplicarFiltros(db.anuncios, url.searchParams).filter((a) => a.creado_por === yo.nombre)
+        objetivo.forEach((a) => Object.assign(a, cambios))
+        if (prefer.includes('return=representation')) return representar(objetivo)
+        return json(204, [])
+      }
+    }
+
+    if (tabla === 'anuncios_vistos') {
+      // RLS: SELECT true · INSERT persona_nombre = mi_nombre()
+      if (req.method === 'GET') {
+        return representar(aplicarFiltros(db.anuncios_vistos, url.searchParams))
+      }
+      if (req.method === 'POST') {
+        const input = JSON.parse(body || '[]')
+        const filas = Array.isArray(input) ? input : [input]
+        for (const f of filas) {
+          if (f.persona_nombre !== yo.nombre) {
+            return json(403, { code: '42501', message: 'new row violates row-level security policy for table "anuncios_vistos"' })
+          }
+        }
+        const creadas = filas.map((f) => ({ visto_en: new Date().toISOString(), ...f }))
+        db.anuncios_vistos.push(...creadas)
+        if (prefer.includes('return=representation')) return representar(creadas)
         return json(201, [])
       }
     }

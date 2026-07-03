@@ -101,7 +101,7 @@ test('crear semanal (rh, varias): fila con creado_por derivado, dia_semana y fre
   expect(r.dia_mes).toBeNull()
   expect(r.activa).toBe(true)
   // paridad: crear recurrente NO notifica
-  expect(st.notificaciones).toHaveLength(0)
+  expect(st.notificaciones.filter((n) => !String(n.id).startsWith('n-seed-'))).toHaveLength(0)
 })
 
 // ------------------------------------------------------------
@@ -150,7 +150,7 @@ test('generación de instancias: virtual HOY, materializa al entregar y avanza +
   expect(fila.para).toBe('Antonio')
   expect(fila.link_entrega).toBe('https://drive.movdi.mx/minuta')
   // paridad: materializar por entrega NO notifica
-  expect(st.notificaciones).toHaveLength(0)
+  expect(st.notificaciones.filter((n) => !String(n.id).startsWith('n-seed-'))).toHaveLength(0)
 
   // el motor avanza a la siguiente ocurrencia (+7 días), de nuevo virtual
   const cardNueva = page.getByTestId('card-instancia').filter({ hasText: 'standup semanal' })
@@ -185,7 +185,7 @@ test('mover próxima instancia VIRTUAL (rama insert): materializa pendiente movi
   expect(inst.creado_por).toBe('Dani')
 
   // notificación fecha_cambiada al destinatario, generada en el servidor
-  const notif = st.notificaciones.find((n) => n.tipo === 'fecha_cambiada')!
+  const notif = st.notificaciones.find((n) => n.tipo === 'fecha_cambiada' && !String(n.id).startsWith('n-seed-'))!
   expect(notif.para).toBe('Antonio')
   expect(notif.titulo).toContain('Dani movió tu entrega de "standup semanal"')
 

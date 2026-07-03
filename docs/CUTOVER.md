@@ -56,3 +56,11 @@ drop policy if exists notif_insert on public.notificaciones;
 - [ ] Revocar/limpiar lo que dependa de la SPA (p. ej. plantillas de email
   apuntando al path viejo de recovery).
 - [ ] QA por rol (ejecutivo / head / dirección / RH) + prueba de fuga anónima.
+- [ ] QA de REALTIME (no cubierto por el mock — los websockets no se pueden
+  probar desde el sandbox de CI): dos navegadores con usuarios distintos;
+  desde A asignar una petición a B → la campana de B debe actualizarse en
+  vivo sin recargar (canal `notif-<nombre>`, filtro `para=eq.<nombre>`).
+  Verificado ya en BD real: `notificaciones` está en la publicación
+  `supabase_realtime` (es la misma vía que usa la SPA hoy). El cableado del
+  canal (nombre/filtro/evento/mapeo) tiene test unitario en
+  e2e/notificaciones.spec.ts.
