@@ -303,7 +303,16 @@ const server = http.createServer(async (req, res) => {
       return json(200, rows)
     }
 
-    if (!yo) return denied() // todas nuestras tablas requieren sesión
+    // service_role (helper de notificaciones del servidor): sin RLS, pero el
+    // mock solo admite los DOS accesos que hace lib/supabase/notificar.ts —
+    // leer personas y hacer insert en notificaciones. Cualquier otra cosa con
+    // la service key es un uso no auditado y debe fallar en las pruebas.
+    const esService = !yo && (req.headers.authorization || '').includes(SERVICE_KEY)
+    if (!yo && !esService) return denied() // todas nuestras tablas requieren sesión
+    if (esService && !(
+      (tabla === 'personas' && req.method === 'GET') ||
+      (tabla === 'notificaciones' && req.method === 'POST')
+    )) return denied()
 
     // fallo inyectable (pruebas de atomicidad)
     if (db.fallarUnaVez && db.fallarUnaVez.tabla === tabla && db.fallarUnaVez.metodo === req.method) {

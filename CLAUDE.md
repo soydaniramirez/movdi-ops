@@ -11,7 +11,7 @@ Sistema interno de operaciones de MOVDI (gestión de peticiones, tareas, equipo)
 - No hacer merge a main; abrir PR y dejarlo para revisión humana.
 - Antes de cada migración de base de datos o cambio de seguridad, mostrar el SQL/diff y esperar OK.
 ## Reglas de seguridad (no negociables)
-- La service_role key JAMÁS lleva el prefijo NEXT_PUBLIC_, ni se importa en código cliente, ni se commitea. Solo en .env.local y en variables de servidor del hosting. Su único uso es en lib/supabase/admin.ts, importado exclusivamente desde código de servidor.
+- La service_role key JAMÁS lleva el prefijo NEXT_PUBLIC_, ni se importa en código cliente, ni se commitea. Solo en .env.local y en variables de servidor del hosting. Vive en lib/supabase/admin.ts (con `import 'server-only'`) y se consume en exactamente DOS lugares acotados, ambos server-only: (1) el invite de Auth en el alta de personas (app/(app)/equipo/actions.ts → inviteUserByEmail) y (2) el helper único de inserción de notificaciones (lib/supabase/notificar.ts). Cualquier uso nuevo de service_role requiere OK explícito y debe quedar documentado aquí.
 - .env.local está en .gitignore. Solo se commitea .env.example con valores vacíos.
 - RLS es la única barrera real. La anon key es pública; toda autorización se hace con políticas RLS basadas en auth.uid() y el nivel/área de la persona, no con lógica solo del cliente.
 - El login NO muestra la lista de personas. Se pide email + contraseña. Cualquier listado de personas requiere sesión autenticada; un usuario anónimo no debe recibir ningún nombre ni email.

@@ -20,6 +20,11 @@
 --       intermedio, a diferencia de la compensación en la Server Action).
 -- ============================================================
 
+-- unaccent: hay nombres reales con acento (Fátima, Sofía — verificado
+-- 2026-07-04); igualamos la semántica de matchNombre del cliente
+-- (lower + sin acentos) para que la reasignación no deje filas fuera.
+create extension if not exists unaccent with schema extensions;
+
 create or replace function public.desactivar_persona_con_reasignacion(
   p_persona_id uuid,
   p_reasignar_peticiones_a text default null,
@@ -71,9 +76,9 @@ begin
   -- qué se reasigna (paridad SPA): peticiones activas y recurrentes activas
   -- ASIGNADAS A la persona (para = X)
   select count(*) into v_pet from public.peticiones
-  where lower(para) = lower(v_persona.nombre) and estatus <> 'entregado';
+  where lower(extensions.unaccent(para)) = lower(extensions.unaccent(v_persona.nombre)) and estatus <> 'entregado';
   select count(*) into v_rec from public.recurrentes
-  where lower(para) = lower(v_persona.nombre) and activa;
+  where lower(extensions.unaccent(para)) = lower(extensions.unaccent(v_persona.nombre)) and activa;
 
   if v_pet > 0 and p_reasignar_peticiones_a is null then
     raise exception 'elige a quién reasignar las peticiones (% activas)', v_pet;
@@ -85,11 +90,11 @@ begin
   -- (b)+(c): todo o nada, incluidas filas creadas por terceros
   if v_pet > 0 then
     update public.peticiones set para = p_reasignar_peticiones_a
-    where lower(para) = lower(v_persona.nombre) and estatus <> 'entregado';
+    where lower(extensions.unaccent(para)) = lower(extensions.unaccent(v_persona.nombre)) and estatus <> 'entregado';
   end if;
   if v_rec > 0 then
     update public.recurrentes set para = p_reasignar_recurrentes_a
-    where lower(para) = lower(v_persona.nombre) and activa;
+    where lower(extensions.unaccent(para)) = lower(extensions.unaccent(v_persona.nombre)) and activa;
   end if;
   update public.personas set activo = false where id = p_persona_id;
 

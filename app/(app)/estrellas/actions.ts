@@ -6,6 +6,7 @@
 // Notifica al receptor desde el servidor (paridad SPA, anti-spoof).
 
 import { createClient } from '@/lib/supabase/server'
+import { notificarServidor } from '@/lib/supabase/notificar'
 import { mapPersonaRow, matchNombre } from '@/lib/peticiones'
 import { MAX_MOTIVO, mapEstrellaRow, puedoDarEstrella, semanaActual } from '@/lib/estrellas'
 
@@ -56,13 +57,16 @@ export async function darEstrella(input: { para: string; motivo: string }): Prom
       return { ok: false, error: 'no se pudo dar la estrella: ' + error.message }
     }
 
-    // notificar al receptor (paridad SPA)
-    await supabase.from('notificaciones').insert({
-      para: destinatario.nombre,
-      tipo: 'estrella',
-      titulo: `${yo.nombre} te dio una estrella ⭐`,
-      detalle: `"${motivo}"`,
-      peticion_id: null,
+    // notificar al receptor (paridad SPA) — helper único server-side
+    await notificarServidor({
+      de: yo.nombre,
+      rows: [{
+        para: destinatario.nombre,
+        tipo: 'estrella',
+        titulo: `${yo.nombre} te dio una estrella ⭐`,
+        detalle: `"${motivo}"`,
+        peticion_id: null,
+      }],
     })
     return { ok: true }
   } catch (e) {

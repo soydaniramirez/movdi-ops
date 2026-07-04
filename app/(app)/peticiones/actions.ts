@@ -10,6 +10,7 @@
 // - creado_por NUNCA viene del cliente: se deriva de la sesión.
 
 import { createClient } from '@/lib/supabase/server'
+import { notificarServidor } from '@/lib/supabase/notificar'
 import {
   AREAS_VALIDAS, MODOS_ADMIN, type ModoAsignacion,
   destinatariosPorModo, fechaCorta, hoyISO, isAdmin,
@@ -30,22 +31,17 @@ async function getContexto() {
   return { supabase, yo }
 }
 
-// Inserta notificaciones para destinatarios activos (nunca a uno mismo).
-// El payload se construye AQUÍ, no en el cliente.
+// Notificaciones: delega SIEMPRE en el helper único server-side
+// (lib/supabase/notificar.ts, admin client). El payload se construye aquí,
+// nunca en el cliente. Los args supabase/personas quedan para no tocar los
+// call sites; la validación (no a uno mismo, no inactivos) vive en el helper.
 async function notificar(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  _supabase: Awaited<ReturnType<typeof createClient>>,
   yo: Persona,
-  personas: Persona[],
+  _personas: Persona[],
   rows: { para: string; tipo: string; titulo: string; detalle: string | null; peticion_id: string | null }[]
 ) {
-  const validas = rows.filter((r) => {
-    if (!r.para || r.para === yo.nombre) return false
-    const p = personas.find((x) => matchNombre(x.nombre, r.para))
-    return !!p && p.activo !== false
-  })
-  if (!validas.length) return
-  const { error } = await supabase.from('notificaciones').insert(validas)
-  if (error) console.warn('[peticiones] notificaciones no insertadas:', error.message)
+  await notificarServidor({ de: yo.nombre, rows })
 }
 
 export async function crearPeticion(input: {
