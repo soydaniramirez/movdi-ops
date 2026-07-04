@@ -205,10 +205,11 @@ test('ATOMICIDAD: si falla la desactivación, TODO se revierte y la persona sigu
   await login(page, 'dani@movdi.mx')
   await irAEquipo(page)
 
-  // inyectar fallo en el ÚLTIMO paso (PATCH personas = la desactivación)
+  // inyectar fallo en la RPC transaccional (equivale a un raise en Postgres:
+  // la transacción entera se revierte, nada muta)
   await fetch(`${MOCK}/__test/fallar`, {
     method: 'POST',
-    body: JSON.stringify({ tabla: 'personas', metodo: 'PATCH' }),
+    body: JSON.stringify({ tabla: 'rpc/desactivar_persona_con_reasignacion', metodo: 'POST' }),
   })
 
   await page.getByTestId('card-persona').filter({ hasText: 'Antonio' }).getByTestId('btn-desactivar').click()
@@ -273,4 +274,23 @@ test('panel RH: acceso por nivel verificado en servidor (rh y dirección sí; ej
   await p3.goto('/rh')
   await expect(p3.getByTestId('rh-titulo')).toBeVisible()
   await ctx2.close()
+})
+
+// ------------------------------------------------------------
+test('REASIGNACIÓN DE TERCEROS (hallazgo 4.6): la RPC reasigna peticiones que el admin no creó', async ({ page }) => {
+  // p-seed-3: creada por ANTONIO para Brenda. Karla (head) no es creadora ni
+  // destinataria → la RLS peticiones_update se lo impediría; la RPC
+  // SECURITY DEFINER debe poder reasignarla igual.
+  await login(page, 'karla@movdi.mx')
+  await irAEquipo(page)
+
+  await page.getByTestId('card-persona').filter({ hasText: 'Brenda' }).getByTestId('btn-desactivar').click()
+  await expect(page.getByText('requiere reasignación')).toBeVisible()
+  await page.locator('#reasign-pet').selectOption('Arylene')
+  await page.getByTestId('btn-reasign-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  const st = await estado()
+  expect((st.peticiones.find((x) => x.id === 'p-seed-3'))!.para).toBe('Arylene') // fila de un tercero, reasignada
+  expect((st.personas.find((x) => x.nombre === 'Brenda'))!.activo).toBe(false)
 })

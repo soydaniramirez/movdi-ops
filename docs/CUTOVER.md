@@ -11,6 +11,7 @@ cambian comportamiento o romperían la SPA viva.
 | 1 | `20260703230000_cutover_quincenal_fecha_inicio.sql` | Columna `fecha_inicio` + backfill + check constraint. ⚠️ El constraint rompe la creación de quincenales desde el index.html — aplicar solo con la SPA retirada |
 | 2 | `20260703230500_cutover_recordatorio_recurrentes.sql` | Tabla dedup `recurrentes_avisos` + función `notificar_recurrentes_del_dia()` |
 | 3 | `20260703231000_cutover_encender_cron_recordatorios.sql` | `pg_cron`: recordatorio diario 07:00 MX (13:00 UTC). Es el interruptor — aplicar al final |
+| 4 | `20260704120000_cutover_rpc_desactivar_persona.sql` | RPC transaccional de desactivar-con-reasignación (SECURITY DEFINER + check ceo\|head interno). **Requerida por el módulo equipo**: sin ella, la RLS impide al admin reasignar peticiones creadas por terceros (hallazgo 4.6) |
 
 Verificación post-aplicación:
 - `select nombre, para, fecha_inicio from recurrentes where frecuencia='quincenal';`
@@ -64,10 +65,9 @@ drop policy if exists notif_insert on public.notificaciones;
   con aviso). Requiere SUPABASE_SERVICE_ROLE_KEY configurada en el entorno
   del servidor. La lógica (payload, gating ceo|head, service key, degradación
   con gracia) está cubierta por e2e/equipo.spec.ts contra el mock.
-- [ ] (opcional) Sustituir la compensación de "desactivar con reasignación"
-  por una función RPC transaccional si se quiere atomicidad a nivel de BD;
-  hoy la Server Action revierte todos los pasos aplicados si algo falla
-  (probado), pero una caída del proceso a mitad dejaría estado intermedio.
+- [x] ~~(opcional) RPC transaccional para desactivar-con-reasignación~~ →
+  ascendida a REQUERIDA (migración 4): la RLS de peticiones impide al admin
+  reasignar filas creadas por terceros; la Server Action ya la invoca.
 - [ ] QA de REALTIME (no cubierto por el mock — los websockets no se pueden
   probar desde el sandbox de CI): dos navegadores con usuarios distintos;
   desde A asignar una petición a B → la campana de B debe actualizarse en

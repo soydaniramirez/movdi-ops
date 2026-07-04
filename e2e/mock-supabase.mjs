@@ -24,6 +24,8 @@ const b64url = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
 const now = () => Math.floor(Date.now() / 1000)
 const uuid = () => 'mock-' + Math.random().toString(36).slice(2, 10)
 const dx = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
+// mes anterior al de la ejecución (para seeds de gamificación deterministas)
+const MES_PREV = (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() - 1, 1).toISOString().slice(0, 7) })()
 
 const PERSONAS_BASE = [
   { nombre: 'Antonio', apellido: 'López', nivel: 'ejecutivo', areas: ['pm'], es_direccion: false },
@@ -100,6 +102,18 @@ function reset() {
         extension_justificada: null, link_entrega: null, nota_entrega: null, fecha_entrega: null,
         oculta_para: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       },
+      // ↓ entregas del MES ANTERIOR para el cierre de mes (Antonio, 7 entregas:
+      // 70 base + 3 anticipación (p-jun-1) + 15 estrella = 88 XP → nivel 2)
+      ...Array.from({ length: 7 }, (_, i) => ({
+        id: `p-prev-${i + 1}`, zona: 'general', nombre: `entrega prev ${i + 1}`, descripcion: null,
+        creado_por: 'Dani', para: 'Antonio', area: 'pm', fecha: `${MES_PREV}-${String(5 + i).padStart(2, '0')}`,
+        prioridad: 'media', estatus: 'entregado', privada: false, origen_recur: null, grupo_id: null,
+        fecha_original: null, motivo_cambio_fecha: null, cambio_visto_por_creador: true,
+        extension_justificada: null, link_entrega: null, nota_entrega: null,
+        // solo la primera con anticipación 3+ días (bonus +3); el resto sin dato
+        fecha_entrega: i === 0 ? `${MES_PREV}-02` : null,
+        oculta_para: [], created_at: `${MES_PREV}-01T12:00:00Z`, updated_at: `${MES_PREV}-01T12:00:00Z`,
+      })),
       {
         id: 'p-seed-3', zona: 'general', nombre: 'diseñar reel', descripcion: 'reel de talento',
         creado_por: 'Antonio', para: 'Brenda', area: 'imkt', fecha: dx(4), prioridad: 'alta',
@@ -129,8 +143,15 @@ function reset() {
       { id: 't-seed-3', user_nombre: 'Brenda', texto: 'secreto de brenda', hecho: false, created_at: new Date().toISOString() },
     ],
     estrellas: [
-      // semana pasada (no cuenta para el límite de esta semana)
-      { id: 'e-seed-1', de_persona: 'Brenda', para_persona: 'Antonio', motivo: 'me ayudó con el pitch', semana: '2020-W01', creada_en: new Date(Date.now() - 12 * 86400e3).toISOString() },
+      // mes/semana pasados (no cuenta para el límite de esta semana; suma +15 XP al MES_PREV)
+      { id: 'e-seed-1', de_persona: 'Brenda', para_persona: 'Antonio', motivo: 'me ayudó con el pitch', semana: '2020-W01', creada_en: `${MES_PREV}-22T12:00:00Z` },
+    ],
+    historial_mensual: [],
+    recompensas: [
+      { id: 'rw-2', nivel: 2, descripcion: 'tarde libre', activa: true },
+      { id: 'rw-3', nivel: 3, descripcion: 'comida con dirección', activa: true },
+      { id: 'rw-4', nivel: 4, descripcion: 'día libre', activa: true },
+      { id: 'rw-5', nivel: 5, descripcion: 'bono élite', activa: true },
     ],
     invites: [],           // emails invitados via /auth/v1/invite (service key)
     fallarUnaVez: null,    // { tabla, metodo } → el siguiente request a esa combinación devuelve 500
@@ -223,6 +244,7 @@ const server = http.createServer(async (req, res) => {
       anuncios: db.anuncios, anuncios_vistos: db.anuncios_vistos,
       todos: db.todos, estrellas: db.estrellas,
       personas: db.personas, invites: db.invites,
+      historial_mensual: db.historial_mensual, recompensas: db.recompensas,
     })
   }
 
@@ -287,6 +309,35 @@ const server = http.createServer(async (req, res) => {
     if (db.fallarUnaVez && db.fallarUnaVez.tabla === tabla && db.fallarUnaVez.metodo === req.method) {
       db.fallarUnaVez = null
       return json(500, { code: '57014', message: 'simulated failure (test)' })
+    }
+
+    // RPC desactivar_persona_con_reasignacion — espejo de la función SQL
+    // SECURITY DEFINER (migración cutover 20260704120000): check de rol
+    // DENTRO, sin RLS en los updates (toca filas de terceros), transaccional
+    // (en el mock: valida todo ANTES de mutar; un fallo inyectado ocurre
+    // antes de cualquier mutación, como el raise de Postgres).
+    if (tabla === 'rpc/desactivar_persona_con_reasignacion' && req.method === 'POST') {
+      const { p_persona_id, p_reasignar_peticiones_a, p_reasignar_recurrentes_a } = JSON.parse(body || '{}')
+      if (!esAdmin(yo)) return json(400, { code: 'P0001', message: 'solo dirección o heads pueden desactivar personas' })
+      const persona = db.personas.find((p) => p.id === p_persona_id)
+      if (!persona) return json(400, { code: 'P0001', message: 'persona no encontrada' })
+      const destinoValido = (nombre) => {
+        if (!nombre) return true
+        const d = db.personas.find((p) => p.nombre === nombre)
+        return !!d && d.id !== persona.id && d.activo !== false && !d.pausada_hasta
+      }
+      if (!destinoValido(p_reasignar_peticiones_a) || !destinoValido(p_reasignar_recurrentes_a)) {
+        return json(400, { code: 'P0001', message: 'destino inválido' })
+      }
+      const pets = db.peticiones.filter((t) => t.para.toLowerCase() === persona.nombre.toLowerCase() && t.estatus !== 'entregado')
+      const recs = db.recurrentes.filter((r) => r.para.toLowerCase() === persona.nombre.toLowerCase() && r.activa)
+      if (pets.length > 0 && !p_reasignar_peticiones_a) return json(400, { code: 'P0001', message: 'elige a quién reasignar las peticiones' })
+      if (recs.length > 0 && !p_reasignar_recurrentes_a) return json(400, { code: 'P0001', message: 'elige a quién reasignar las recurrentes' })
+      // mutación (sin RLS: definer)
+      pets.forEach((t) => { t.para = p_reasignar_peticiones_a })
+      recs.forEach((r) => { r.para = p_reasignar_recurrentes_a })
+      persona.activo = false
+      return json(200, { peticiones_reasignadas: pets.length, recurrentes_reasignadas: recs.length })
     }
 
     if (tabla === 'personas') {
@@ -514,6 +565,32 @@ const server = http.createServer(async (req, res) => {
         db.estrellas.push(...creadas)
         if (prefer.includes('return=representation')) return representar(creadas)
         return json(201, [])
+      }
+    }
+
+    if (tabla === 'historial_mensual') {
+      // RLS: SELECT true · INSERT/UPDATE solo dirección (mi_es_direccion)
+      const esDir = yo.es_direccion === true || yo.nivel === 'ceo'
+      if (req.method === 'GET') {
+        return representar(aplicarFiltros(db.historial_mensual, url.searchParams))
+      }
+      if (req.method === 'POST') {
+        if (!esDir) return json(403, { code: '42501', message: 'new row violates row-level security policy for table "historial_mensual"' })
+        const input = JSON.parse(body || '[]')
+        const filas = (Array.isArray(input) ? input : [input]).map((f) => ({
+          id: uuid(), xp_total: 0, nivel_alcanzado: 1, entregadas: 0, cumplimiento: 0,
+          mejor_racha: 0, recompensa: null, cerrado_en: new Date().toISOString(), ...f,
+        }))
+        db.historial_mensual.push(...filas)
+        if (prefer.includes('return=representation')) return representar(filas)
+        return json(201, [])
+      }
+    }
+
+    if (tabla === 'recompensas') {
+      // RLS: SELECT true (recomp_select) · escritura solo dirección (recomp_write)
+      if (req.method === 'GET') {
+        return representar(aplicarFiltros(db.recompensas, url.searchParams))
       }
     }
 
