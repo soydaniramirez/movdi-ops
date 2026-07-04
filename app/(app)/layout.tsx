@@ -18,6 +18,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Link href="/peticiones" className="text-neutral-500 hover:text-orange-500">peticiones</Link>
             <Link href="/recurrentes" className="text-neutral-500 hover:text-orange-500">recurrentes</Link>
             <Link href="/anuncios" className="text-neutral-500 hover:text-orange-500">anuncios</Link>
+            <Link href="/todos" className="text-neutral-500 hover:text-orange-500">to-dos</Link>
+            <Link href="/estrellas" className="text-neutral-500 hover:text-orange-500">estrellas</Link>
           </nav>
           {persona && <Campana nombre={persona.nombre} />}
         </div>

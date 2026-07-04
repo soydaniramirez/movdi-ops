@@ -116,6 +116,15 @@ function reset() {
     anuncios_vistos: [
       { anuncio_id: 'a-seed-1', persona_nombre: 'Brenda', visto_en: new Date().toISOString() },
     ],
+    todos: [
+      { id: 't-seed-1', user_nombre: 'Antonio', texto: 'preparar junta con talento', hecho: false, created_at: new Date(Date.now() - 7200e3).toISOString() },
+      { id: 't-seed-2', user_nombre: 'Antonio', texto: 'mandar factura de mayo', hecho: true, created_at: new Date(Date.now() - 86400e3).toISOString() },
+      { id: 't-seed-3', user_nombre: 'Brenda', texto: 'secreto de brenda', hecho: false, created_at: new Date().toISOString() },
+    ],
+    estrellas: [
+      // semana pasada (no cuenta para el límite de esta semana)
+      { id: 'e-seed-1', de_persona: 'Brenda', para_persona: 'Antonio', motivo: 'me ayudó con el pitch', semana: '2020-W01', creada_en: new Date(Date.now() - 12 * 86400e3).toISOString() },
+    ],
   }
 }
 reset()
@@ -197,6 +206,7 @@ const server = http.createServer(async (req, res) => {
     return json(200, {
       peticiones: db.peticiones, notificaciones: db.notificaciones, recurrentes: db.recurrentes,
       anuncios: db.anuncios, anuncios_vistos: db.anuncios_vistos,
+      todos: db.todos, estrellas: db.estrellas,
     })
   }
 
@@ -378,6 +388,65 @@ const server = http.createServer(async (req, res) => {
         objetivo.forEach((a) => Object.assign(a, cambios))
         if (prefer.includes('return=representation')) return representar(objetivo)
         return json(204, [])
+      }
+    }
+
+    if (tabla === 'todos') {
+      // RLS todos_*_own: TODO restringido a user_nombre = mi_nombre()
+      if (req.method === 'GET') {
+        return representar(aplicarFiltros(db.todos.filter((t) => t.user_nombre === yo.nombre), url.searchParams))
+      }
+      if (req.method === 'POST') {
+        const input = JSON.parse(body || '[]')
+        const filas = Array.isArray(input) ? input : [input]
+        for (const f of filas) {
+          if (f.user_nombre !== yo.nombre) {
+            return json(403, { code: '42501', message: 'new row violates row-level security policy for table "todos"' })
+          }
+        }
+        const creadas = filas.map((f) => ({ id: uuid(), hecho: false, created_at: new Date().toISOString(), ...f }))
+        db.todos.push(...creadas)
+        if (prefer.includes('return=representation')) return representar(creadas)
+        return json(201, [])
+      }
+      if (req.method === 'PATCH') {
+        const cambios = JSON.parse(body || '{}')
+        const objetivo = aplicarFiltros(db.todos, url.searchParams).filter((t) => t.user_nombre === yo.nombre)
+        objetivo.forEach((t) => Object.assign(t, cambios))
+        if (prefer.includes('return=representation')) return representar(objetivo)
+        return json(204, [])
+      }
+      if (req.method === 'DELETE') {
+        const objetivo = aplicarFiltros(db.todos, url.searchParams).filter((t) => t.user_nombre === yo.nombre)
+        db.todos = db.todos.filter((t) => !objetivo.includes(t))
+        if (prefer.includes('return=representation')) return representar(objetivo)
+        return json(204, [])
+      }
+    }
+
+    if (tabla === 'estrellas_colaboracion') {
+      // RLS: SELECT true · INSERT con las reglas endurecidas
+      if (req.method === 'GET') {
+        return representar(aplicarFiltros(db.estrellas, url.searchParams))
+      }
+      if (req.method === 'POST') {
+        const input = JSON.parse(body || '[]')
+        const filas = Array.isArray(input) ? input : [input]
+        for (const f of filas) {
+          const mias = db.estrellas.filter((e) => e.de_persona === yo.nombre && e.semana === f.semana)
+          const violacion =
+            f.de_persona !== yo.nombre ||                       // spoof de remitente
+            f.para_persona === f.de_persona ||                  // a sí mismo
+            mias.length >= 2 ||                                 // límite 2/semana
+            mias.some((e) => e.para_persona === f.para_persona) // repetir persona en la semana
+          if (violacion) {
+            return json(403, { code: '42501', message: 'new row violates row-level security policy for table "estrellas_colaboracion"' })
+          }
+        }
+        const creadas = filas.map((f) => ({ id: uuid(), creada_en: new Date().toISOString(), ...f }))
+        db.estrellas.push(...creadas)
+        if (prefer.includes('return=representation')) return representar(creadas)
+        return json(201, [])
       }
     }
 
