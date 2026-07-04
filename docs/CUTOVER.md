@@ -14,12 +14,15 @@ Qué está construido y probado (79/79 e2e) pero **SIN aplicar**: las 5 migracio
 
 ## P. PREPARACIÓN (antes de la ventana, sin riesgo para producción)
 
-**P1. Merge del refactor.** PR de `refactor/nextjs-migration` → `main` (revisión
-humana, regla del proyecto). El site viejo de Netlify sirve `index.html` estático:
-un push a main con los archivos de Next NO lo rompe mientras su configuración de
-build siga siendo "publicar raíz estática" (verificar antes de mergear; si el site
-viejo tiene autodetección de framework, fijar su build command a estático o
-mergear hasta el paso C4).
+**P1. Merge del refactor.** PR #2 de `refactor/nextjs-migration` → `main`
+(revisión humana, regla del proyecto). **Decisión 2026-07-04: el PR queda
+ABIERTO; el merge a main se hace EN la ventana de cutover**, después de
+verificar en la UI que el site viejo publica raíz estática sin build
+(Project configuration → Build & deploy → Continuous deployment → Build
+settings: build command vacío, publish directory raíz). Evidencia del último
+deploy (2026-07-03, vía MCP): framework `unknown`, deploy de 4 s, cero
+functions/plugins → consistente con publicación estática sin build, pero la
+confirmación final es la pantalla de Build settings.
 
 **P2. Site NUEVO de Netlify para el Next** (no tocar el site actual):
 ✅ Site creado (2026-07-04): `movdi-ops-next` · siteId `b121e6df-3d3f-45af-a793-25775970f5cc`
@@ -27,8 +30,10 @@ mergear hasta el paso C4).
 (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`).
 Pendiente MANUAL (Daniela, en la UI):
 - [ ] Conectar el repo GitHub `soydaniramirez/movdi-ops` al site, rama
-  `refactor/nextjs-migration` (o `main` tras P1), runtime Next.js
-  (Site configuration → Build & deploy → Link repository).
+  **`refactor/nextjs-migration`** (decisión 2026-07-04: NO main — main se
+  mergea hasta la ventana), runtime Next.js (Site configuration →
+  Build & deploy → Link repository). El MCP de Netlify no puede vincular
+  repos; es paso de UI.
 - [ ] Pegar `SUPABASE_SERVICE_ROLE_KEY` (⚠️ scopes Functions/Runtime, **jamás**
   con prefijo NEXT_PUBLIC_; el valor sale de Supabase → Settings → API).
   Sin ella fallan el invite del alta y las notificaciones server-side.
