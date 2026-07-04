@@ -22,20 +22,25 @@ viejo tiene autodetección de framework, fijar su build command a estático o
 mergear hasta el paso C4).
 
 **P2. Site NUEVO de Netlify para el Next** (no tocar el site actual):
-- Crear site `movdi-ops-next` desde el repo, rama `refactor/nextjs-migration`
-  (o `main` tras P1), runtime Next.js.
-- Variables de entorno: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-  (las públicas) y `SUPABASE_SERVICE_ROLE_KEY` (⚠️ **solo** en el contexto de
-  servidor/functions de Netlify; jamás con prefijo NEXT_PUBLIC_).
-- Supabase → Auth → URL Configuration → **añadir la URL de staging a Redirect URLs**
-  (para que los links de recovery/invite aterricen en `/auth/confirm`). NO cambiar
-  el Site URL todavía (sigue siendo el del SPA).
+✅ Site creado (2026-07-04): `movdi-ops-next` · siteId `b121e6df-3d3f-45af-a793-25775970f5cc`
+· https://movdi-ops-next.netlify.app · variables públicas ya cargadas
+(`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`).
+Pendiente MANUAL (Daniela, en la UI):
+- [ ] Conectar el repo GitHub `soydaniramirez/movdi-ops` al site, rama
+  `refactor/nextjs-migration` (o `main` tras P1), runtime Next.js
+  (Site configuration → Build & deploy → Link repository).
+- [ ] Pegar `SUPABASE_SERVICE_ROLE_KEY` (⚠️ scopes Functions/Runtime, **jamás**
+  con prefijo NEXT_PUBLIC_; el valor sale de Supabase → Settings → API).
+  Sin ella fallan el invite del alta y las notificaciones server-side.
+- [ ] Supabase → Auth → URL Configuration → **añadir
+  `https://movdi-ops-next.netlify.app` a Redirect URLs** (para que los links de
+  recovery/invite aterricen en `/auth/confirm`). NO cambiar el Site URL todavía
+  (sigue siendo el del SPA).
 
-**P3. Cambio de código pendiente (pequeño, requiere OK):** mover los INSERT de
-`notificaciones` de las Server Actions del cliente de sesión al **admin client**
-(peticiones/estrellas). Hoy usan la sesión + policy interim; la migración 5 la
-elimina, así que el build desplegado en el cutover debe llevar este cambio.
-Es compatible hacia atrás (funciona igual con la policy interim vigente).
+**P3. ✅ HECHO (2026-07-04):** todos los INSERT de `notificaciones` viven en un
+único helper server-side auditable (`lib/supabase/notificar.ts`, admin client,
+`import 'server-only'`); peticiones y estrellas delegan en él. Compatible hacia
+atrás (funciona igual con la policy interim vigente) y listo para la migración 5.
 
 **P4. Toggle manual pendiente:** Dashboard → Auth → Passwords → activar
 **leaked password protection** (advisor conocido).
