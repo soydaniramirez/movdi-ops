@@ -43,31 +43,28 @@ test('toggle hecho/pendiente, editar y borrar (filas propias vía RLS)', async (
 
   const item = page.getByTestId('todo-item').filter({ hasText: 'preparar junta con talento' })
 
-  // toggle a hecho
+  // toggle a hecho (la UI es optimista: esperar a que el PATCH aterrice)
   await item.getByTestId('todo-check').click()
-  let st = await estado()
-  expect((st.todos.find((t) => t.id === 't-seed-1'))!.hecho).toBe(true)
+  await expect.poll(async () => (await estado()).todos.find((t) => t.id === 't-seed-1')!.hecho).toBe(true)
 
   // toggle de regreso a pendiente
   await item.getByTestId('todo-check').click()
-  st = await estado()
-  expect((st.todos.find((t) => t.id === 't-seed-1'))!.hecho).toBe(false)
+  await expect.poll(async () => (await estado()).todos.find((t) => t.id === 't-seed-1')!.hecho).toBe(false)
 
   // editar (extensión: la SPA no tenía editar; la RLS todos_update_own lo permite)
   await item.hover()
   await item.getByTestId('btn-editar-todo').click()
   await page.getByTestId('todo-edit-input').fill('preparar junta con talento y agencia')
   await page.getByTestId('todo-edit-input').press('Enter')
-  st = await estado()
-  expect((st.todos.find((t) => t.id === 't-seed-1'))!.texto).toBe('preparar junta con talento y agencia')
+  await expect.poll(async () => (await estado()).todos.find((t) => t.id === 't-seed-1')!.texto)
+    .toBe('preparar junta con talento y agencia')
 
   // borrar
   const item2 = page.getByTestId('todo-item').filter({ hasText: 'mandar factura de mayo' })
   await item2.hover()
   await item2.getByTestId('btn-borrar-todo').click()
   await expect(item2).toHaveCount(0)
-  st = await estado()
-  expect(st.todos.find((t) => t.id === 't-seed-2')).toBeUndefined()
+  await expect.poll(async () => (await estado()).todos.find((t) => t.id === 't-seed-2')).toBeUndefined()
 })
 
 // ------------------------------------------------------------

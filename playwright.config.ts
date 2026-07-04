@@ -27,7 +27,7 @@ export default defineConfig({
       // sandboxes sin websockets y rompe la interacción de las pruebas.
       // Las env se pasan también a start: el código de servidor las lee en runtime.
       command:
-        'NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_test npm run build && NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_test npm run start -- -p 3100',
+        'NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_test SUPABASE_SERVICE_ROLE_KEY=sb_secret_test npm run build && NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_test SUPABASE_SERVICE_ROLE_KEY=sb_secret_test npm run start -- -p 3100',
       port: 3100,
       reuseExistingServer: false,
       timeout: 240_000,

@@ -36,16 +36,23 @@ const PERSONAS_BASE = [
 ].map((p, i) => ({
   id: `per-${i + 1}`,
   ...p,
-  rol: p.nivel,
+  rol: p.rol ?? p.nivel,
   email: `${p.nombre.toLowerCase()}@movdi.mx`,
   activo: true,
   pausada_hasta: null,
   needs_pass: false,
-  managers: [],
-  manager_principal: null,
+  // managers para el semáforo: Antonio→Dani (apoyo Karla), Brenda→Karla, Arylene→Dani
+  managers: p.nombre === 'Antonio' ? ['Karla'] : [],
+  manager_principal:
+    p.nombre === 'Antonio' || p.nombre === 'Arylene' ? 'Dani'
+    : p.nombre === 'Brenda' ? 'Karla' : null,
   auth_user_id: `uid-${i + 1}`,
   created_at: new Date().toISOString(),
 }))
+
+// Emails que existen en Auth pero NO en personas (para probar el invite 422)
+const AUTH_SOLO_EMAILS = ['exempleado@movdi.mx']
+const SERVICE_KEY = 'sb_secret_test'
 
 let db
 function reset() {
@@ -125,6 +132,10 @@ function reset() {
       // semana pasada (no cuenta para el límite de esta semana)
       { id: 'e-seed-1', de_persona: 'Brenda', para_persona: 'Antonio', motivo: 'me ayudó con el pitch', semana: '2020-W01', creada_en: new Date(Date.now() - 12 * 86400e3).toISOString() },
     ],
+    invites: [],           // emails invitados via /auth/v1/invite (service key)
+    fallarUnaVez: null,    // { tabla, metodo } → el siguiente request a esa combinación devuelve 500
+    // usuarios que EXISTEN en Auth (≠ personas: una persona recién insertada aún no tiene cuenta)
+    authUsers: [...PERSONAS_BASE.map((p) => `${p.nombre.toLowerCase()}@movdi.mx`), ...AUTH_SOLO_EMAILS],
   }
 }
 reset()
@@ -202,11 +213,16 @@ const server = http.createServer(async (req, res) => {
 
   // ---------- test helpers ----------
   if (url.pathname === '/__test/reset') { reset(); return json(200, { ok: true }) }
+  if (url.pathname === '/__test/fallar') {
+    db.fallarUnaVez = JSON.parse(body || 'null') // { tabla, metodo }
+    return json(200, { ok: true })
+  }
   if (url.pathname === '/__test/state') {
     return json(200, {
       peticiones: db.peticiones, notificaciones: db.notificaciones, recurrentes: db.recurrentes,
       anuncios: db.anuncios, anuncios_vistos: db.anuncios_vistos,
       todos: db.todos, estrellas: db.estrellas,
+      personas: db.personas, invites: db.invites,
     })
   }
 
@@ -236,6 +252,21 @@ const server = http.createServer(async (req, res) => {
   }
   if (url.pathname === '/auth/v1/recover') return json(200, {})
 
+  // Invite (solo admin/service_role): usado por el alta de personas.
+  if (url.pathname === '/auth/v1/invite' && req.method === 'POST') {
+    const auth = req.headers.authorization || ''
+    if (!auth.includes(SERVICE_KEY)) {
+      return json(401, { code: 401, error_code: 'no_authorization', msg: 'invite requires service role key' })
+    }
+    const { email } = JSON.parse(body || '{}')
+    if (db.authUsers.includes(email)) {
+      return json(422, { code: 422, error_code: 'email_exists', msg: 'A user with this email address has already been registered' })
+    }
+    db.invites.push(email)
+    db.authUsers.push(email)
+    return json(200, { id: uuid(), email, invited_at: new Date().toISOString() })
+  }
+
   // ---------- REST ----------
   if (url.pathname.startsWith('/rest/v1/')) {
     const tabla = url.pathname.slice('/rest/v1/'.length)
@@ -252,8 +283,44 @@ const server = http.createServer(async (req, res) => {
 
     if (!yo) return denied() // todas nuestras tablas requieren sesión
 
-    if (tabla === 'personas' && req.method === 'GET') {
-      return representar(aplicarFiltros(db.personas, url.searchParams))
+    // fallo inyectable (pruebas de atomicidad)
+    if (db.fallarUnaVez && db.fallarUnaVez.tabla === tabla && db.fallarUnaVez.metodo === req.method) {
+      db.fallarUnaVez = null
+      return json(500, { code: '57014', message: 'simulated failure (test)' })
+    }
+
+    if (tabla === 'personas') {
+      // RLS: SELECT autenticados · INSERT/UPDATE/DELETE solo ceo|head (personas_modify_admin)
+      if (req.method === 'GET') {
+        return representar(aplicarFiltros(db.personas, url.searchParams))
+      }
+      if (req.method === 'POST') {
+        if (!esAdmin(yo)) {
+          return json(403, { code: '42501', message: 'new row violates row-level security policy for table "personas"' })
+        }
+        const input = JSON.parse(body || '[]')
+        const filas = Array.isArray(input) ? input : [input]
+        for (const f of filas) {
+          if (f.email && db.personas.some((p) => p.email === f.email)) {
+            return json(409, { code: '23505', message: 'duplicate key value violates unique constraint "personas_email_key"' })
+          }
+        }
+        const creadas = filas.map((f) => ({
+          id: uuid(), activo: true, pausada_hasta: null, needs_pass: false, managers: [],
+          manager_principal: null, es_direccion: false, auth_user_id: null,
+          created_at: new Date().toISOString(), ...f,
+        }))
+        db.personas.push(...creadas)
+        if (prefer.includes('return=representation')) return representar(creadas)
+        return json(201, [])
+      }
+      if (req.method === 'PATCH') {
+        const cambios = JSON.parse(body || '{}')
+        const objetivo = esAdmin(yo) ? aplicarFiltros(db.personas, url.searchParams) : []
+        objetivo.forEach((r) => Object.assign(r, cambios))
+        if (prefer.includes('return=representation')) return representar(objetivo)
+        return json(204, [])
+      }
     }
 
     if (tabla === 'recurrentes') {

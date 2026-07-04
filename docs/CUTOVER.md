@@ -56,6 +56,18 @@ drop policy if exists notif_insert on public.notificaciones;
 - [ ] Revocar/limpiar lo que dependa de la SPA (p. ej. plantillas de email
   apuntando al path viejo de recovery).
 - [ ] QA por rol (ejecutivo / head / dirección / RH) + prueba de fuga anónima.
+- [ ] QA del INVITE automático (no cubierto por el mock — el envío real del
+  email lo hace Supabase Auth): dar de alta una persona de prueba con un
+  correo real → debe llegarle el email de invitación, y el link debe
+  aterrizar en /auth/confirm → /update-password. Verificar también el caso
+  "email ya registrado en Auth" (debe crear la persona sin duplicar invite,
+  con aviso). Requiere SUPABASE_SERVICE_ROLE_KEY configurada en el entorno
+  del servidor. La lógica (payload, gating ceo|head, service key, degradación
+  con gracia) está cubierta por e2e/equipo.spec.ts contra el mock.
+- [ ] (opcional) Sustituir la compensación de "desactivar con reasignación"
+  por una función RPC transaccional si se quiere atomicidad a nivel de BD;
+  hoy la Server Action revierte todos los pasos aplicados si algo falla
+  (probado), pero una caída del proceso a mitad dejaría estado intermedio.
 - [ ] QA de REALTIME (no cubierto por el mock — los websockets no se pueden
   probar desde el sandbox de CI): dos navegadores con usuarios distintos;
   desde A asignar una petición a B → la campana de B debe actualizarse en
