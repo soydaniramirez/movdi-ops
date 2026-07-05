@@ -63,6 +63,13 @@ test('anonimato real: la fila queda SIN autor en BD; y no se puede firmar como o
     body: JSON.stringify({ categoria: 'mejora', mensaje: 'spoof', es_anonimo: false, autor_id: brendaId }),
   })
   expect(spoof.status).toBe(403)
+
+  // y un FIRMADO sin autor (bug de front hipotético) → check constraint 23514
+  const sinAutor = await fetch(`${MOCK}/rest/v1/feedback`, {
+    method: 'POST', headers: { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ categoria: 'mejora', mensaje: 'firmado sin autor', es_anonimo: false }),
+  })
+  expect(sinAutor.status).toBe(400)
 })
 
 // ------------------------------------------------------------

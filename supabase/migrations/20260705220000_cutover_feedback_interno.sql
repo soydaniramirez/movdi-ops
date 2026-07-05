@@ -45,7 +45,16 @@ create table public.feedback (
     check (destinatario_id is null or categoria = 'reconocimiento'),
   -- el muro es solo de reconocimientos
   constraint feedback_publico_solo_reconocimiento
-    check (es_publico = false or categoria = 'reconocimiento')
+    check (es_publico = false or categoria = 'reconocimiento'),
+  -- un firmado nunca queda sin autor (por bug del front); el anónimo sí va
+  -- sin autor (el trigger corre ANTES del check, así que no chocan).
+  -- Nota: como autor_id es ON DELETE SET NULL, este check convierte el
+  -- borrado FÍSICO de una persona con feedback firmado en un error — a
+  -- propósito: en esta app las personas se desactivan (activo=false),
+  -- nunca se borran; si algún día se borrara una, primero habría que
+  -- decidir qué hacer con su feedback firmado.
+  constraint feedback_firmado_con_autor
+    check (es_anonimo = true or autor_id is not null)
 );
 
 -- 3) TRIGGERS --------------------------------------------------

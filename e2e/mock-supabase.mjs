@@ -688,6 +688,10 @@ const server = http.createServer(async (req, res) => {
           if (f.autor_id && f.autor_id !== yo.id) {
             return json(403, { code: '42501', message: 'new row violates row-level security policy for table "feedback"' })
           }
+          // check feedback_firmado_con_autor: un firmado nunca sin autor
+          if (!f.es_anonimo && !f.autor_id) {
+            return json(400, { code: '23514', message: 'new row for relation "feedback" violates check constraint "feedback_firmado_con_autor"' })
+          }
         }
         const creadas = filas.map((f) => ({
           id: uuid(), estado: 'nuevo', respuesta: null, es_publico: false,
