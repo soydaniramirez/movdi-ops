@@ -28,31 +28,58 @@ const est = (o: Partial<Estrella>): Estrella => ({
   semana: '2026-W24', creadaEn: '2026-06-10T12:00:00Z', ...o,
 })
 
-test('niveles: umbrales exactos 0/80/200/400/700', () => {
+test('niveles 4.13: umbrales exactos 0/100/265/370/430 (calibrados contra junio)', () => {
   expect(nivelDesdeXP(0).nivel).toBe(1)
-  expect(nivelDesdeXP(79).nivel).toBe(1)
-  expect(nivelDesdeXP(80)).toMatchObject({ nivel: 2, nombre: 'constante' })
-  expect(nivelDesdeXP(199).nivel).toBe(2)
-  expect(nivelDesdeXP(200)).toMatchObject({ nivel: 3, nombre: 'confiable' })
-  expect(nivelDesdeXP(400).nivel).toBe(4)
-  expect(nivelDesdeXP(700)).toMatchObject({ nivel: 5, nombre: 'élite MOVDI' })
+  expect(nivelDesdeXP(99).nivel).toBe(1)
+  expect(nivelDesdeXP(100)).toMatchObject({ nivel: 2, nombre: 'constante' })
+  expect(nivelDesdeXP(264).nivel).toBe(2)
+  expect(nivelDesdeXP(265)).toMatchObject({ nivel: 3, nombre: 'confiable' })
+  expect(nivelDesdeXP(369).nivel).toBe(3)
+  expect(nivelDesdeXP(370)).toMatchObject({ nivel: 4, nombre: 'referente' })
+  expect(nivelDesdeXP(429).nivel).toBe(4)
+  expect(nivelDesdeXP(430)).toMatchObject({ nivel: 5, nombre: 'élite MOVDI' })
 })
 
-test('XP del mes: +10 por entrega, +3 anticipación (3+ días), +15 por estrella', () => {
+test('XP 4.13: a tiempo +10, tarde +3, anticipación +3, estrella +15, bono por cumplimiento', () => {
   const peticiones = [
-    pet({ estatus: 'entregado', fecha: '2026-06-10', fechaEntrega: '2026-06-07' }), // -3d → bonus
-    pet({ estatus: 'entregado', fecha: '2026-06-15', fechaEntrega: '2026-06-14' }), // -1d → sin bonus
-    pet({ estatus: 'entregado', fecha: '2026-06-20', fechaEntrega: null }),         // sin dato → sin bonus
+    pet({ estatus: 'entregado', fecha: '2026-06-10', fechaEntrega: '2026-06-07' }), // a tiempo, -3d → +10 +3
+    pet({ estatus: 'entregado', fecha: '2026-06-15', fechaEntrega: '2026-06-14' }), // a tiempo → +10
+    pet({ estatus: 'entregado', fecha: '2026-06-20', fechaEntrega: null }),         // sin dato → +10 (heurística)
+    pet({ estatus: 'entregado', fecha: '2026-06-22', fechaEntrega: '2026-06-25' }), // TARDE → +3
     pet({ estatus: 'entregado', fecha: '2026-07-01' }),                             // otro mes → no cuenta
-    pet({ estatus: 'pendiente', fecha: '2026-06-12' }),                             // no entregada
+    pet({ estatus: 'pendiente', fecha: '2026-06-12' }),                             // vencida → pega al cumplimiento
   ]
   const estrellas = [est({}), est({ creadaEn: '2026-05-30T12:00:00Z' })] // solo 1 en junio
-  const xp = calcularXPMes('Antonio', '2026-06', peticiones, estrellas)
-  expect(xp).toMatchObject({ xpBase: 30, bonusAnticipacion: 3, xpEstrellas: 15, xpTotal: 48, entregadas: 3 })
-  const game = calcularGamePersona('Antonio', '2026-06', peticiones, estrellas)
+  // cumplimiento (con hoy fijo): 4 entregadas / (4 + 1 vencida) = 80% → bono +10
+  const xp = calcularXPMes('Antonio', '2026-06', peticiones, estrellas, '2026-06-30')
+  expect(xp).toMatchObject({
+    xpBase: 33, tarde: 1, bonusAnticipacion: 3, xpEstrellas: 15,
+    bonoCumplimiento: 10, cumplimiento: 80, xpTotal: 61, entregadas: 4,
+  })
+  const game = calcularGamePersona('Antonio', '2026-06', peticiones, estrellas, '2026-06-30')
   expect(game.nivel).toBe(1)
-  expect(game.xpParaSiguiente).toBe(32) // 80 - 48
-  expect(game.progresoNivel).toBe(60)   // 48/80
+  expect(game.xpParaSiguiente).toBe(39) // 100 - 61
+  expect(game.progresoNivel).toBe(61)   // 61/100
+})
+
+test('XP 4.13: escalones del bono de cumplimiento (100→40, 90-99→20, 80-89→10, <80→0)', () => {
+  const lote = (entregadas: number, vencidas: number) => [
+    ...Array.from({ length: entregadas }, (_, i) =>
+      pet({ estatus: 'entregado', fecha: `2026-06-${String(2 + i).padStart(2, '0')}`, fechaEntrega: `2026-06-${String(2 + i).padStart(2, '0')}` })),
+    ...Array.from({ length: vencidas }, (_, i) =>
+      pet({ estatus: 'pendiente', fecha: `2026-06-${String(20 + i).padStart(2, '0')}` })),
+  ]
+  const hoy = '2026-06-30'
+  // 100%: 5/5 → +40
+  expect(calcularXPMes('Antonio', '2026-06', lote(5, 0), [], hoy)).toMatchObject({ cumplimiento: 100, bonoCumplimiento: 40, xpTotal: 90 })
+  // 90-99: 9 entregadas + 1 vencida = 90% → +20
+  expect(calcularXPMes('Antonio', '2026-06', lote(9, 1), [], hoy)).toMatchObject({ cumplimiento: 90, bonoCumplimiento: 20 })
+  // 80-89: 8 + 2 = 80% → +10
+  expect(calcularXPMes('Antonio', '2026-06', lote(8, 2), [], hoy)).toMatchObject({ cumplimiento: 80, bonoCumplimiento: 10 })
+  // <80: 3 + 1 = 75% → 0
+  expect(calcularXPMes('Antonio', '2026-06', lote(3, 1), [], hoy)).toMatchObject({ cumplimiento: 75, bonoCumplimiento: 0 })
+  // sin entregas: sin bono aunque no haya vencidas
+  expect(calcularXPMes('Antonio', '2026-06', [], [], hoy)).toMatchObject({ bonoCumplimiento: 0, xpTotal: 0 })
 })
 
 test('puntualidad: extensión NO justificada se mide contra la fecha ORIGINAL', () => {
@@ -118,9 +145,9 @@ test('leaderboard: exclusiones (ceo, rh, Salvador, Arylene) y orden % desc → e
 test('reporte de cierre: solo con actividad, orden por XP, recompensa del nivel alcanzado', () => {
   const personas = [per({ nombre: 'Ana' }), per({ nombre: 'Beto' }), per({ nombre: 'Zoe' })]
   const peticiones = [
-    // Ana: 8 entregadas + 1 estrella = 95 XP → nivel 2
+    // Ana: 8 entregadas + 1 estrella + bono → 135 XP → nivel 2 (4.13)
     ...Array.from({ length: 8 }, (_, i) => pet({ para: 'Ana', estatus: 'entregado', fecha: `2026-06-${String(2 + i).padStart(2, '0')}` })),
-    // Beto: 2 entregadas = 20 XP → nivel 1
+    // Beto: 2 entregadas + bono → 60 XP → nivel 1 (4.13)
     pet({ para: 'Beto', estatus: 'entregado', fecha: '2026-06-05' }),
     pet({ para: 'Beto', estatus: 'entregado', fecha: '2026-06-06' }),
     // Zoe: sin actividad → fuera
@@ -129,8 +156,10 @@ test('reporte de cierre: solo con actividad, orden por XP, recompensa del nivel 
   const recompensas = [{ id: 'r2', nivel: 2, descripcion: 'tarde libre', activa: true }]
   const rep = calcularReporteCierre({ mes: '2026-06', personas, peticiones, estrellas, recompensas, hoy: '2026-07-01' })
   expect(rep.map((r) => r.persona)).toEqual(['Ana', 'Beto'])
-  expect(rep[0]).toMatchObject({ xp: 95, nivel: 2, recompensa: 'tarde libre', entregadas: 8, cumplimiento: 100 })
-  expect(rep[1]).toMatchObject({ xp: 20, nivel: 1, recompensa: null })
+  // fórmula 4.13: Ana 8 a tiempo (80) + estrella (15) + bono 100% (40) = 135
+  expect(rep[0]).toMatchObject({ xp: 135, nivel: 2, recompensa: 'tarde libre', entregadas: 8, cumplimiento: 100 })
+  // Beto: 2 a tiempo (20) + bono 100% (40) = 60 → nivel 1
+  expect(rep[1]).toMatchObject({ xp: 60, nivel: 1, recompensa: null })
 })
 
 test('cumplimiento de recurrente: ancla en la primera entrega, archivadas fuera, no_registrada', () => {

@@ -8,12 +8,16 @@ import { type Recurrente, calcularFechasEsperadas } from './recurrentes'
 import { type Estrella } from './estrellas'
 
 // ---------- niveles ----------
+// Umbrales 4.13 calibrados contra el histórico real de junio con la fórmula
+// nueva (aprobados 2026-07-05): nivel 3 = tercio superior del equipo (hueco
+// natural 257→272); nivel 4 = muy buen mes, por encima del mejor de junio
+// (325); nivel 5 = techo realista mensual (~413-420) + margen — excepcional.
 export const NIVELES = [
   { nivel: 1, xpMin: 0, nombre: 'en arranque' },
-  { nivel: 2, xpMin: 80, nombre: 'constante' },
-  { nivel: 3, xpMin: 200, nombre: 'confiable' },
-  { nivel: 4, xpMin: 400, nombre: 'referente' },
-  { nivel: 5, xpMin: 700, nombre: 'élite MOVDI' },
+  { nivel: 2, xpMin: 100, nombre: 'constante' },
+  { nivel: 3, xpMin: 265, nombre: 'confiable' },
+  { nivel: 4, xpMin: 370, nombre: 'referente' },
+  { nivel: 5, xpMin: 430, nombre: 'élite MOVDI' },
 ] as const
 
 export function nivelDesdeXP(xp: number) {
@@ -82,28 +86,52 @@ export const mesAnteriorStr = () => {
   return new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1).toISOString().slice(0, 7)
 }
 
-// XP = +10 por entrega del mes, +3 si se entregó 3+ días antes del límite,
-// +15 por estrella recibida en el mes.
-export function calcularXPMes(nombre: string, mes: string, peticiones: Peticion[], estrellas: Estrella[]) {
+// XP — fórmula 4.13 (rebalanceo aprobado 2026-07-05, pesa CALIDAD; calibrada
+// contra el histórico real de junio). ÚNICA fuente para XP del mes, cierre,
+// barra del header y preview de cierre:
+//   · entrega a tiempo +10 · entrega tarde +3 (misma regla de puntualidad
+//     vigente: límite = fecha original si la extensión NO fue justificada;
+//     sin fecha de entrega = a tiempo, heurística existente)
+//   · anticipación 3+ días +3 · estrella recibida +15
+//   · bono de cumplimiento mensual: 100%→+40 · 90-99→+20 · 80-89→+10
+//     (cumplimiento = el mismo % del leaderboard/cierre, con su quirk)
+// Los meses ya archivados en historial_mensual NO se recalculan.
+export function calcularXPMes(
+  nombre: string, mes: string, peticiones: Peticion[], estrellas: Estrella[], hoy?: string,
+) {
   const desde = mes + '-01'
   const hasta = finDeMes(mes)
   const entregadas = peticiones.filter(
     (t) => matchNombre(t.para, nombre) && t.estatus === 'entregado' && t.fecha >= desde && t.fecha <= hasta,
   )
   let xp = 0
+  let tarde = 0
   let bonusAnticipacion = 0
   for (const t of entregadas) {
-    xp += 10
+    if (estadoPuntualidad(t) === 'tarde') { xp += 3; tarde++ }
+    else xp += 10 // a tiempo o sin dato (heurística existente)
     const dr = diasRetraso(t)
     if (dr !== null && dr <= -3) bonusAnticipacion += 3
   }
   const xpEstrellas = estrellas
     .filter((e) => e.para === nombre && (e.creadaEn || '').slice(0, 7) === mes).length * 15
-  return { xpTotal: xp + bonusAnticipacion + xpEstrellas, xpBase: xp, bonusAnticipacion, xpEstrellas, entregadas: entregadas.length }
+  const cumplimiento = calcularStatsPersona(nombre, peticiones, { desde, hasta }, hoy).porcentaje
+  const bonoCumplimiento =
+    entregadas.length === 0 ? 0
+    : cumplimiento === 100 ? 40
+    : cumplimiento >= 90 ? 20
+    : cumplimiento >= 80 ? 10 : 0
+  return {
+    xpTotal: xp + bonusAnticipacion + xpEstrellas + bonoCumplimiento,
+    xpBase: xp, bonusAnticipacion, xpEstrellas, bonoCumplimiento, cumplimiento,
+    entregadas: entregadas.length, tarde,
+  }
 }
 
-export function calcularGamePersona(nombre: string, mes: string, peticiones: Peticion[], estrellas: Estrella[]) {
-  const xpData = calcularXPMes(nombre, mes, peticiones, estrellas)
+export function calcularGamePersona(
+  nombre: string, mes: string, peticiones: Peticion[], estrellas: Estrella[], hoy?: string,
+) {
+  const xpData = calcularXPMes(nombre, mes, peticiones, estrellas, hoy)
   const nivelData = nivelDesdeXP(xpData.xpTotal)
   const idx = NIVELES.findIndex((n) => n.nivel === nivelData.nivel)
   const siguienteNivel = idx < NIVELES.length - 1 ? NIVELES[idx + 1] : null
@@ -115,6 +143,8 @@ export function calcularGamePersona(nombre: string, mes: string, peticiones: Pet
     nombre, mes,
     xp: xpData.xpTotal, xpBase: xpData.xpBase,
     bonusAnticipacion: xpData.bonusAnticipacion, xpEstrellas: xpData.xpEstrellas,
+    bonoCumplimiento: xpData.bonoCumplimiento, cumplimiento: xpData.cumplimiento,
+    tarde: xpData.tarde,
     nivel: nivelData.nivel, nivelNombre: nivelData.nombre,
     siguienteNivel, xpParaSiguiente, progresoNivel,
     entregadas: xpData.entregadas,
@@ -263,7 +293,7 @@ export function calcularReporteCierre(opts: {
   return opts.personas
     .filter(competeEnLeaderboard)
     .map((p) => {
-      const game = calcularGamePersona(p.nombre, mes, opts.peticiones, opts.estrellas)
+      const game = calcularGamePersona(p.nombre, mes, opts.peticiones, opts.estrellas, opts.hoy)
       const stats = calcularStatsPersona(p.nombre, opts.peticiones, { desde, hasta }, opts.hoy)
       return {
         persona: p.nombre,

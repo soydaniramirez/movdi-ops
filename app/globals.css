@@ -66,3 +66,19 @@ tr:hover .reveal-acciones,
   transform: translateY(-1px);
   box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
 }
+
+/* Coach MOVDI — entrada sutil y pulso suave (Fase 4.13) */
+.coach-in {
+  animation: coach-in 0.45s ease both;
+}
+@keyframes coach-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.coach-pulse {
+  animation: coach-pulse 2.4s ease-in-out infinite;
+}
+@keyframes coach-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}

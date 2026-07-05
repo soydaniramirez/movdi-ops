@@ -71,11 +71,12 @@ test('cierre de mes (dirección): preview correcto, inserta historial y no se pu
   await page.goto('/progreso')
 
   const mesAnt = mesAnteriorStr()
-  // preview del mes anterior: Antonio con 7 entregas, 88 XP → nivel 2 → tarde libre
+  // preview del mes anterior (fórmula 4.13): Antonio 7 a tiempo (70) +
+  // anticipación (3) + estrella (15) + bono 100% (40) = 128 XP → nivel 2
   const cierre = page.getByTestId('cierre-pendiente')
   await expect(cierre).toBeVisible()
   await expect(cierre).toContainText(mesAnt)
-  await expect(cierre).toContainText('Antonio · nivel 2 · 88 XP')
+  await expect(cierre).toContainText('Antonio · nivel 2 · 128 XP')
   await expect(cierre).toContainText('🎁 tarde libre')
 
   page.on('dialog', (d) => d.accept())
@@ -88,8 +89,8 @@ test('cierre de mes (dirección): preview correcto, inserta historial y no se pu
   expect(h).toBeTruthy()
   expect(h).toMatchObject({
     mes: mesAnt,
-    xp_total: 88,        // 70 base + 3 anticipación + 15 estrella
-    nivel_alcanzado: 2,  // 88 >= 80
+    xp_total: 128,       // 70 a tiempo + 3 anticipación + 15 estrella + 40 bono 100%
+    nivel_alcanzado: 2,  // 128 >= 100 (umbral 4.13)
     entregadas: 7,
     cumplimiento: 100,
     mejor_racha: 7,
@@ -180,4 +181,61 @@ test('logros 4.11: oro/podio del mes cerrado se encienden desde la RPC', async (
   // los bloqueados siguen en misterio
   await expect(page.getByTestId('logro-off').first()).toContainText('???')
   await expect(page.getByTestId('logros')).not.toContainText('semestre perfecto')
+})
+
+// ------------------------------------------------------------
+// 4.13 — coach MOVDI: mensaje según el estado real (prioridad fija)
+test('coach: "pendientes de la semana" sin vencidas; "recuerda marcar" con 1-2 vencidas', async ({ page, browser }) => {
+  // Antonio: sin vencidas, con pendientes esta semana (p-seed-1 dx+5)
+  await login(page, 'antonio@movdi.mx')
+  await page.goto('/progreso')
+  const coach = page.getByTestId('coach')
+  await expect(coach).toHaveAttribute('data-tipo', 'semana')
+  await expect(coach).toContainText('esta semana traes')
+
+  // Brenda con 1 vencida → "recuerda marcar entregado"
+  const r = await fetch(`${MOCK}/auth/v1/token?grant_type=password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'dani@movdi.mx', password: PASS }),
+  })
+  const tk = ((await r.json()) as { access_token: string }).access_token
+  const dxs = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
+  await fetch(`${MOCK}/rest/v1/peticiones`, {
+    method: 'POST', headers: { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      zona: 'general', nombre: 'entrega olvidada', creado_por: 'Dani', para: 'Brenda',
+      area: 'imkt', fecha: dxs(-2), prioridad: 'media', estatus: 'pendiente', privada: false,
+    }),
+  })
+  const ctx = await browser.newContext()
+  const p2 = await ctx.newPage()
+  await login(p2, 'brenda@movdi.mx')
+  await p2.goto('/progreso')
+  const coach2 = p2.getByTestId('coach')
+  await expect(coach2).toHaveAttribute('data-tipo', 'marcar')
+  await expect(coach2).toContainText('recuerda marcar')
+  await ctx.close()
+})
+
+test('coach: "vas retrasado" con 3+ vencidas (prioridad máxima)', async ({ page }) => {
+  const r = await fetch(`${MOCK}/auth/v1/token?grant_type=password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'dani@movdi.mx', password: PASS }),
+  })
+  const tk = ((await r.json()) as { access_token: string }).access_token
+  const dxs = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
+  for (let i = 1; i <= 3; i++) {
+    await fetch(`${MOCK}/rest/v1/peticiones`, {
+      method: 'POST', headers: { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        zona: 'general', nombre: `vencida ${i}`, creado_por: 'Dani', para: 'Brenda',
+        area: 'imkt', fecha: dxs(-i), prioridad: 'media', estatus: 'pendiente', privada: false,
+      }),
+    })
+  }
+  await login(page, 'brenda@movdi.mx')
+  await page.goto('/progreso')
+  const coach = page.getByTestId('coach')
+  await expect(coach).toHaveAttribute('data-tipo', 'retrasado')
+  await expect(coach).toContainText('vas retrasado: 3 tareas vencidas')
 })

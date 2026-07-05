@@ -113,6 +113,20 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
       .map((r) => ({ recur: r, cumpli: calcularCumplimiento(r, peticiones, 12) })),
     [recurrentes, peticiones, yo])
 
+  // insumos del coach: vencidas, pendientes de la semana y ritmo de recurrentes
+  const coachDatos = useMemo(() => {
+    const mias = peticiones.filter((t) =>
+      matchNombre(t.para, yo.nombre) && !t.origenRecur && t.estatus !== 'entregado' && t.estatus !== 'archivada')
+    const hoyMs = new Date(new Date().toDateString()).getTime()
+    const dias = (f: string) => Math.round((new Date(f + 'T00:00:00').getTime() - hoyMs) / 86400000)
+    const ritmos = miRitmo.filter(({ cumpli }) => cumpli.total > 0).map(({ cumpli }) => cumpli.porcentaje)
+    return {
+      vencidas: mias.filter((t) => dias(t.fecha) < 0).length,
+      semana: mias.filter((t) => { const d = dias(t.fecha); return d >= 0 && d <= 7 }).length,
+      ritmoPromedio: ritmos.length ? Math.round(ritmos.reduce((a, b) => a + b, 0) / ritmos.length) : null,
+    }
+  }, [peticiones, yo, miRitmo])
+
   // meses cerrados: navegación ← → un mes a la vez + toggle de entradas
   // (solo presentación — nada de editar los valores archivados)
   const [mesHistSel, setMesHistSel] = useState<string | null>(null)
@@ -149,6 +163,14 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
         {aviso && <p role="alert" className="border border-movdi-naranja/40 bg-movdi-naranja/10 px-3 py-2 font-mono text-xs text-movdi-naranja">{aviso}</p>}
         {okMsg && <p role="status" data-testid="cierre-ok" className="border border-movdi-verde/40 bg-movdi-verde/10 px-3 py-2 font-mono text-xs text-movdi-verde">{okMsg}</p>}
 
+        {/* 🤖 coach MOVDI (6 mensajes aprobados, prioridad fija) */}
+        <CoachMovdi
+          vencidas={coachDatos.vencidas}
+          semana={coachDatos.semana}
+          game={game}
+          ritmoPromedio={coachDatos.ritmoPromedio}
+        />
+
         {/* Mi progreso del mes */}
         <section data-testid="mi-progreso" className="bg-blueprint rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
           <h2 className="font-mono text-[11px] uppercase tracking-wider text-neutral-400">mi progreso · {mes}</h2>
@@ -157,7 +179,7 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
               <p className="text-3xl font-semibold text-movdi-naranja" data-testid="mi-xp">{game.xp} <span className="text-sm text-neutral-400">XP</span></p>
               <p className="mt-1 font-mono text-xs text-neutral-300" data-testid="mi-nivel">nivel {game.nivel} · {game.nivelNombre}</p>
               <p className="mt-0.5 font-mono text-[10px] text-neutral-500">
-                base {game.xpBase} · anticipación +{game.bonusAnticipacion} · estrellas +{game.xpEstrellas} · {game.entregadas} entrega(s)
+                base {game.xpBase}{game.tarde > 0 && ` (${game.tarde} tarde)`} · anticipación +{game.bonusAnticipacion} · estrellas +{game.xpEstrellas} · bono cumplimiento +{game.bonoCumplimiento} · {game.entregadas} entrega(s)
               </p>
             </div>
             <div className="w-full max-w-xs">
@@ -479,5 +501,50 @@ function EditorCatalogo({ recompensas, onGuardado, onError }: {
         </button>
       </div>
     </div>
+  )
+}
+
+// ============================================================
+// 🤖 Coach MOVDI — 6 mensajes aprobados, con prioridad fija:
+// retrasado > recuerda marcar > empujón de nivel > vas increíble >
+// pendientes de la semana > vas bien. Solo lectura de datos existentes.
+function CoachMovdi({ vencidas, semana, game, ritmoPromedio }: {
+  vencidas: number
+  semana: number
+  game: ReturnType<typeof calcularGamePersona>
+  ritmoPromedio: number | null
+}) {
+  let tipo: string, icono: string, msg: React.ReactNode, estilo: string
+  if (vencidas >= 3) {
+    tipo = 'retrasado'; icono = '🔥'
+    estilo = 'border-movdi-naranja/50 bg-movdi-naranja/10 text-movdi-naranja'
+    msg = <>vas retrasado: <strong>{vencidas} tareas vencidas</strong> — empieza por la más antigua y márcala al terminar.</>
+  } else if (vencidas >= 1) {
+    tipo = 'marcar'; icono = '📌'
+    estilo = 'border-movdi-amarillo/50 bg-movdi-amarillo/10 text-movdi-amarillo'
+    msg = <>tienes <strong>{vencidas} con fecha vencida</strong> — si ya la entregaste, recuerda marcar <strong>✓ entregado</strong> para que cuente en tu XP.</>
+  } else if (game.xpParaSiguiente > 0 && game.xpParaSiguiente <= 30 && game.siguienteNivel) {
+    tipo = 'nivel'; icono = '🚀'
+    estilo = 'border-movdi-naranja/50 bg-movdi-naranja/10 text-movdi-naranja'
+    msg = <>estás a <strong>{game.xpParaSiguiente} XP</strong> del nivel {game.siguienteNivel.nivel} · {game.siguienteNivel.nombre} — una entrega a tiempo te acerca.</>
+  } else if (game.entregadas >= 5 && game.cumplimiento >= 90) {
+    tipo = 'increible'; icono = '✨'
+    estilo = 'border-movdi-verde/50 bg-movdi-verde/10 text-movdi-verde'
+    msg = <>vas increíble: <strong>{game.entregadas} entregas</strong> y <strong>{game.cumplimiento}%</strong> de cumplimiento este mes. sigue así.</>
+  } else if (semana > 0) {
+    tipo = 'semana'; icono = '🗓'
+    estilo = 'border-movdi-azul/50 bg-movdi-azul/10 text-neutral-200'
+    msg = <>esta semana traes <strong>{semana} {semana === 1 ? 'entrega programada' : 'entregas programadas'}</strong> — planéalas hoy y gana el bono de anticipación.</>
+  } else {
+    tipo = 'bien'; icono = '🌿'
+    estilo = 'border-movdi-verde/40 bg-movdi-verde/5 text-neutral-200'
+    msg = <>vas bien — al corriente y sin vencidas{ritmoPromedio !== null && <>, y tus recurrentes van al <strong>{ritmoPromedio}%</strong></>}. sigue con tu ritmo.</>
+  }
+  return (
+    <aside data-testid="coach" data-tipo={tipo}
+      className={`coach-in flex items-start gap-3 rounded-2xl border px-4 py-3 ${estilo}`}>
+      <span aria-hidden className={`text-xl leading-none ${tipo === 'retrasado' ? 'coach-pulse' : ''}`}>{icono}</span>
+      <p className="text-sm leading-snug">{msg}</p>
+    </aside>
   )
 }
