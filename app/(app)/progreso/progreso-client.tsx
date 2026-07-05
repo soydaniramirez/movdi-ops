@@ -12,6 +12,7 @@ import {
   calcularReconocimientosMes, calcularReporteCierre, mapHistorialRow, mapRecompensaRow,
   mesAnteriorStr, mesCerrado,
 } from '@/lib/gamificacion'
+import { type Feedback, mapFeedbackRow } from '@/lib/feedback'
 import { cerrarMes, guardarRecompensa, marcarRecompensaEntregada } from './actions'
 
 export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
@@ -21,6 +22,10 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
   const [estrellas, setEstrellas] = useState<Estrella[]>([])
   const [recompensas, setRecompensas] = useState<Recompensa[]>([])
   const [historial, setHistorial] = useState<HistorialMes[]>([])
+  // 4.11: insumos de los logros nuevos — feedback (reconocimientos) y
+  // podio oficial de meses cerrados (RPC, respeta la privacidad 4.8)
+  const [feedbackRows, setFeedbackRows] = useState<Feedback[]>([])
+  const [podios, setPodios] = useState<{ mes: string; personas: string[] }[]>([])
   const [aviso, setAviso] = useState<string | null>(null)
   const [okMsg, setOkMsg] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
@@ -53,6 +58,31 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
     if (!est.error) setEstrellas((est.data ?? []).map(mapEstrellaRow))
     if (!rec.error) setRecompensas((rec.data ?? []).map(mapRecompensaRow))
     if (!hist.error) setHistorial((hist.data ?? []).map(mapHistorialRow))
+
+    // feedback (para logros de reconocimiento) — pre-cutover la tabla no
+    // existe: cae a [] sin romper nada
+    const fb = await sb.from('feedback').select('*')
+    setFeedbackRows(fb.error ? [] : (fb.data ?? []).map(mapFeedbackRow))
+
+    // podio oficial por mes cerrado (RPC definer → funciona para todos los
+    // roles); fallback pre-cutover: top 3 local de las filas visibles
+    const meses = [...new Set(((hist.data ?? []) as { mes: string }[]).map((r) => r.mes))].sort().slice(-12)
+    const pod: { mes: string; personas: string[] }[] = []
+    for (const m of meses) {
+      const { data, error } = await sb.rpc('podio_mes_cerrado', { p_mes: m })
+      if (!error && Array.isArray(data) && data.length) {
+        pod.push({ mes: m, personas: (data as { persona: string }[]).map((d) => d.persona) })
+      }
+    }
+    if (pod.length === 0 && meses.length > 0) {
+      for (const m of meses) {
+        const filas = ((hist.data ?? []) as { mes: string; persona: string; xp_total?: number }[])
+          .filter((r) => r.mes === m)
+          .sort((a, b) => (b.xp_total ?? 0) - (a.xp_total ?? 0))
+        if (filas.length) pod.push({ mes: m, personas: filas.slice(0, 3).map((r) => r.persona) })
+      }
+    }
+    setPodios(pod)
     setCargando(false)
   }, [])
 
@@ -62,7 +92,12 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
 
   const mes = new Date().toISOString().slice(0, 7)
   const game = useMemo(() => calcularGamePersona(yo.nombre, mes, peticiones, estrellas), [yo, mes, peticiones, estrellas])
-  const logros = useMemo(() => calcularLogros({ nombre: yo.nombre, peticiones, estrellas, historial }), [yo, peticiones, estrellas, historial])
+  const logros = useMemo(() => calcularLogros({
+    nombre: yo.nombre, peticiones, estrellas, historial,
+    podios, recurrentes,
+    reconocimientosDados: feedbackRows.filter((f) => f.categoria === 'reconocimiento' && f.autorId === yo.id).length,
+    reconocimientosRecibidos: feedbackRows.filter((f) => f.categoria === 'reconocimiento' && f.destinatarioId === yo.id).length,
+  }), [yo, peticiones, estrellas, historial, podios, recurrentes, feedbackRows])
 
   // leaderboard: dirección/todos · head no-dirección: solo su equipo (paridad)
   const lb = useMemo(() => calcularLeaderboardMes({

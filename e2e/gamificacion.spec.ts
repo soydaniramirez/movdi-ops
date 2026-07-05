@@ -152,3 +152,32 @@ test('logros: los desbloqueados por los datos aparecen encendidos', async ({ pag
   await expect(on.filter({ hasText: 'primera estrella' })).toBeVisible()
   await expect(on.filter({ hasText: '10 entregas' })).toHaveCount(0)    // solo 7
 })
+
+// ------------------------------------------------------------
+// 4.11 — logros de podio: se computan del podio OFICIAL de meses cerrados
+// (vía la RPC, que funciona para cualquier rol pese a la RLS de historial)
+test('logros 4.11: oro/podio del mes cerrado se encienden desde la RPC', async ({ page }) => {
+  // dirección archiva un mes con Antonio en 1er lugar
+  const r = await fetch(`${MOCK}/auth/v1/token?grant_type=password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'dani@movdi.mx', password: PASS }),
+  })
+  const tk = ((await r.json()) as { access_token: string }).access_token
+  await fetch(`${MOCK}/rest/v1/historial_mensual`, {
+    method: 'POST', headers: { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify([
+      { persona: 'Antonio', mes: '2026-05', xp_total: 90, cumplimiento: 100 },
+      { persona: 'Brenda', mes: '2026-05', xp_total: 60, cumplimiento: 80 },
+      { persona: 'Karla', mes: '2026-05', xp_total: 40, cumplimiento: 70 },
+    ]),
+  })
+
+  await login(page, 'antonio@movdi.mx')
+  await page.goto('/progreso')
+  const on = page.getByTestId('logro-on')
+  await expect(on.filter({ hasText: 'oro del mes' })).toBeVisible()
+  await expect(on.filter({ hasText: 'de podio' })).toBeVisible()
+  // los bloqueados siguen en misterio
+  await expect(page.getByTestId('logro-off').first()).toContainText('???')
+  await expect(page.getByTestId('logros')).not.toContainText('semestre perfecto')
+})

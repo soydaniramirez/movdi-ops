@@ -333,6 +333,15 @@ export type StatsLogros = {
   mesesNivel3: number
   entregasAnticipadas: number
   mesPuntual: boolean
+  // ampliación 4.11 (16 logros nuevos) — todo computado de datos existentes,
+  // sin XP por acciones de "enviar/dar"
+  mesesOro: number // 1er lugar de un mes CERRADO (via podio oficial)
+  mesesPodio: number // top 3 de un mes CERRADO
+  mesesCien: number // meses cerrados propios con cumplimiento 100
+  mesesPuntualesSeguidos: number // racha de meses puntuales (mín. 5 con dato, 0 tarde)
+  reconocimientosDados: number // firmados (los anónimos no cuentan: sin autor)
+  reconocimientosRecibidos: number
+  ritmoImpecable: boolean // 100% de cumplimiento en TODAS mis recurrentes activas (ventana mensual)
 }
 
 export const LOGROS: { id: string; nombre: string; icono: string; categoria: string; desc: string; criterio: (s: StatsLogros) => boolean }[] = [
@@ -357,14 +366,48 @@ export const LOGROS: { id: string; nombre: string; icono: string; categoria: str
   { id: 'todologo', nombre: 'todólogo', icono: '🗂️', categoria: 'especial', criterio: (s) => s.areasUnicas >= 5, desc: 'entregas en 5+ áreas distintas' },
   { id: 'mes_perfecto', nombre: 'mes perfecto', icono: '🏆', categoria: 'especial', criterio: (s) => s.mesPerfecto, desc: 'un mes completo sin tareas vencidas' },
   { id: 'constancia', nombre: 'constancia', icono: '🏛️', categoria: 'especial', criterio: (s) => s.mesesNivel3 >= 2, desc: 'nivel 3 o más en 2 meses cerrados' },
+  // ── ampliación 4.11: 16 logros nuevos ─────────────────────────
+  // entregas acumuladas
+  { id: 'volumen_500', nombre: 'leyenda', icono: '🐉', categoria: 'volumen', criterio: (s) => s.entregadasTotales >= 500, desc: '500 entregas acumuladas' },
+  { id: 'volumen_1000', nombre: 'mítico', icono: '🦄', categoria: 'volumen', criterio: (s) => s.entregadasTotales >= 1000, desc: '1000 entregas acumuladas' },
+  // rachas
+  { id: 'racha_50', nombre: 'racha de 50', icono: '🌋', categoria: 'racha', criterio: (s) => s.mejorRacha >= 50, desc: '50 entregas seguidas sin retraso' },
+  { id: 'racha_100', nombre: 'racha de 100', icono: '☄️', categoria: 'racha', criterio: (s) => s.mejorRacha >= 100, desc: '100 entregas seguidas sin retraso' },
+  // podio (solo de MESES CERRADOS — el podio oficial)
+  { id: 'oro_mes', nombre: 'oro del mes', icono: '🏅', categoria: 'podio', criterio: (s) => s.mesesOro >= 1, desc: '1er lugar de un mes cerrado' },
+  { id: 'podio_mes', nombre: 'de podio', icono: '🎖️', categoria: 'podio', criterio: (s) => s.mesesPodio >= 1, desc: 'top 3 de un mes cerrado' },
+  // consistencia
+  { id: 'trio_perfecto', nombre: 'trío perfecto', icono: '💯', categoria: 'consistencia', criterio: (s) => s.mesesCien >= 3, desc: '3 meses cerrados al 100% de cumplimiento' },
+  { id: 'semestre_perfecto', nombre: 'semestre perfecto', icono: '🏵️', categoria: 'consistencia', criterio: (s) => s.mesesCien >= 6, desc: '6 meses cerrados al 100% de cumplimiento' },
+  // puntualidad
+  { id: 'reloj_suizo', nombre: 'reloj suizo', icono: '⏱️', categoria: 'puntualidad', criterio: (s) => s.mesesPuntualesSeguidos >= 3, desc: '3 meses puntuales seguidos (sin una sola entrega tarde)' },
+  // estrellas recibidas
+  { id: 'estrellas_5', nombre: '5 estrellas', icono: '🌠', categoria: 'colaboracion', criterio: (s) => s.estrellasRecibidasTotal >= 5, desc: '5 estrellas recibidas en total' },
+  { id: 'estrellas_10', nombre: '10 estrellas', icono: '🌌', categoria: 'colaboracion', criterio: (s) => s.estrellasRecibidasTotal >= 10, desc: '10 estrellas recibidas en total' },
+  { id: 'estrellas_25', nombre: '25 estrellas', icono: '💫', categoria: 'colaboracion', criterio: (s) => s.estrellasRecibidasTotal >= 25, desc: '25 estrellas recibidas en total' },
+  // reconocimiento (módulo feedback; badges sin XP — anti-farmeo)
+  { id: 'rec_dado_1', nombre: 'primer 🙌 dado', icono: '🙌', categoria: 'reconocimiento', criterio: (s) => s.reconocimientosDados >= 1, desc: 'diste tu primer reconocimiento firmado (los anónimos no cuentan)' },
+  { id: 'rec_recibido_1', nombre: 'primer 🙌 recibido', icono: '🫶', categoria: 'reconocimiento', criterio: (s) => s.reconocimientosRecibidos >= 1, desc: 'recibiste tu primer reconocimiento' },
+  { id: 'rec_recibido_10', nombre: '10 reconocimientos', icono: '🌈', categoria: 'reconocimiento', criterio: (s) => s.reconocimientosRecibidos >= 10, desc: '10 reconocimientos recibidos' },
+  // recurrentes
+  { id: 'ritmo_impecable', nombre: 'ritmo impecable', icono: '🥁', categoria: 'recurrentes', criterio: (s) => s.ritmoImpecable, desc: '100% de cumplimiento en todas tus recurrentes activas del mes' },
 ]
 
-// Puerto exacto de calcularLogros (stats + evaluación de criterios).
+// Puerto exacto de calcularLogros (stats + evaluación de criterios) +
+// ampliación 4.11. Los campos nuevos son opcionales: sin datos del módulo
+// correspondiente (p.ej. feedback pre-cutover) el logro simplemente no
+// se enciende.
 export function calcularLogros(opts: {
   nombre: string
   peticiones: Peticion[]
   estrellas: Estrella[]
   historial: HistorialMes[]
+  // 4.11: podio oficial de meses cerrados — [{ mes, personas top ordenado }]
+  // (viene de la RPC podio_mes_cerrado para respetar la privacidad 4.8)
+  podios?: { mes: string; personas: string[] }[]
+  recurrentes?: Recurrente[]
+  reconocimientosDados?: number
+  reconocimientosRecibidos?: number
   hoy?: Date
 }) {
   const { nombre } = opts
@@ -397,6 +440,36 @@ export function calcularLogros(opts: {
   const tardeMesAnt = conDato.filter((t) => estadoPuntualidad(t) === 'tarde').length
   const mesPuntual = conDato.length >= 5 && tardeMesAnt === 0
 
+  // ── 4.11: stats nuevas ─────────────────────────────────────────
+  // podio de meses cerrados (oro = 1er lugar; podio = top 3)
+  const podios = opts.podios ?? []
+  const mesesOro = podios.filter((p) => p.personas.length > 0 && matchNombre(p.personas[0], nombre)).length
+  const mesesPodio = podios.filter((p) => p.personas.some((n) => matchNombre(n, nombre))).length
+
+  // meses cerrados propios al 100% de cumplimiento (acumulados)
+  const mesesCien = opts.historial.filter((h) => h.persona === nombre && h.cumplimiento === 100).length
+
+  // racha de meses puntuales (mismo criterio de mesPuntual, hacia atrás
+  // desde el mes anterior; corta al primer mes que no cumple)
+  let mesesPuntualesSeguidos = 0
+  for (let k = 1; k <= 12; k++) {
+    const ini = new Date(hoy.getFullYear(), hoy.getMonth() - k, 1).toISOString().slice(0, 10)
+    const fin = new Date(hoy.getFullYear(), hoy.getMonth() - k + 1, 0).toISOString().slice(0, 10)
+    const delMes = todasEntregadas.filter((t) => t.fecha >= ini && t.fecha <= fin)
+    const cd = delMes.filter((t) => estadoPuntualidad(t) !== 'sin_dato')
+    const tarde = cd.filter((t) => estadoPuntualidad(t) === 'tarde').length
+    if (cd.length >= 5 && tarde === 0) mesesPuntualesSeguidos++
+    else break
+  }
+
+  // ritmo impecable: TODAS mis recurrentes activas al 100% en la ventana
+  // mensual (~4 semanas), con al menos una recurrente y ocurrencias en ella
+  const misRecurrentes = (opts.recurrentes ?? []).filter((r) => r.activa && matchNombre(r.para, nombre))
+  const cumplimientos = misRecurrentes.map((r) => calcularCumplimiento(r, opts.peticiones, 4))
+  const ritmoImpecable =
+    cumplimientos.length > 0 &&
+    cumplimientos.every((c) => c.total > 0 && c.porcentaje === 100)
+
   const stats: StatsLogros = {
     entregadasTotales: todasEntregadas.length,
     mejorRacha: calcularMejorRacha(nombre, opts.peticiones),
@@ -404,6 +477,10 @@ export function calcularLogros(opts: {
     areasUnicas, reabiertas, mesPerfecto,
     estrellasRecibidasTotal, estrellasRecibidasMes, estrellasDadasTotal,
     mesesNivel3, entregasAnticipadas, mesPuntual,
+    mesesOro, mesesPodio, mesesCien, mesesPuntualesSeguidos,
+    reconocimientosDados: opts.reconocimientosDados ?? 0,
+    reconocimientosRecibidos: opts.reconocimientosRecibidos ?? 0,
+    ritmoImpecable,
   }
   const desbloqueados = LOGROS.filter((l) => { try { return l.criterio(stats) } catch { return false } })
   const bloqueados = LOGROS.filter((l) => !desbloqueados.some((d) => d.id === l.id))

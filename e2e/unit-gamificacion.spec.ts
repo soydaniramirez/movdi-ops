@@ -3,9 +3,10 @@ import { type Peticion, type Persona } from '../lib/peticiones'
 import { type Recurrente } from '../lib/recurrentes'
 import { type Estrella } from '../lib/estrellas'
 import {
-  calcularCumplimiento, calcularGamePersona, calcularLeaderboardMes, calcularMejorRacha,
-  calcularRachaActual, calcularReporteCierre, calcularStatsPersona, calcularXPMes,
-  competeEnLeaderboard, estadoPuntualidad, nivelDesdeXP,
+  LOGROS, type StatsLogros,
+  calcularCumplimiento, calcularGamePersona, calcularLeaderboardMes, calcularLogros,
+  calcularMejorRacha, calcularRachaActual, calcularReporteCierre, calcularStatsPersona,
+  calcularXPMes, competeEnLeaderboard, estadoPuntualidad, nivelDesdeXP,
 } from '../lib/gamificacion'
 
 // Tests unitarios puros con fechas fijas — las fórmulas EXACTAS del SPA.
@@ -149,4 +150,101 @@ test('cumplimiento de recurrente: ancla en la primera entrega, archivadas fuera,
   expect(c.entregadas).toBe(1)
   expect(c.porcentaje).toBe(33)
   expect(c.detalle.map((d) => d.estado)).toEqual(['no_registrada', 'pendiente', 'entregada'])
+})
+
+// ------------------------------------------------------------
+// 4.11 — 16 logros nuevos: umbrales exactos (encienden/apagan al límite)
+test('logros 4.11: umbrales exactos de los 16 nuevos', () => {
+  const base: StatsLogros = {
+    entregadasTotales: 0, mejorRacha: 0, rachaActual: 0, areasUnicas: 0,
+    reabiertas: 0, mesPerfecto: false, estrellasRecibidasTotal: 0,
+    estrellasRecibidasMes: 0, estrellasDadasTotal: 0, mesesNivel3: 0,
+    entregasAnticipadas: 0, mesPuntual: false,
+    mesesOro: 0, mesesPodio: 0, mesesCien: 0, mesesPuntualesSeguidos: 0,
+    reconocimientosDados: 0, reconocimientosRecibidos: 0, ritmoImpecable: false,
+  }
+  const on = (id: string, s: Partial<StatsLogros>) =>
+    LOGROS.find((l) => l.id === id)!.criterio({ ...base, ...s })
+
+  // entregas acumuladas
+  expect(on('volumen_500', { entregadasTotales: 499 })).toBe(false)
+  expect(on('volumen_500', { entregadasTotales: 500 })).toBe(true)
+  expect(on('volumen_1000', { entregadasTotales: 999 })).toBe(false)
+  expect(on('volumen_1000', { entregadasTotales: 1000 })).toBe(true)
+  // rachas
+  expect(on('racha_50', { mejorRacha: 49 })).toBe(false)
+  expect(on('racha_50', { mejorRacha: 50 })).toBe(true)
+  expect(on('racha_100', { mejorRacha: 99 })).toBe(false)
+  expect(on('racha_100', { mejorRacha: 100 })).toBe(true)
+  // podio de meses cerrados
+  expect(on('oro_mes', { mesesOro: 0 })).toBe(false)
+  expect(on('oro_mes', { mesesOro: 1 })).toBe(true)
+  expect(on('podio_mes', { mesesPodio: 0 })).toBe(false)
+  expect(on('podio_mes', { mesesPodio: 1 })).toBe(true)
+  // consistencia
+  expect(on('trio_perfecto', { mesesCien: 2 })).toBe(false)
+  expect(on('trio_perfecto', { mesesCien: 3 })).toBe(true)
+  expect(on('semestre_perfecto', { mesesCien: 5 })).toBe(false)
+  expect(on('semestre_perfecto', { mesesCien: 6 })).toBe(true)
+  // puntualidad
+  expect(on('reloj_suizo', { mesesPuntualesSeguidos: 2 })).toBe(false)
+  expect(on('reloj_suizo', { mesesPuntualesSeguidos: 3 })).toBe(true)
+  // estrellas recibidas
+  expect(on('estrellas_5', { estrellasRecibidasTotal: 4 })).toBe(false)
+  expect(on('estrellas_5', { estrellasRecibidasTotal: 5 })).toBe(true)
+  expect(on('estrellas_10', { estrellasRecibidasTotal: 9 })).toBe(false)
+  expect(on('estrellas_10', { estrellasRecibidasTotal: 10 })).toBe(true)
+  expect(on('estrellas_25', { estrellasRecibidasTotal: 24 })).toBe(false)
+  expect(on('estrellas_25', { estrellasRecibidasTotal: 25 })).toBe(true)
+  // reconocimiento (badges sin XP)
+  expect(on('rec_dado_1', { reconocimientosDados: 0 })).toBe(false)
+  expect(on('rec_dado_1', { reconocimientosDados: 1 })).toBe(true)
+  expect(on('rec_recibido_1', { reconocimientosRecibidos: 1 })).toBe(true)
+  expect(on('rec_recibido_10', { reconocimientosRecibidos: 9 })).toBe(false)
+  expect(on('rec_recibido_10', { reconocimientosRecibidos: 10 })).toBe(true)
+  // recurrentes
+  expect(on('ritmo_impecable', { ritmoImpecable: false })).toBe(false)
+  expect(on('ritmo_impecable', { ritmoImpecable: true })).toBe(true)
+})
+
+// ------------------------------------------------------------
+test('logros 4.11: stats derivadas — podio con acentos, meses al 100 y reloj suizo', () => {
+  const hoy = new Date('2026-07-10T12:00:00')
+
+  // 15 entregas puntuales: 5 en abril, 5 en mayo, 5 en junio (entregadas el
+  // mismo día de la fecha límite → a_tiempo)
+  const pets = ['2026-04', '2026-05', '2026-06'].flatMap((m) =>
+    Array.from({ length: 5 }, (_, i) =>
+      pet({ estatus: 'entregado', fecha: `${m}-1${i}`, fechaEntrega: `${m}-1${i}` })),
+  )
+  const r1 = calcularLogros({
+    nombre: 'Antonio', peticiones: pets, estrellas: [],
+    historial: [
+      { id: 'h1', persona: 'Antonio', mes: '2026-04', xpTotal: 50, nivelAlcanzado: 2, entregadas: 5, cumplimiento: 100, mejorRacha: 5, recompensa: null, recompensaEntregada: false },
+      { id: 'h2', persona: 'Antonio', mes: '2026-05', xpTotal: 50, nivelAlcanzado: 2, entregadas: 5, cumplimiento: 100, mejorRacha: 5, recompensa: null, recompensaEntregada: false },
+      { id: 'h3', persona: 'Antonio', mes: '2026-06', xpTotal: 50, nivelAlcanzado: 2, entregadas: 5, cumplimiento: 100, mejorRacha: 5, recompensa: null, recompensaEntregada: false },
+    ],
+    // el podio llega con acento (BD) y el nombre local sin él → matchNombre
+    podios: [
+      { mes: '2026-05', personas: ['Antônio', 'Brenda', 'Karla'] },
+      { mes: '2026-06', personas: ['Brenda', 'Antonio', 'Karla'] },
+    ],
+    hoy,
+  })
+  expect(r1.stats.mesesOro).toBe(1)               // 1er lugar solo en mayo
+  expect(r1.stats.mesesPodio).toBe(2)             // top 3 en ambos
+  expect(r1.stats.mesesCien).toBe(3)              // trío perfecto ✓
+  expect(r1.stats.mesesPuntualesSeguidos).toBe(3) // reloj suizo ✓
+  const ids1 = r1.desbloqueados.map((l) => l.id)
+  expect(ids1).toContain('oro_mes')
+  expect(ids1).toContain('podio_mes')
+  expect(ids1).toContain('trio_perfecto')
+  expect(ids1).toContain('reloj_suizo')
+  expect(ids1).not.toContain('semestre_perfecto') // solo 3 meses al 100
+
+  // una entrega TARDE en mayo corta la racha de meses puntuales en 1 (junio)
+  const petsConTarde = [...pets, pet({ estatus: 'entregado', fecha: '2026-05-20', fechaEntrega: '2026-05-25' })]
+  const r2 = calcularLogros({ nombre: 'Antonio', peticiones: petsConTarde, estrellas: [], historial: [], hoy })
+  expect(r2.stats.mesesPuntualesSeguidos).toBe(1)
+  expect(r2.desbloqueados.map((l) => l.id)).not.toContain('reloj_suizo')
 })
