@@ -7,11 +7,13 @@
 //   sarai@movdi.mx    rh (rh)            dani@movdi.mx    ceo/dirección
 //   emmanuel@movdi.mx ceo
 //
-// RLS simulada (paridad con las policies reales del proyecto):
+// RLS simulada (paridad con las policies reales del proyecto, cutover 8):
 //   personas:      SELECT solo autenticados (anon → 42501)
-//   peticiones:    SELECT privada→(creador|para) · no privada→(creador|para|ceo|head)
+//   peticiones:    SELECT privada→(creador|para) · no privada→(creador|para|
+//                  dirección|head-con-creador-o-para-de-su-equipo)
 //                  INSERT creado_por=yo OR (origen_recur AND para=yo)
 //                  UPDATE/DELETE creador|para (DELETE solo creador)
+//   recurrentes:   SELECT mías | dirección | head su equipo (cutover 8)
 //   notificaciones INSERT autenticado (policy interim) · SELECT para=yo
 //
 // Endpoints de test: GET /__test/state · POST /__test/reset
@@ -178,9 +180,20 @@ function requester(req) {
 const esAdmin = (p) => p && (p.nivel === 'ceo' || p.nivel === 'head')
 
 // ---- RLS simulada ----
+// Cutover 8 — visibilidad por equipos: ¿`nombre` reporta a `jefe`?
+// (manager_principal o apoyo — la misma relación del semáforo)
+const esDeMiEquipo = (nombre, jefe) => {
+  const p = db.personas.find((x) => x.nombre.toLowerCase() === String(nombre || '').toLowerCase())
+  return !!p && p.activo !== false &&
+    (p.manager_principal === jefe.nombre || (p.managers || []).includes(jefe.nombre))
+}
 function puedeVerPeticion(row, yo) {
+  // privadas: SOLO creador/destinatario — ni heads ni dirección
   if (row.privada) return row.creado_por === yo.nombre || row.para === yo.nombre
-  return row.creado_por === yo.nombre || row.para === yo.nombre || esAdmin(yo)
+  if (row.creado_por === yo.nombre || row.para === yo.nombre) return true
+  if (yo.es_direccion === true) return true
+  if (yo.nivel === 'head') return esDeMiEquipo(row.creado_por, yo) || esDeMiEquipo(row.para, yo)
+  return false
 }
 const puedeInsertarPeticion = (row, yo) =>
   row.creado_por === yo.nombre || (row.origen_recur && row.para === yo.nombre)
@@ -404,10 +417,15 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (tabla === 'recurrentes') {
-      // RLS: SELECT true · INSERT creado_por=yo · UPDATE/DELETE creador o ceo|head
+      // RLS cutover 8: SELECT mías | dirección todas | head su equipo
+      // (ambas direcciones) · INSERT creado_por=yo · UPDATE/DELETE creador o ceo|head
       const puedeAdministrarRec = (r) => r.creado_por === yo.nombre || esAdmin(yo)
       if (req.method === 'GET') {
-        return representar(aplicarFiltros(db.recurrentes, url.searchParams))
+        const visibles = db.recurrentes.filter((r) =>
+          r.creado_por === yo.nombre || r.para === yo.nombre
+          || yo.es_direccion === true
+          || (yo.nivel === 'head' && (esDeMiEquipo(r.creado_por, yo) || esDeMiEquipo(r.para, yo))))
+        return representar(aplicarFiltros(visibles, url.searchParams))
       }
       if (req.method === 'POST') {
         const input = JSON.parse(body || '[]')

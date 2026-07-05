@@ -208,3 +208,73 @@ test('podio: la RPC del mes cerrado responde el top 3 a cualquier rol (y solo es
   expect(podio.length).toBe(3)
   expect(Object.keys(podio[0]).sort()).toEqual(['cumplimiento', 'mes', 'persona'])
 })
+
+// ------------------------------------------------------------
+// Cutover 8 — visibilidad por equipos en peticiones y recurrentes
+// (equipos del mock: Karla es principal de Brenda y apoyo de Antonio;
+// Sarai/Dani/Emmanuel NO reportan a Karla)
+test('equipos · ejecutivo: 0 peticiones y 0 recurrentes ajenas por API', async () => {
+  // Brenda solo participa en p-seed-3 (Antonio→Brenda) y en ninguna recurrente
+  const tk = await token('brenda@movdi.mx')
+  const pets = await apiGet('peticiones', tk)
+  expect(pets.rows.length).toBe(1)
+  expect(pets.rows[0].nombre).toBe('diseñar reel')
+  const recs = await apiGet('recurrentes', tk)
+  expect(recs.rows.length).toBe(0) // los patrones de Antonio ya NO se filtran a otros
+})
+
+// ------------------------------------------------------------
+test('equipos · head: ve su equipo en AMBAS direcciones, no lo de fuera; dirección ve todo', async () => {
+  // fila fuera del equipo de Karla: Dani → Sarai
+  const tkDani = await token('dani@movdi.mx')
+  await fetch(`${MOCK}/rest/v1/peticiones`, {
+    method: 'POST', headers: { Authorization: `Bearer ${tkDani}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      zona: 'general', nombre: 'auditoría rh', creado_por: 'Dani', para: 'Sarai',
+      area: 'rh', fecha: '2026-07-20', prioridad: 'media', estatus: 'pendiente', privada: false,
+    }),
+  })
+  await fetch(`${MOCK}/rest/v1/recurrentes`, {
+    method: 'POST', headers: { Authorization: `Bearer ${tkDani}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      nombre: 'reporte dirección', para: 'Sarai', area: 'rh', frecuencia: 'mensual',
+      dia_semana: null, dia_mes: 1, activa: true, creado_por: 'Dani',
+    }),
+  })
+
+  const tkKarla = await token('karla@movdi.mx')
+  const pets = await apiGet('peticiones', tkKarla)
+  // sí: filas donde el creador o el para son de su equipo (Antonio apoyo, Brenda principal)
+  expect(pets.rows.some((r) => r.nombre === 'reporte semanal')).toBe(true) // Dani→Antonio (para de su equipo)
+  expect(pets.rows.some((r) => r.nombre === 'diseñar reel')).toBe(true)    // Antonio→Brenda (ambos)
+  // no: fuera del equipo
+  expect(pets.rows.some((r) => r.nombre === 'auditoría rh')).toBe(false)
+  const recs = await apiGet('recurrentes', tkKarla)
+  expect(recs.rows.some((r) => r.para === 'Antonio')).toBe(true)   // equipo
+  expect(recs.rows.some((r) => r.para === 'Sarai')).toBe(false)    // fuera
+
+  // dirección: todo
+  const petsD = await apiGet('peticiones', tkDani)
+  expect(petsD.rows.some((r) => r.nombre === 'auditoría rh')).toBe(true)
+  const recsD = await apiGet('recurrentes', tkDani)
+  expect(recsD.rows.some((r) => r.para === 'Sarai')).toBe(true)
+})
+
+// ------------------------------------------------------------
+test('equipos · privadas intactas: el head NO ve una privada de su propio equipo', async () => {
+  // Antonio (equipo de Karla) crea una privada para Brenda (también su equipo)
+  const tk = await token('antonio@movdi.mx')
+  await fetch(`${MOCK}/rest/v1/peticiones`, {
+    method: 'POST', headers: { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      zona: 'general', nombre: 'tema delicado', creado_por: 'Antonio', para: 'Brenda',
+      area: 'imkt', fecha: '2026-07-22', prioridad: 'media', estatus: 'pendiente', privada: true,
+    }),
+  })
+  const tkKarla = await token('karla@movdi.mx')
+  const pets = await apiGet('peticiones', tkKarla)
+  expect(pets.rows.some((r) => r.nombre === 'tema delicado')).toBe(false) // privada: ni el head del equipo
+  const tkBrenda = await token('brenda@movdi.mx')
+  const petsB = await apiGet('peticiones', tkBrenda)
+  expect(petsB.rows.some((r) => r.nombre === 'tema delicado')).toBe(true) // destinataria sí
+})

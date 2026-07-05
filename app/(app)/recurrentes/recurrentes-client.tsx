@@ -48,8 +48,9 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void recargar() }, [recargar])
 
-  // Visibilidad de patrones (paridad renderRecurrentes):
-  // admins ven todas; los demás solo las de sus áreas.
+  // Visibilidad de patrones: la RLS (cutover 8) acota por rol — cada quien
+  // las suyas, heads su equipo, dirección todas. El filtro de áreas para
+  // no-admins se conserva encima (paridad visual con el SPA pre-cutover).
   const visibles = useMemo(() => {
     if (admin) return recurrentes
     const misAreas = yo.areas || []

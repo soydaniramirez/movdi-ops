@@ -211,6 +211,17 @@ feedback; aplicar DESPUÉS de C5b — usa `mi_ve_gamificacion()`).
   UPDATE de `estado/respuesta/compartible_loop` → OK; UPDATE de `mensaje`
   → permission denied (grant de columna).
 
+**C5d. Migración `20260705230000_cutover_visibilidad_equipos.sql`** (cierra la
+fuga de recurrentes reportada por Leonardo y acota a heads; requiere el build
+con la Fase 4.12 — aplicar DESPUÉS del switch C4b: cambia lo que ven heads y
+ejecutivos en el SPA).
+- Estado esperado: con un EJECUTIVO (API directa): `peticiones` → 0 filas donde
+  no sea creador ni destinatario; `recurrentes` → 0 patrones ajenos. Con un
+  HEAD: filas donde el creador O el destinatario reportan a él (principal o
+  apoyo), nada de fuera de su equipo; una PRIVADA de su propio equipo NO le
+  aparece. Con dirección (`es_direccion`): todas. `select es_de_mi_equipo('X')`
+  como anon → sin EXECUTE.
+
 **C6. Migración `20260703231000_cutover_encender_cron_recordatorios.sql`** (el
 interruptor del recordatorio; al final a propósito).
 - Estado esperado: `select jobname, schedule from cron.job` muestra
@@ -246,6 +257,7 @@ interruptor del recordatorio; al final a propósito).
 | C5 | `create policy notif_insert on public.notificaciones for insert to authenticated with check (public.mi_nombre() is not null); grant insert on public.notificaciones to authenticated;` | Vuelve al interim documentado (spoofing entre autenticados posible otra vez — temporal) |
 | C5b | Recrear las policies abiertas: `create policy estrellas_select … using (true);` (ídem `hist_select`, `recomp_select`), `grant update on historial_mensual to authenticated;` y recrear `hist_update` con `mi_es_direccion()` | La columna flag y `recompensa_entregada` pueden QUEDARSE (aditivas); `podio_mes_cerrado` también. La UI 4.8 funciona igual con las policies abiertas |
 | C5c | `drop table public.feedback; drop type public.feedback_categoria; drop type public.feedback_estado; drop function public.feedback_forzar_anonimato(); drop function public.feedback_before_update();` | Aditiva: solo la usa el módulo feedback del Next (que se auto-desactiva con aviso si la tabla no existe) |
+| C5d | Recrear las policies previas: `peticiones_select` con el CASE anterior (head ve todas las no privadas) y `create policy recurrentes_select … using (true);` · `drop function public.es_de_mi_equipo(text);` | Restaura el comportamiento del SPA (incluida la fuga de recurrentes — solo como rollback de emergencia) |
 | C6 | `select cron.unschedule('recordatorio-recurrentes-diario');` | Idempotente; `recurrentes_avisos` conserva el dedup para cuando se reactive |
 | C8 | `git revert` del PR de retiro; recrear site desde el repo | El index.html vive en el historial de git |
 
@@ -267,5 +279,6 @@ lock de C4a); C5/C6 tienen rollback de una línea.
 | 5 | `20260703231000_cutover_encender_cron_recordatorios.sql` | interruptor (pg_cron 07:00 MX) |
 | 6 | `20260705190000_cutover_gamificacion_privacidad.sql` | cambia comportamiento (cierra lecturas de gamificación; requiere build 4.8) — se aplica como C5b |
 | 7 | `20260705220000_cutover_feedback_interno.sql` | aditiva (tabla+enums+trigger+RLS del feedback; requiere build 4.10) — se aplica como C5c, después de la 6 |
+| 8 | `20260705230000_cutover_visibilidad_equipos.sql` | cambia comportamiento (cierra recurrentes_select=true y acota heads a su equipo en ambas tablas; requiere build 4.12) — se aplica como C5d |
 
 (la numeración de C1–C6 usa este orden de aplicación, no el timestamp del archivo)
