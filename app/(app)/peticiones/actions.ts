@@ -346,3 +346,77 @@ export async function eliminarPeticion(input: { id: string }): Promise<Resultado
     return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
   }
 }
+
+// ---------- ocultar/mostrar entregadas (paridad limpiarEntregadas del SPA) ----------
+// Soft-hide personal: agrega/quita MI nombre (derivado de la sesión) en
+// oculta_para. Nunca borra filas — el progreso/stats no se tocan. La RLS
+// (creador OR destinatario) decide qué filas puedo marcar; las demás fallan
+// en silencio, exactamente como en el SPA ("parcialmente exitoso").
+
+export async function ocultarEntregadas(input: {
+  scope: 'general' | 'mis' | 'pedi'
+}): Promise<Resultado<{ ocultadas: number }>> {
+  try {
+    const { supabase, yo } = await getContexto()
+    const { data: rows, error } = await supabase
+      .from('peticiones').select('*').eq('estatus', 'entregado')
+    if (error) return { ok: false, error: error.message }
+
+    let candidatas = (rows ?? []).filter((r) => !(r.oculta_para ?? []).includes(yo.nombre))
+    if (input.scope === 'pedi') candidatas = candidatas.filter((r) => r.creado_por === yo.nombre)
+    else if (input.scope === 'general') candidatas = candidatas.filter((r) => r.zona === 'general' && !r.privada)
+    else candidatas = candidatas.filter((r) => matchNombre(r.para, yo.nombre))
+
+    if (!candidatas.length) return { ok: true, data: { ocultadas: 0 } }
+
+    let ocultadas = 0
+    for (const r of candidatas) {
+      const { data: upd } = await supabase
+        .from('peticiones')
+        .update({ oculta_para: [...(r.oculta_para ?? []), yo.nombre] })
+        .eq('id', r.id)
+        .select('id')
+      if (upd?.length) ocultadas++
+    }
+    return { ok: true, data: { ocultadas } }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
+  }
+}
+
+export async function ocultarPeticion(input: { id: string }): Promise<Resultado> {
+  try {
+    const { supabase, yo } = await getContexto()
+    const { data: r } = await supabase.from('peticiones').select('*').eq('id', input.id).maybeSingle()
+    if (!r) return { ok: false, error: 'petición no encontrada' }
+    if ((r.oculta_para ?? []).includes(yo.nombre)) return { ok: true }
+    const { data: upd, error } = await supabase
+      .from('peticiones')
+      .update({ oculta_para: [...(r.oculta_para ?? []), yo.nombre] })
+      .eq('id', input.id)
+      .select('id')
+    if (error) return { ok: false, error: error.message }
+    if (!upd?.length) return { ok: false, error: 'no tienes permiso para ocultar esta petición' }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
+  }
+}
+
+export async function desocultarPeticion(input: { id: string }): Promise<Resultado> {
+  try {
+    const { supabase, yo } = await getContexto()
+    const { data: r } = await supabase.from('peticiones').select('*').eq('id', input.id).maybeSingle()
+    if (!r) return { ok: false, error: 'petición no encontrada' }
+    const { data: upd, error } = await supabase
+      .from('peticiones')
+      .update({ oculta_para: (r.oculta_para ?? []).filter((n: string) => n !== yo.nombre) })
+      .eq('id', input.id)
+      .select('id')
+    if (error) return { ok: false, error: error.message }
+    if (!upd?.length) return { ok: false, error: 'no tienes permiso para modificar esta petición' }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
+  }
+}

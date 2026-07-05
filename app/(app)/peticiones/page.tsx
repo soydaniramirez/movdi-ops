@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { mapPersonaRow } from '@/lib/peticiones'
+import { mapPersonaConManagers } from '@/lib/equipo'
 import PeticionesClient from './peticiones-client'
 
 // Shell del módulo: resuelve la persona de la sesión en el servidor.
@@ -21,5 +21,5 @@ export default async function PeticionesPage() {
     )
   }
 
-  return <PeticionesClient yo={mapPersonaRow(row)} />
+  return <PeticionesClient yo={mapPersonaConManagers(row)} />
 }

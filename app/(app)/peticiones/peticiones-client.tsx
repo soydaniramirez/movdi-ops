@@ -5,12 +5,22 @@ import { createClient } from '@/lib/supabase/client'
 import {
   AREAS_LABEL, AREAS_VALIDAS, type ModoAsignacion,
   type Persona, type Peticion,
-  destinatariosPorModo, diasHasta, dx, isAdmin, labelFecha,
-  mapPeticionRow, mapPersonaRow, matchNombre, personaDisponible, puedoVerPeticion,
+  destinatariosPorModo, diasHasta, dx, fechaCorta, isAdmin, labelFecha,
+  mapPeticionRow, matchNombre, personaDisponible, puedoVerPeticion,
 } from '@/lib/peticiones'
+import { type Recurrente, mapRecurRow, obtenerInstanciasRecur } from '@/lib/recurrentes'
 import {
-  cambiarEstatus, cambiarFecha, crearPeticion, eliminarPeticion,
-  entregarPeticion, moverInstancia,
+  type PersonaConManagers, bloquesEquipo, calcularSemaforo, esDireccion,
+  mapPersonaConManagers, ordenSemaforo,
+} from '@/lib/equipo'
+import {
+  type HistorialMes, calcularLeaderboardMes, competeEnLeaderboard,
+  mapHistorialRow, mesAnteriorStr,
+} from '@/lib/gamificacion'
+import {
+  cambiarEstatus, cambiarFecha, crearPeticion, desocultarPeticion,
+  eliminarPeticion, entregarPeticion, moverInstancia, ocultarEntregadas,
+  ocultarPeticion,
 } from './actions'
 
 type Tab = 'general' | 'mis' | 'pedi' | 'recur'
@@ -22,12 +32,41 @@ const PRIO_COLOR: Record<string, string> = {
   baja: 'text-neutral-400 border-neutral-600',
 }
 
-export default function PeticionesClient({ yo }: { yo: Persona }) {
-  const [personas, setPersonas] = useState<Persona[]>([])
+// Colores por área (paridad visual .tag.area-* del SPA, adaptado a la paleta)
+const AREA_COLOR: Record<string, string> = {
+  imkt: 'border-pink-400/40 text-pink-300',
+  pm: 'border-sky-400/40 text-sky-300',
+  legal: 'border-violet-400/40 text-violet-300',
+  admi: 'border-teal-400/40 text-teal-300',
+  ventas: 'border-lime-400/40 text-lime-300',
+  digital: 'border-cyan-400/40 text-cyan-300',
+  rh: 'border-rose-400/40 text-rose-300',
+  heads: 'border-amber-400/40 text-amber-300',
+}
+
+const SEM_COLOR: Record<'r' | 'y' | 'g' | 'x', string> = {
+  r: 'bg-red-500',
+  y: 'bg-amber-400',
+  g: 'bg-emerald-500',
+  x: 'bg-neutral-600',
+}
+
+const estaOcultaParaMi = (t: Peticion, nombre: string) => (t.ocultaPara ?? []).includes(nombre)
+
+export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
+  const [personas, setPersonas] = useState<PersonaConManagers[]>([])
   const [peticiones, setPeticiones] = useState<Peticion[]>([])
+  const [recurrentes, setRecurrentes] = useState<Recurrente[]>([])
+  const [historial, setHistorial] = useState<HistorialMes[]>([])
   const [cargando, setCargando] = useState(true)
   const [tab, setTab] = useState<Tab>('general')
   const [filtro, setFiltro] = useState<Filtro>('todas')
+  // filtro por persona desde el semáforo (paridad verPersona/porpersona del SPA)
+  const [personaFiltro, setPersonaFiltro] = useState<string | null>(null)
+  // toggles "mostrar ocultas" por vista (paridad mostrarOcultasGeneral/Mis/Pedi)
+  const [mostrarOcultas, setMostrarOcultas] = useState<Record<'general' | 'mis' | 'pedi', boolean>>({
+    general: false, mis: false, pedi: false,
+  })
   const [aviso, setAviso] = useState<string | null>(null)
 
   // modales
@@ -41,12 +80,16 @@ export default function PeticionesClient({ yo }: { yo: Persona }) {
   // ---------- lecturas client-side (anon key + RLS) ----------
   const recargar = useCallback(async () => {
     const sb = createClient()
-    const [pers, pets] = await Promise.all([
+    const [pers, pets, recs, hist] = await Promise.all([
       sb.from('personas').select('*').order('nivel'),
       sb.from('peticiones').select('*').order('fecha'),
+      sb.from('recurrentes').select('*'),
+      sb.from('historial_mensual').select('*'),
     ])
-    if (!pers.error) setPersonas((pers.data ?? []).map(mapPersonaRow))
+    if (!pers.error) setPersonas((pers.data ?? []).map(mapPersonaConManagers))
     if (!pets.error) setPeticiones((pets.data ?? []).map(mapPeticionRow))
+    if (!recs.error) setRecurrentes((recs.data ?? []).map(mapRecurRow))
+    if (!hist.error) setHistorial((hist.data ?? []).map(mapHistorialRow))
     setCargando(false)
   }, [])
 
@@ -56,17 +99,62 @@ export default function PeticionesClient({ yo }: { yo: Persona }) {
   useEffect(() => { void recargar() }, [recargar])
 
   // ---------- lista filtrada (paridad renderGeneral/renderMis/renderPedi) ----------
-  const lista = useMemo(() => {
+  const scopeOcultas: 'general' | 'mis' | 'pedi' | null = tab === 'recur' ? null : tab
+
+  const { lista, ocultasCount } = useMemo(() => {
     let l = peticiones.filter((t) => puedoVerPeticion(t, yo))
     if (tab === 'recur') l = l.filter((t) => t.origenRecur)
     else l = l.filter((t) => !t.origenRecur)
     if (tab === 'mis') l = l.filter((t) => matchNombre(t.para, yo.nombre))
     if (tab === 'pedi') l = l.filter((t) => t.creadoPor === yo.nombre)
+    if (tab === 'general' && personaFiltro) l = l.filter((t) => matchNombre(t.para, personaFiltro))
     if (filtro === 'vencidas') l = l.filter((t) => diasHasta(t.fecha) < 0 && t.estatus !== 'entregado')
     else if (filtro === 'semana') l = l.filter((t) => { const d = diasHasta(t.fecha); return d >= 0 && d <= 7 && t.estatus !== 'entregado' })
     else if ((AREAS_VALIDAS as readonly string[]).includes(filtro)) l = l.filter((t) => t.area === filtro)
-    return l
-  }, [peticiones, tab, filtro, yo])
+    // ocultas (paridad SPA): contarlas antes de filtrarlas; el toggle las re-muestra
+    const nOcultas = scopeOcultas ? l.filter((t) => estaOcultaParaMi(t, yo.nombre)).length : 0
+    if (scopeOcultas && !mostrarOcultas[scopeOcultas]) l = l.filter((t) => !estaOcultaParaMi(t, yo.nombre))
+    // orden de renderTabla: entregadas al final, luego por fecha ascendente
+    l = l.slice().sort((a, b) => {
+      const ea = a.estatus === 'entregado' ? 1 : 0
+      const eb = b.estatus === 'entregado' ? 1 : 0
+      if (ea !== eb) return ea - eb
+      return a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0
+    })
+    return { lista: l, ocultasCount: nOcultas }
+  }, [peticiones, tab, filtro, yo, personaFiltro, mostrarOcultas, scopeOcultas])
+
+  // ---------- semáforo lateral (paridad renderSide: solo vista general, ceo/head) ----------
+  const bloques = useMemo(() => {
+    if (tab !== 'general') return []
+    const visiblesParaSem = peticiones.filter(
+      (t) => !t.privada || t.creadoPor === yo.nombre || matchNombre(t.para, yo.nombre),
+    )
+    return bloquesEquipo(yo, personas).map((g) => ({
+      titulo: g.titulo,
+      items: g.personas
+        .map((p) => calcularSemaforo(
+          p,
+          visiblesParaSem,
+          obtenerInstanciasRecur({ recurrentes, peticiones, personas, nombre: p.nombre }),
+        ))
+        .sort(ordenSemaforo),
+    }))
+  }, [tab, peticiones, personas, recurrentes, yo])
+
+  // card "peticiones privadas 🔒" (solo dirección, paridad renderSide)
+  const rhCount = useMemo(
+    () => peticiones.filter((t) => t.privada && t.estatus !== 'entregado' && puedoVerPeticion(t, yo)).length,
+    [peticiones, yo],
+  )
+
+  // banner "📌 tareas asignadas a ti" (paridad renderGeneral)
+  const misPendientes = useMemo(
+    () => peticiones.filter((t) =>
+      matchNombre(t.para, yo.nombre) && puedoVerPeticion(t, yo) && !t.origenRecur && t.estatus !== 'entregado',
+    ).length,
+    [peticiones, yo],
+  )
 
   const kpis = useMemo(() => {
     const visibles = peticiones.filter((t) => puedoVerPeticion(t, yo) && !t.origenRecur)
@@ -88,7 +176,7 @@ export default function PeticionesClient({ yo }: { yo: Persona }) {
 
   return (
     <main className="min-h-screen bg-neutral-950 px-6 py-8 text-neutral-100">
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto max-w-6xl">
         <header className="flex items-center justify-between border-b border-neutral-800 pb-4">
           <div>
             <div className="font-mono text-xs uppercase tracking-widest text-neutral-500">movdi · ops</div>
@@ -103,6 +191,9 @@ export default function PeticionesClient({ yo }: { yo: Persona }) {
           </button>
         </header>
 
+        {/* 🏆 podio del mes anterior (primeros 5 días, paridad renderBannerPodio) */}
+        <BannerPodio yo={yo} personas={personas} peticiones={peticiones} historial={historial} />
+
         {/* KPIs (paridad calcKpis básica) */}
         <section className="mt-6 grid grid-cols-4 gap-3">
           {([['pendientes', kpis.pendientes], ['vencidas', kpis.vencidas], ['esta semana', kpis.semana], ['entregadas', kpis.entregadas]] as const).map(([lab, val]) => (
@@ -112,6 +203,23 @@ export default function PeticionesClient({ yo }: { yo: Persona }) {
             </div>
           ))}
         </section>
+
+        {/* 📌 banner tareas asignadas a mí (paridad renderGeneral) */}
+        {tab === 'general' && misPendientes > 0 && (
+          <button
+            onClick={() => setTab('mis')}
+            data-testid="banner-mis-pendientes"
+            className="mt-4 flex w-full items-center justify-between border border-orange-600/30 bg-orange-600/10 px-4 py-3 text-left hover:bg-orange-600/15"
+          >
+            <span>
+              <span className="block font-mono text-[11px] uppercase tracking-widest text-orange-500">📌 tareas asignadas a ti</span>
+              <span className="mt-0.5 block text-[13px] text-neutral-300">
+                tienes <strong className="text-neutral-100">{misPendientes}</strong> {misPendientes === 1 ? 'petición pendiente' : 'peticiones pendientes'} esperando tu acción
+              </span>
+            </span>
+            <span className="font-mono text-xs text-orange-500">ver mis peticiones →</span>
+          </button>
+        )}
 
         {/* Tabs + filtros */}
         <nav className="mt-6 flex flex-wrap items-center gap-2">
@@ -132,35 +240,121 @@ export default function PeticionesClient({ yo }: { yo: Persona }) {
             ))}
         </nav>
 
+        {/* filtro por persona activo (viene del semáforo) */}
+        {tab === 'general' && personaFiltro && (
+          <p className="mt-3 flex items-center gap-2 font-mono text-[11px] text-neutral-400">
+            viendo peticiones de <strong className="text-orange-500">{personaFiltro}</strong>
+            <button onClick={() => setPersonaFiltro(null)} data-testid="quitar-filtro-persona"
+              className="border border-neutral-700 px-1.5 text-neutral-400 hover:border-neutral-500 hover:text-neutral-200">
+              ✕ quitar filtro
+            </button>
+          </p>
+        )}
+
+        {/* controles de ocultas (paridad SPA: general/mis/pedi) */}
+        {scopeOcultas && (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {ocultasCount > 0 && (
+              <button
+                onClick={() => setMostrarOcultas((m) => ({ ...m, [scopeOcultas]: !m[scopeOcultas] }))}
+                data-testid="btn-toggle-ocultas"
+                className="border border-neutral-700 px-2.5 py-1 font-mono text-[11px] text-neutral-300 hover:border-neutral-500"
+              >
+                {mostrarOcultas[scopeOcultas] ? `🙈 ocultar (${ocultasCount})` : `👁 mostrar ocultas (${ocultasCount})`}
+              </button>
+            )}
+            <button
+              onClick={async () => {
+                if (!confirm('¿ocultar todas las peticiones entregadas de tu vista?\n\nseguirán contando para tu progreso pero ya no se mostrarán aquí. puedes volver a mostrarlas con el botón "👁 mostrar ocultas".')) return
+                await accion(() => ocultarEntregadas({ scope: scopeOcultas }))
+              }}
+              data-testid="btn-ocultar-entregadas"
+              title="oculta de tu vista las que ya están entregadas · siguen contando en tu progreso"
+              className="border border-neutral-700 px-2.5 py-1 font-mono text-[11px] text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"
+            >
+              🙈 ocultar entregadas
+            </button>
+          </div>
+        )}
+
         {aviso && (
           <p role="alert" className="mt-4 border border-orange-600/40 bg-orange-600/10 px-3 py-2 font-mono text-xs text-orange-500">
             {aviso}
           </p>
         )}
 
-        {/* Lista */}
-        <section className="mt-6 space-y-3" data-testid="lista-peticiones">
-          {cargando && <p className="font-mono text-xs text-neutral-500">cargando…</p>}
-          {!cargando && lista.length === 0 && (
-            <p className="font-mono text-xs text-neutral-500">no hay peticiones en esta vista</p>
+        {/* Lista (tabla, paridad renderTabla) + semáforo lateral (paridad renderSide) */}
+        <div className="mt-6 flex items-start gap-6">
+          <section className="min-w-0 flex-1" data-testid="lista-peticiones">
+            {cargando && <p className="font-mono text-xs text-neutral-500">cargando…</p>}
+            {!cargando && lista.length === 0 && (
+              <p className="font-mono text-xs text-neutral-500">no hay peticiones en esta vista</p>
+            )}
+            {lista.length > 0 && (
+              <div className="overflow-x-auto border border-neutral-800">
+                <table className="w-full border-collapse text-left">
+                  <thead>
+                    <tr className="border-b border-neutral-800 bg-neutral-900">
+                      {['petición', 'de → para', 'área', 'fecha', 'prio', 'estatus', ''].map((h, i) => (
+                        <th key={i} className="px-3 py-2 font-mono text-[10px] font-normal uppercase tracking-wider text-neutral-500">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lista.map((t) => (
+                      <FilaPeticion
+                        key={t.id}
+                        t={t}
+                        yo={yo}
+                        admin={admin}
+                        onEstatus={(nuevo) => accion(() => cambiarEstatus({ id: t.id, estatus: nuevo }))}
+                        onEntregar={() => setModalEntrega(t)}
+                        onCambiarFecha={() => setModalFecha(t)}
+                        onMover={() => setModalMover(t)}
+                        onEliminar={async () => {
+                          if (!confirm('¿eliminar esta petición?')) return
+                          await accion(() => eliminarPeticion({ id: t.id }))
+                        }}
+                        onOcultar={() => accion(() => ocultarPeticion({ id: t.id }))}
+                        onDesocultar={() => accion(() => desocultarPeticion({ id: t.id }))}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          {(bloques.length > 0 || (tab === 'general' && esDireccion(yo))) && (
+            <aside className="hidden w-64 shrink-0 space-y-5 lg:block" data-testid="semaforo">
+              {bloques.map((b) => (
+                <div key={b.titulo}>
+                  <h3 className="font-mono text-[11px] uppercase tracking-wider text-neutral-400">
+                    {b.titulo} <span className="text-neutral-600">· {b.items.length}</span>
+                  </h3>
+                  <div className="mt-2 space-y-1">
+                    {b.items.map(({ p, total, estado }) => (
+                      <button key={p.id} data-testid="semaforo-item"
+                        onClick={() => setPersonaFiltro((f) => (f === p.nombre ? null : p.nombre))}
+                        className={`flex w-full items-center gap-2 border px-2.5 py-1.5 text-left hover:border-neutral-600 ${personaFiltro === p.nombre ? 'border-orange-600/60 bg-orange-600/10' : 'border-neutral-800 bg-neutral-900'}`}>
+                        <span data-testid={`sem-${estado}`} className={`h-2.5 w-2.5 rounded-full ${SEM_COLOR[estado]}`} />
+                        <span className="flex-1 truncate text-xs">{p.nombre} {p.apellido}</span>
+                        <span className="font-mono text-[10px] text-neutral-500">{total}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {tab === 'general' && esDireccion(yo) && (
+                <div className="border border-red-500/30 bg-red-500/5 px-3 py-2.5" data-testid="card-privadas">
+                  <div className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">peticiones privadas 🔒</div>
+                  <div className="mt-1 text-2xl font-semibold">{rhCount}</div>
+                  <div className="font-mono text-[10px] text-neutral-500">peticiones confidenciales activas</div>
+                </div>
+              )}
+            </aside>
           )}
-          {lista.map((t) => (
-            <CardPeticion
-              key={t.id}
-              t={t}
-              yo={yo}
-              admin={admin}
-              onEstatus={(nuevo) => accion(() => cambiarEstatus({ id: t.id, estatus: nuevo }))}
-              onEntregar={() => setModalEntrega(t)}
-              onCambiarFecha={() => setModalFecha(t)}
-              onMover={() => setModalMover(t)}
-              onEliminar={async () => {
-                if (!confirm('¿eliminar esta petición?')) return
-                await accion(() => eliminarPeticion({ id: t.id }))
-              }}
-            />
-          ))}
-        </section>
+        </div>
       </div>
 
       {modalCrear && (
@@ -214,7 +408,73 @@ export default function PeticionesClient({ yo }: { yo: Persona }) {
 }
 
 // ============================================================
-function CardPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onMover, onEliminar }: {
+// 🏆 Banner de podio del mes anterior (paridad renderBannerPodio):
+// primeros 5 días del mes; snapshot oficial de historial_mensual si el mes
+// fue cerrado, cálculo provisional si no; dismiss por mes en localStorage.
+function BannerPodio({ yo, personas, peticiones, historial }: {
+  yo: PersonaConManagers
+  personas: PersonaConManagers[]
+  peticiones: Peticion[]
+  historial: HistorialMes[]
+}) {
+  const [dismissed, setDismissed] = useState(true) // hasta leer localStorage
+  const mesActual = new Date().toISOString().slice(0, 7)
+  const dismissKey = `movdi-podio-dismissed-${yo.nombre}-${mesActual}`
+
+  // localStorage solo en el cliente (evita mismatch de hidratación); el
+  // setState síncrono es intencional: sincroniza con un sistema externo.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    try { setDismissed(localStorage.getItem(dismissKey) === '1') } catch { setDismissed(false) }
+  }, [dismissKey])
+
+  const diaDelMes = new Date().getDate()
+  if (diaDelMes > 5 || dismissed) return null
+  if (!competeEnLeaderboard(yo) && !esDireccion(yo) && yo.nivel !== 'head') return null
+
+  const mesAnt = mesAnteriorStr()
+  const mesAntNombre = new Date(mesAnt + '-02T00:00:00').toLocaleDateString('es-MX', { month: 'long' })
+
+  // snapshot oficial (cierre de mes por dirección) > cálculo provisional
+  const snapshot = historial.filter((h) => h.mes === mesAnt).sort((a, b) => b.xpTotal - a.xpTotal)
+  const esOficial = snapshot.length > 0
+  const top3 = esOficial
+    ? snapshot.slice(0, 3).map((s) => ({ nombre: s.persona, porcentaje: s.cumplimiento }))
+    : calcularLeaderboardMes({ mes: mesAnt, personas, peticiones }).ranking
+        .slice(0, 3).map((r) => ({ nombre: r.persona.nombre, porcentaje: r.porcentaje }))
+  if (top3.length === 0) return null
+
+  return (
+    <section data-testid="banner-podio"
+      className="mt-4 flex flex-wrap items-center gap-6 border border-amber-400/30 bg-gradient-to-br from-orange-600/10 to-amber-400/10 px-6 py-4">
+      <div className="min-w-[200px] flex-1">
+        <div className="font-mono text-[11px] uppercase tracking-widest text-amber-400">
+          🏆 podio de {mesAntNombre}{!esOficial && <span className="text-neutral-500"> · provisional</span>}
+        </div>
+        <div className="mt-1 text-sm text-neutral-300">felicidades al equipo — estos fueron los más constantes del mes pasado</div>
+      </div>
+      <div className="flex flex-wrap gap-5">
+        {top3.map((r, i) => (
+          <div key={r.nombre} className="min-w-[90px] text-center">
+            <div className="text-2xl leading-none">{i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</div>
+            <div className="mt-1 text-[13px]">{r.nombre}</div>
+            <div className="font-mono text-[10px] uppercase text-neutral-500">{r.porcentaje}%</div>
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={() => { try { localStorage.setItem(dismissKey, '1') } catch { /* sin storage */ } setDismissed(true) }}
+        className="border border-neutral-700 px-2.5 py-1.5 font-mono text-[11px] uppercase text-neutral-400 hover:border-neutral-500 hover:text-neutral-200">
+        ✕ cerrar
+      </button>
+    </section>
+  )
+}
+
+// ============================================================
+// Fila de la tabla (paridad renderFila del SPA: petición · de → para ·
+// área · fecha · prio · estatus · acciones)
+function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onMover, onEliminar, onOcultar, onDesocultar }: {
   t: Peticion
   yo: Persona
   admin: boolean
@@ -223,91 +483,133 @@ function CardPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
   onCambiarFecha: () => void
   onMover: () => void
   onEliminar: () => void
+  onOcultar: () => void
+  onDesocultar: () => void
 }) {
   const soyCreador = t.creadoPor === yo.nombre
   const soyDest = matchNombre(t.para, yo.nombre)
   const puedoActuar = soyCreador || soyDest
   const lf = labelFecha(t)
   const vencida = t.estatus !== 'entregado' && diasHasta(t.fecha) < 0
+  const oculta = estaOcultaParaMi(t, yo.nombre)
+
+  const btn = 'border px-2 py-0.5 font-mono text-[10px] whitespace-nowrap'
 
   return (
-    <article data-testid="card-peticion" className="border border-neutral-800 bg-neutral-900 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-semibold">
-            {t.privada && <span title="privada · solo creador y destinatario">🔒 </span>}
-            {t.nombre}
-            {t.grupoId && <span className="ml-2 font-mono text-[10px] text-neutral-500">grupo</span>}
-            {t.origenRecur && <span className="ml-2 font-mono text-[10px] text-amber-400">↻ recurrente</span>}
-          </h3>
-          <p className="mt-0.5 font-mono text-[11px] text-neutral-500">
-            de <strong className="text-neutral-300">{t.creadoPor}</strong> para{' '}
-            <strong className="text-neutral-300">{t.para}</strong>
-            {t.area && <> · <span className="uppercase">{AREAS_LABEL[t.area] ?? t.area}</span></>}
-          </p>
-          {t.descripcion && <p className="mt-1 text-xs text-neutral-400">{t.descripcion}</p>}
-          {t.motivoCambioFecha && (
-            <p className="mt-1 border-l-2 border-amber-400/50 pl-2 font-mono text-[11px] text-amber-400/90">
-              fecha movida{t.fechaOriginal ? ` (original: ${t.fechaOriginal})` : ''} · {t.motivoCambioFecha}
-              {t.extensionJustificada === false && ' · cuenta contra la fecha original'}
-            </p>
-          )}
+    <tr data-testid="card-peticion"
+      className={`border-b border-neutral-800/70 align-top hover:bg-neutral-900/60 ${oculta ? 'opacity-50' : ''}`}>
+      {/* petición: nombre + tags + descripción + banners */}
+      <td className="max-w-[26rem] px-3 py-2.5">
+        <div className="text-sm font-semibold">
+          {oculta && <span className="mr-1 text-[11px] text-neutral-500" title="oculta de tu vista">🙈</span>}
+          {t.privada && <span title="privada · solo creador y destinatario">🔒 </span>}
+          {t.nombre}
+          {t.origenRecur && <span className="ml-2 whitespace-nowrap font-mono text-[10px] text-amber-400" title="instancia de recurrente">↻ recurrente</span>}
+          {t.grupoId && <span className="ml-2 font-mono text-[10px] text-neutral-500">grupo</span>}
           {t.estatus === 'entregado' && (t.linkEntrega || t.notaEntrega) && (
-            <p className="mt-1 font-mono text-[11px] text-emerald-400/90" data-testid="evidencia">
-              evidencia: {t.linkEntrega && <a className="underline" href={t.linkEntrega} target="_blank" rel="noreferrer">{t.linkEntrega}</a>}
-              {t.linkEntrega && t.notaEntrega && ' · '}
-              {t.notaEntrega}
-            </p>
+            <span className="ml-1 text-[11px] text-emerald-400" title="con evidencia de entrega">📎</span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className={`border px-2 py-0.5 font-mono text-[10px] uppercase ${PRIO_COLOR[t.prioridad]}`}>{t.prioridad}</span>
-          <span className={`px-2 py-0.5 font-mono text-[10px] ${t.estatus === 'entregado' ? 'text-emerald-400' : vencida ? 'text-red-400' : 'text-neutral-300'}`}>
-            {lf}
-          </span>
-          <span className="font-mono text-[10px] uppercase text-neutral-500">{t.estatus}</span>
+        {t.descripcion && <p className="mt-0.5 text-xs text-neutral-400">{t.descripcion}</p>}
+        {t.motivoCambioFecha && (
+          <p className="mt-1 border-l-2 border-amber-400/50 pl-2 font-mono text-[11px] text-amber-400/90">
+            fecha movida{t.fechaOriginal ? ` (original: ${t.fechaOriginal})` : ''} · {t.motivoCambioFecha}
+            {t.extensionJustificada === false && ' · cuenta contra la fecha original'}
+          </p>
+        )}
+        {t.estatus === 'entregado' && (t.linkEntrega || t.notaEntrega) && (
+          <p className="mt-1 font-mono text-[11px] text-emerald-400/90" data-testid="evidencia">
+            evidencia: {t.linkEntrega && <a className="underline" href={t.linkEntrega} target="_blank" rel="noreferrer">{t.linkEntrega}</a>}
+            {t.linkEntrega && t.notaEntrega && ' · '}
+            {t.notaEntrega}
+          </p>
+        )}
+      </td>
+      {/* de → para */}
+      <td className="whitespace-nowrap px-3 py-2.5">
+        <span className="font-mono text-[11px] text-neutral-500">{t.creadoPor}</span>
+        <span className="text-neutral-500"> → </span>
+        <strong className="text-[13px] text-neutral-200">{t.para}</strong>
+      </td>
+      {/* área */}
+      <td className="whitespace-nowrap px-3 py-2.5">
+        {t.area
+          ? <span className={`border px-2 py-0.5 font-mono text-[10px] uppercase ${AREA_COLOR[t.area] ?? 'border-neutral-700 text-neutral-400'}`}>{AREAS_LABEL[t.area] ?? t.area}</span>
+          : <span className="font-mono text-[10px] text-neutral-600">—</span>}
+      </td>
+      {/* fecha + sub (vencida Nd en rojo, paridad date-cell) */}
+      <td className="whitespace-nowrap px-3 py-2.5">
+        <div className={`text-[13px] ${t.estatus === 'entregado' ? 'text-emerald-400' : vencida ? 'font-medium text-red-400' : 'text-neutral-300'}`}>
+          {fechaCorta(t.fecha)}
         </div>
-      </div>
-
-      {puedoActuar && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {t.estatus !== 'entregado' && (
-            <>
-              <button onClick={onEntregar} data-testid="btn-entregar"
-                className="border border-emerald-500/50 px-2.5 py-1 font-mono text-[11px] text-emerald-400 hover:bg-emerald-500/10">
-                entregar ✓
-              </button>
-              <button onClick={() => onEstatus(t.estatus === 'proceso' ? 'pendiente' : 'proceso')}
-                className="border border-neutral-700 px-2.5 py-1 font-mono text-[11px] text-neutral-300 hover:border-neutral-500">
-                {t.estatus === 'proceso' ? '↩ a pendiente' : '▶ en proceso'}
-              </button>
-              <button onClick={onCambiarFecha} data-testid="btn-cambiar-fecha"
-                className="border border-neutral-700 px-2.5 py-1 font-mono text-[11px] text-neutral-300 hover:border-neutral-500">
-                cambiar fecha
-              </button>
-            </>
-          )}
-          {t.estatus === 'entregado' && (
-            <button onClick={() => onEstatus('pendiente')}
-              className="border border-neutral-700 px-2.5 py-1 font-mono text-[11px] text-neutral-300 hover:border-neutral-500">
-              reabrir
-            </button>
-          )}
-          {t.origenRecur && (soyCreador || admin) && t.estatus !== 'entregado' && (
-            <button onClick={onMover} data-testid="btn-mover-instancia"
-              className="border border-amber-400/50 px-2.5 py-1 font-mono text-[11px] text-amber-400 hover:bg-amber-400/10">
-              mover instancia
-            </button>
-          )}
-          {soyCreador && (
-            <button onClick={onEliminar}
-              className="border border-red-500/40 px-2.5 py-1 font-mono text-[11px] text-red-400 hover:bg-red-500/10">
-              eliminar
-            </button>
-          )}
+        <div className={`font-mono text-[10px] ${t.estatus === 'entregado' ? 'text-emerald-400/80' : vencida ? 'text-red-400' : 'text-neutral-500'}`}>
+          {lf}
         </div>
-      )}
-    </article>
+      </td>
+      {/* prioridad */}
+      <td className="whitespace-nowrap px-3 py-2.5">
+        <span className={`border px-2 py-0.5 font-mono text-[10px] uppercase ${PRIO_COLOR[t.prioridad]}`}>{t.prioridad}</span>
+      </td>
+      {/* estatus */}
+      <td className="whitespace-nowrap px-3 py-2.5">
+        <span className={`font-mono text-[10px] uppercase ${t.estatus === 'entregado' ? 'text-emerald-400' : t.estatus === 'proceso' ? 'text-amber-400' : 'text-neutral-400'}`}>
+          {t.estatus === 'entregado' ? 'entregado ✓' : t.estatus === 'proceso' ? 'en proceso' : t.estatus}
+        </span>
+      </td>
+      {/* acciones */}
+      <td className="px-3 py-2.5">
+        {puedoActuar && (
+          <div className="flex max-w-[15rem] flex-wrap gap-1.5">
+            {t.estatus !== 'entregado' && (
+              <>
+                <button onClick={onEntregar} data-testid="btn-entregar"
+                  className={`${btn} border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10`}>
+                  entregar ✓
+                </button>
+                <button onClick={() => onEstatus(t.estatus === 'proceso' ? 'pendiente' : 'proceso')}
+                  className={`${btn} border-neutral-700 text-neutral-300 hover:border-neutral-500`}>
+                  {t.estatus === 'proceso' ? '↩ a pendiente' : '▶ en proceso'}
+                </button>
+                <button onClick={onCambiarFecha} data-testid="btn-cambiar-fecha"
+                  className={`${btn} border-neutral-700 text-neutral-300 hover:border-neutral-500`}>
+                  cambiar fecha
+                </button>
+              </>
+            )}
+            {t.estatus === 'entregado' && (
+              <button onClick={() => onEstatus('pendiente')}
+                className={`${btn} border-neutral-700 text-neutral-300 hover:border-neutral-500`}>
+                reabrir
+              </button>
+            )}
+            {t.estatus === 'entregado' && !oculta && (
+              <button onClick={onOcultar} data-testid="btn-ocultar" title="ocultar de mi vista · sigue contando en el progreso"
+                className={`${btn} border-neutral-700 text-neutral-400 hover:border-neutral-500`}>
+                🙈
+              </button>
+            )}
+            {oculta && (
+              <button onClick={onDesocultar} data-testid="btn-desocultar" title="mostrar de nuevo"
+                className={`${btn} border-neutral-700 text-neutral-400 hover:border-neutral-500`}>
+                👁
+              </button>
+            )}
+            {t.origenRecur && (soyCreador || admin) && t.estatus !== 'entregado' && (
+              <button onClick={onMover} data-testid="btn-mover-instancia"
+                className={`${btn} border-amber-400/50 text-amber-400 hover:bg-amber-400/10`}>
+                mover instancia
+              </button>
+            )}
+            {soyCreador && (
+              <button onClick={onEliminar}
+                className={`${btn} border-red-500/40 text-red-400 hover:bg-red-500/10`}>
+                eliminar
+              </button>
+            )}
+          </div>
+        )}
+      </td>
+    </tr>
   )
 }
 
