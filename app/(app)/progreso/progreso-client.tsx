@@ -286,9 +286,29 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
           </section>
         )}
 
-        {/* Cierre de mes (solo dirección) + historial */}
+        {/* Cierre de mes (solo dirección): SIEMPRE visible con su estado —
+            pendiente (botón) / ya cerrado (informativo) / sin actividad.
+            El cierre opera sobre el MES ANTERIOR (paridad SPA). */}
+        {soyDireccion && cerrado && (
+          <section data-testid="cierre-hecho" className="rounded-2xl border border-movdi-verde/30 bg-movdi-verde/5 p-5">
+            <h2 className="font-mono text-[11px] uppercase tracking-widest text-movdi-verde">📋 cierre de mes</h2>
+            <p className="mt-2 text-sm text-neutral-300">
+              <strong className="text-movdi-verde">{mesAnt} ya está cerrado ✓</strong> ·{' '}
+              {historial.filter((h) => h.mes === mesAnt).length} persona(s) archivadas.
+              el cierre de <strong>{mes}</strong> estará disponible a partir del 1º del mes siguiente.
+            </p>
+          </section>
+        )}
+        {soyDireccion && !cerrado && preview.length === 0 && !cargando && (
+          <section data-testid="cierre-sin-actividad" className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
+            <h2 className="font-mono text-[11px] uppercase tracking-widest text-neutral-400">📋 cierre de mes</h2>
+            <p className="mt-2 text-sm text-neutral-400">
+              no hay entregas registradas en <strong>{mesAnt}</strong> — no hay nada que archivar todavía.
+            </p>
+          </section>
+        )}
         {soyDireccion && !cerrado && preview.length > 0 && (
-          <section data-testid="cierre-pendiente" className="border border-movdi-naranja/30 bg-movdi-naranja/5 p-5">
+          <section data-testid="cierre-pendiente" className="rounded-2xl border border-movdi-naranja/30 bg-movdi-naranja/5 p-5">
             <h2 className="font-mono text-[11px] uppercase tracking-widest text-movdi-naranja">📋 cierre de mes pendiente</h2>
             <p className="mt-2 text-sm text-neutral-300">
               el mes <strong>{mesAnt}</strong> aún no se cierra. al cerrarlo se archivará el progreso de{' '}

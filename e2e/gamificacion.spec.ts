@@ -96,8 +96,9 @@ test('cierre de mes (dirección): preview correcto, inserta historial y no se pu
     recompensa: 'tarde libre',
   })
 
-  // el bloque de cierre desaparece (mes ya cerrado) y el historial se muestra
+  // el bloque pendiente desaparece → estado informativo "ya cerrado ✓"
   await expect(page.getByTestId('cierre-pendiente')).toHaveCount(0)
+  await expect(page.getByTestId('cierre-hecho')).toContainText('ya está cerrado ✓')
   await expect(page.getByTestId('historial-item').filter({ hasText: 'Antonio' })).toBeVisible()
 })
 
@@ -107,6 +108,8 @@ test('gating del cierre: head/rh/ejecutivo NO ven el bloque de cierre', async ({
   await page.goto('/progreso')
   await expect(page.getByTestId('leaderboard')).toBeVisible()
   await expect(page.getByTestId('cierre-pendiente')).toHaveCount(0)
+  await expect(page.getByTestId('cierre-hecho')).toHaveCount(0)
+  await expect(page.getByTestId('cierre-sin-actividad')).toHaveCount(0)
   await expect(page.getByTestId('btn-cerrar-mes')).toHaveCount(0)
 
   const ctx = await browser.newContext()
