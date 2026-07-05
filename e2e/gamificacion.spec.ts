@@ -118,13 +118,24 @@ test('gating del cierre: head/rh/ejecutivo NO ven el bloque de cierre', async ({
 })
 
 // ------------------------------------------------------------
-test('recompensas: catálogo visible para todos (lectura recomp_select)', async ({ page }) => {
+test('recompensas 4.8: catálogo OCULTO al equipo, visible solo para el flag', async ({ page, browser }) => {
+  // ejecutivo: ni rastro del catálogo (la sorpresa se conoce al ganarla)
   await login(page, 'antonio@movdi.mx')
   await page.goto('/progreso')
-  const rec = page.getByTestId('recompensas')
+  await expect(page.getByTestId('mi-progreso')).toBeVisible()
+  await expect(page.getByTestId('recompensas')).toHaveCount(0)
+  await expect(page.getByText('tarde libre')).toHaveCount(0)
+
+  // flag (Dani): catálogo completo + editor de admin
+  const ctx = await browser.newContext()
+  const p2 = await ctx.newPage()
+  await login(p2, 'dani@movdi.mx')
+  await p2.goto('/progreso')
+  const rec = p2.getByTestId('recompensas')
   await expect(rec).toContainText('nivel 2')
   await expect(rec).toContainText('tarde libre')
-  await expect(rec).toContainText('las recompensas se entregan manualmente por dirección / rh')
+  await expect(p2.getByTestId('editor-catalogo')).toBeVisible()
+  await ctx.close()
 })
 
 // ------------------------------------------------------------

@@ -12,7 +12,7 @@ import {
   calcularReconocimientosMes, calcularReporteCierre, mapHistorialRow, mapRecompensaRow,
   mesAnteriorStr, mesCerrado,
 } from '@/lib/gamificacion'
-import { cerrarMes } from './actions'
+import { cerrarMes, guardarRecompensa, marcarRecompensaEntregada } from './actions'
 
 export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
   const [personas, setPersonas] = useState<Persona[]>([])
@@ -26,6 +26,16 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
   const [cargando, setCargando] = useState(true)
 
   const soyDireccion = esDireccion(yo)
+  // Fase 4.8 — visibilidad por rol:
+  // · flag ve_gamificacion_completa (Dani/Emmanuel) → ve todo
+  // · head → progreso de SU equipo (leaderboard soloEquipo), sin estrellas
+  //   ni recompensas ajenas
+  // · rh → entrega de recompensas ganadas
+  // · ejecutivo → SOLO lo suyo
+  // La RLS de la migración cutover_gamificacion_privacidad lo respalda en BD.
+  const veTodo = yo.veGamificacionCompleta
+  const soyHead = yo.nivel === 'head' && !veTodo
+  const soyRH = yo.nivel === 'rh'
 
   const recargar = useCallback(async () => {
     const sb = createClient()
@@ -57,8 +67,8 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
   // leaderboard: dirección/todos · head no-dirección: solo su equipo (paridad)
   const lb = useMemo(() => calcularLeaderboardMes({
     mes, personas, peticiones,
-    soloEquipo: yo.nivel === 'head' && !soyDireccion ? yo.nombre : undefined,
-  }), [mes, personas, peticiones, yo, soyDireccion])
+    soloEquipo: yo.nivel === 'head' && !veTodo ? yo.nombre : undefined,
+  }), [mes, personas, peticiones, yo, veTodo])
   const recos = useMemo(() => calcularReconocimientosMes({ mes, personas, peticiones }), [mes, personas, peticiones])
 
   // mi ritmo: cumplimiento de MIS recurrentes activas (paridad renderMiRitmo)
@@ -129,37 +139,39 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
           </div>
         </section>
 
-        {/* Leaderboard + reconocimientos */}
-        <section data-testid="leaderboard">
-          <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">
-            🏆 leaderboard del equipo {yo.nivel === 'head' && !soyDireccion ? '(mi equipo)' : ''} · {mes}
-          </h2>
-          <div className="mt-3 space-y-1.5">
-            {lb.ranking.length === 0 && !cargando && (
-              <p className="font-mono text-xs text-neutral-500">aún no hay entregas suficientes este mes</p>
-            )}
-            {lb.ranking.map((r, i) => (
-              <div key={r.persona.id} data-testid="lb-item"
-                className={`flex items-center gap-3 border px-3.5 py-2 ${r.persona.nombre === yo.nombre ? 'border-orange-600/40 bg-orange-600/5' : 'border-neutral-800 bg-neutral-900'}`}>
-                <span className="w-7 text-lg">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
-                <span className="flex-1 text-sm">{r.persona.nombre} {r.persona.apellido}</span>
-                <span className="font-mono text-[11px] text-neutral-400">{r.aTiempo}/{r.total}</span>
-                <span className={`font-mono text-sm ${r.porcentaje >= 80 ? 'text-emerald-400' : r.porcentaje >= 50 ? 'text-amber-400' : 'text-orange-500'}`}>{r.porcentaje}%</span>
-              </div>
-            ))}
-          </div>
-          {recos.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2" data-testid="reconocimientos">
-              {recos.map((r) => (
-                <span key={r.tipo} className="border border-neutral-700 px-2.5 py-1 font-mono text-[11px] text-neutral-300">
-                  {r.icono} {r.titulo}: <strong className="text-neutral-100">{r.persona}</strong> · {r.valor}
-                </span>
+        {/* Leaderboard + reconocimientos — flag: todo · head: SU equipo · ejecutivo/rh: oculto */}
+        {(veTodo || soyHead) && (
+          <section data-testid="leaderboard">
+            <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">
+              🏆 leaderboard del equipo {soyHead ? '(mi equipo)' : ''} · {mes}
+            </h2>
+            <div className="mt-3 space-y-1.5">
+              {lb.ranking.length === 0 && !cargando && (
+                <p className="font-mono text-xs text-neutral-500">aún no hay entregas suficientes este mes</p>
+              )}
+              {lb.ranking.map((r, i) => (
+                <div key={r.persona.id} data-testid="lb-item"
+                  className={`flex items-center gap-3 border px-3.5 py-2 transition-colors hover:border-neutral-600 ${r.persona.nombre === yo.nombre ? 'border-orange-600/40 bg-orange-600/5' : 'border-neutral-800 bg-neutral-900'}`}>
+                  <span className="w-7 text-lg">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
+                  <span className="flex-1 text-sm">{r.persona.nombre} {r.persona.apellido}</span>
+                  <span className="font-mono text-[11px] text-neutral-400">{r.aTiempo}/{r.total}</span>
+                  <span className={`font-mono text-sm ${r.porcentaje >= 80 ? 'text-emerald-400' : r.porcentaje >= 50 ? 'text-amber-400' : 'text-orange-500'}`}>{r.porcentaje}%</span>
+                </div>
               ))}
             </div>
-          )}
-        </section>
+            {veTodo && recos.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2" data-testid="reconocimientos">
+                {recos.map((r) => (
+                  <span key={r.tipo} className="border border-neutral-700 px-2.5 py-1 font-mono text-[11px] text-neutral-300">
+                    {r.icono} {r.titulo}: <strong className="text-neutral-100">{r.persona}</strong> · {r.valor}
+                  </span>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
-        {/* Logros */}
+        {/* Logros — los bloqueados son sorpresa: "???" con candado (Fase 4.8) */}
         <section data-testid="logros">
           <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">
             logros · {logros.desbloqueados.length}/{logros.desbloqueados.length + logros.bloqueados.length}
@@ -172,27 +184,88 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
               </span>
             ))}
             {logros.bloqueados.map((l) => (
-              <span key={l.id} title={l.desc}
+              <span key={l.id} data-testid="logro-off" title="sigue participando para desbloquearlo"
                 className="border border-neutral-800 px-2.5 py-1 font-mono text-[11px] text-neutral-600">
-                {l.icono} {l.nombre}
+                🔒 ???
               </span>
             ))}
           </div>
         </section>
 
-        {/* Recompensas (catálogo; se entregan manualmente por dirección/rh) */}
-        <section data-testid="recompensas">
-          <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">🎁 recompensas por nivel</h2>
+        {/* Mis recompensas ganadas (todas las personas ven las SUYAS) */}
+        <section data-testid="mis-recompensas">
+          <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">🎁 mis recompensas ganadas</h2>
           <div className="mt-3 space-y-1.5">
-            {recompensas.filter((r) => r.activa).map((r) => (
-              <div key={r.id} className="flex items-center gap-3 border border-neutral-800 bg-neutral-900 px-3.5 py-2">
-                <span className="font-mono text-[11px] text-orange-500">nivel {r.nivel}</span>
-                <span className="text-sm text-neutral-200">{r.descripcion}</span>
+            {!cargando && historial.filter((h) => h.persona === yo.nombre && h.recompensa).length === 0 && (
+              <p className="font-mono text-xs text-neutral-500">
+                aún no ganas recompensas — al cerrar un mes con nivel suficiente, aparecerá aquí la sorpresa 🎁
+              </p>
+            )}
+            {historial.filter((h) => h.persona === yo.nombre && h.recompensa).map((h) => (
+              <div key={h.id} className="flex flex-wrap items-center gap-3 border border-emerald-500/30 bg-emerald-500/5 px-3.5 py-2">
+                <span className="font-mono text-[11px] text-neutral-400">{h.mes}</span>
+                <span className="flex-1 text-sm text-emerald-300">🎁 {h.recompensa}</span>
+                <span className={`font-mono text-[10px] uppercase ${h.recompensaEntregada ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {h.recompensaEntregada ? 'entregada ✓' : 'pendiente de entrega'}
+                </span>
               </div>
             ))}
           </div>
-          <p className="mt-2 font-mono text-[10px] text-neutral-500">las recompensas se entregan manualmente por dirección / rh</p>
         </section>
+
+        {/* RH / dirección: entregar recompensas ganadas */}
+        {(soyRH || veTodo) && historial.some((h) => h.recompensa) && (
+          <section data-testid="entregas-rh" className="border border-neutral-800 bg-neutral-900 p-5">
+            <h2 className="font-mono text-[11px] uppercase tracking-widest text-neutral-400">🎁 entrega de recompensas</h2>
+            <p className="mt-1 font-mono text-[10px] text-neutral-500">recompensas ganadas en meses cerrados · márcalas al entregarlas físicamente</p>
+            <div className="mt-3 space-y-1.5">
+              {historial.filter((h) => h.recompensa).map((h) => (
+                <div key={h.id} data-testid="entrega-item" className="flex flex-wrap items-center gap-3 border border-neutral-800 bg-neutral-950 px-3.5 py-2">
+                  <span className="font-mono text-[11px] text-neutral-400">{h.mes}</span>
+                  <span className="text-sm text-neutral-200">{h.persona}</span>
+                  <span className="flex-1 text-sm text-emerald-300">🎁 {h.recompensa}</span>
+                  {h.recompensaEntregada ? (
+                    <span className="font-mono text-[10px] uppercase text-emerald-400">entregada ✓</span>
+                  ) : (
+                    <button data-testid="btn-marcar-entregada"
+                      onClick={async () => {
+                        const r = await marcarRecompensaEntregada({ id: h.id })
+                        if (!r.ok) setAviso(r.error)
+                        await recargar()
+                      }}
+                      className="border border-emerald-500/50 px-2.5 py-1 font-mono text-[10px] uppercase text-emerald-400 transition-colors hover:bg-emerald-500/10">
+                      marcar entregada ✓
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Catálogo de recompensas — OCULTO al equipo; solo el flag lo ve (Fase 4.8) */}
+        {veTodo && (
+          <section data-testid="recompensas">
+            <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">🎁 catálogo de recompensas por nivel</h2>
+            <p className="mt-1 font-mono text-[10px] text-neutral-500">
+              oculto para el equipo — cada quien descubre su recompensa al ganarla
+            </p>
+            <div className="mt-3 space-y-1.5">
+              {recompensas.filter((r) => r.activa).map((r) => (
+                <div key={r.id} className="flex items-center gap-3 border border-neutral-800 bg-neutral-900 px-3.5 py-2">
+                  <span className="font-mono text-[11px] text-orange-500">nivel {r.nivel}</span>
+                  <span className="text-sm text-neutral-200">{r.descripcion}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 font-mono text-[10px] text-neutral-500">las recompensas se entregan manualmente por dirección / rh</p>
+            {/* Editor del catálogo — decisión 4.8: el lugar de admin lo usa Dani;
+                el respaldo real es RLS (escritura solo dirección) */}
+            {yo.nombre === 'Dani' && (
+              <EditorCatalogo recompensas={recompensas} onGuardado={recargar} onError={setAviso} />
+            )}
+          </section>
+        )}
 
         {/* Cierre de mes (solo dirección) + historial */}
         {soyDireccion && !cerrado && preview.length > 0 && (
@@ -224,11 +297,13 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
           </section>
         )}
 
-        {historial.length > 0 && (
+        {historial.filter((h) => veTodo || soyRH || h.persona === yo.nombre).length > 0 && (
           <section data-testid="historial">
-            <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">📚 meses cerrados</h2>
+            <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">
+              📚 meses cerrados {!veTodo && !soyRH && <span className="text-neutral-600">· lo mío</span>}
+            </h2>
             <div className="mt-3 space-y-1.5">
-              {historial.map((h) => (
+              {historial.filter((h) => veTodo || soyRH || h.persona === yo.nombre).map((h) => (
                 <div key={h.id} data-testid="historial-item" className="flex flex-wrap items-center gap-3 border border-neutral-800 bg-neutral-900 px-3.5 py-2 font-mono text-[11px] text-neutral-400">
                   <span className="text-neutral-200">{h.mes}</span>
                   <span className="flex-1">{h.persona}</span>
@@ -242,5 +317,66 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
         )}
       </div>
     </main>
+  )
+}
+
+// ============================================================
+// Editor del catálogo de recompensas (decisión 4.8: solo Dani lo ve;
+// la RLS recomp_write = mi_es_direccion() respalda cada escritura).
+function EditorCatalogo({ recompensas, onGuardado, onError }: {
+  recompensas: Recompensa[]
+  onGuardado: () => Promise<void>
+  onError: (e: string) => void
+}) {
+  const inicial = recompensas.find((r) => r.nivel === 2)
+  const [nivel, setNivel] = useState(2)
+  const actual = recompensas.find((r) => r.nivel === nivel)
+  const [desc, setDesc] = useState(inicial?.descripcion ?? '')
+  const [activa, setActiva] = useState(inicial?.activa ?? true)
+  const [guardando, setGuardando] = useState(false)
+
+  // sincronizar el formulario SOLO cuando el admin cambia de nivel (sin
+  // effect: un effect re-sincronizaría también tras recargar y pisaría lo
+  // que se esté tecleando)
+  function elegirNivel(n: number) {
+    setNivel(n)
+    const r = recompensas.find((x) => x.nivel === n)
+    setDesc(r?.descripcion ?? '')
+    setActiva(r?.activa ?? true)
+  }
+
+  return (
+    <div data-testid="editor-catalogo" className="mt-4 border border-orange-600/30 bg-orange-600/5 p-4">
+      <h3 className="font-mono text-[11px] uppercase tracking-widest text-orange-500">✏️ editar catálogo (admin)</h3>
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-neutral-400" htmlFor="cat-nivel">nivel</label>
+          <select id="cat-nivel" value={nivel} onChange={(e) => elegirNivel(Number(e.target.value))}
+            className="border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-orange-600">
+            {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>nivel {n}</option>)}
+          </select>
+        </div>
+        <div className="min-w-[220px] flex-1">
+          <label className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-neutral-400" htmlFor="cat-desc">recompensa</label>
+          <input id="cat-desc" value={desc} onChange={(e) => setDesc(e.target.value)}
+            placeholder={actual ? undefined : '— este nivel no tiene recompensa aún —'}
+            className="w-full border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-orange-600" />
+        </div>
+        <label className="flex cursor-pointer items-center gap-2 pb-2 font-mono text-[11px] text-neutral-300">
+          <input type="checkbox" checked={activa} onChange={(e) => setActiva(e.target.checked)} /> activa
+        </label>
+        <button data-testid="btn-guardar-recompensa" disabled={guardando}
+          onClick={async () => {
+            setGuardando(true)
+            const r = await guardarRecompensa({ nivel, descripcion: desc, activa })
+            setGuardando(false)
+            if (!r.ok) { onError(r.error); return }
+            await onGuardado()
+          }}
+          className="bg-orange-600 px-4 py-2 text-xs font-medium transition-colors hover:bg-orange-500 disabled:opacity-50">
+          {guardando ? 'guardando…' : 'guardar'}
+        </button>
+      </div>
+    </div>
   )
 }

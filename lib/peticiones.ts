@@ -12,6 +12,10 @@ export type Persona = {
   activo: boolean
   pausadaHasta: string | null
   esDireccion: boolean
+  // Fase 4.8: "ve todo" en gamificación (estrellas/recompensas/historial).
+  // Pre-cutover la columna no existe en BD → cae a es_direccion (mismo
+  // grupo: Dani y Emmanuel), así staging se comporta igual antes y después.
+  veGamificacionCompleta: boolean
 }
 
 export type Peticion = {
@@ -62,6 +66,7 @@ export function mapPersonaRow(r: any): Persona {
     activo: r.activo !== false,
     pausadaHasta: r.pausada_hasta ?? null,
     esDireccion: r.es_direccion === true,
+    veGamificacionCompleta: r.ve_gamificacion_completa ?? r.es_direccion === true,
   }
 }
 

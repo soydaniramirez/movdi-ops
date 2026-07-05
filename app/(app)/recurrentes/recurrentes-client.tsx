@@ -257,8 +257,8 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
 // ============================================================
 function ModalShell({ titulo, onCerrar, children }: { titulo: string; onCerrar: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onCerrar}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto border border-neutral-700 bg-neutral-900 p-5"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCerrar}>
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()} role="dialog" aria-label={titulo}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold">{titulo}</h2>

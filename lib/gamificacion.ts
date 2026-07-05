@@ -224,6 +224,7 @@ export type Recompensa = { id: string; nivel: number; descripcion: string; activ
 export type HistorialMes = {
   id: string; persona: string; mes: string; xpTotal: number; nivelAlcanzado: number
   entregadas: number; cumplimiento: number; mejorRacha: number; recompensa: string | null
+  recompensaEntregada: boolean
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -235,6 +236,7 @@ export const mapHistorialRow = (r: any): HistorialMes => ({
   nivelAlcanzado: r.nivel_alcanzado ?? 1, entregadas: r.entregadas ?? 0,
   cumplimiento: r.cumplimiento ?? 0, mejorRacha: r.mejor_racha ?? 0,
   recompensa: r.recompensa ?? null,
+  recompensaEntregada: r.recompensa_entregada === true,
 })
 /* eslint-enable @typescript-eslint/no-explicit-any */
 

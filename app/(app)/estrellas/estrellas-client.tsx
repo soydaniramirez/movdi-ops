@@ -23,7 +23,8 @@ export default function EstrellasClient({ yo }: { yo: Persona }) {
   const recargar = useCallback(async () => {
     const sb = createClient()
     const [est, pers] = await Promise.all([
-      // estrellas_select: visibles para todo el equipo (paridad)
+      // Fase 4.8: estrellas_select (cutover) devuelve solo aquellas donde
+      // participo (di o recibí); el flag ve_gamificacion_completa ve todas.
       sb.from('estrellas_colaboracion').select('*').order('creada_en', { ascending: false }),
       sb.from('personas').select('*'),
     ])
@@ -96,21 +97,40 @@ export default function EstrellasClient({ yo }: { yo: Persona }) {
           </div>
         </section>
 
-        {/* Feed del equipo (estrellas_select es visible para todos — paridad de datos) */}
+        {/* Las que he dado (mis propias, siempre visibles para mí) */}
         <section className="mt-8">
-          <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">últimas del equipo</h2>
-          <div className="mt-3 space-y-1.5" data-testid="feed-equipo">
-            {estrellas.slice(0, 10).map((e) => (
+          <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">las que he dado</h2>
+          <div className="mt-3 space-y-1.5" data-testid="feed-dadas">
+            {estrellas.filter((e) => e.de === yo.nombre).slice(0, 10).map((e) => (
               <p key={e.id} className="font-mono text-[11px] text-neutral-400">
-                ⭐ <strong className="text-neutral-200">{e.de}</strong> → <strong className="text-neutral-200">{e.para}</strong>
+                ⭐ para <strong className="text-neutral-200">{e.para}</strong>
                 <span className="text-neutral-500"> · &ldquo;{e.motivo}&rdquo; · {e.semana}</span>
               </p>
             ))}
-            {!cargando && estrellas.length === 0 && (
-              <p className="font-mono text-xs text-neutral-500">todavía no hay estrellas en el equipo</p>
+            {!cargando && estrellas.filter((e) => e.de === yo.nombre).length === 0 && (
+              <p className="font-mono text-xs text-neutral-500">aún no das estrellas · tienes {MAX_ESTRELLAS_SEMANA} por semana</p>
             )}
           </div>
         </section>
+
+        {/* Feed del equipo — SOLO flag ve_gamificacion_completa (Fase 4.8:
+            las estrellas ajenas son privadas; la RLS del cutover lo respalda) */}
+        {yo.veGamificacionCompleta && (
+          <section className="mt-8">
+            <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">últimas del equipo <span className="text-neutral-600">· vista dirección</span></h2>
+            <div className="mt-3 space-y-1.5" data-testid="feed-equipo">
+              {estrellas.slice(0, 10).map((e) => (
+                <p key={e.id} className="font-mono text-[11px] text-neutral-400">
+                  ⭐ <strong className="text-neutral-200">{e.de}</strong> → <strong className="text-neutral-200">{e.para}</strong>
+                  <span className="text-neutral-500"> · &ldquo;{e.motivo}&rdquo; · {e.semana}</span>
+                </p>
+              ))}
+              {!cargando && estrellas.length === 0 && (
+                <p className="font-mono text-xs text-neutral-500">todavía no hay estrellas en el equipo</p>
+              )}
+            </div>
+          </section>
+        )}
       </div>
 
       {modalDar && (
@@ -155,8 +175,8 @@ function ModalDarEstrella({ yo, personas, estrellas, restantes, onCerrar, onDar 
   const [guardando, setGuardando] = useState(false)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onCerrar}>
-      <div className="w-full max-w-md border border-neutral-700 bg-neutral-900 p-5"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCerrar}>
+      <div className="w-full max-w-md border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()} role="dialog" aria-label="dar estrella">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold">⭐ dar una estrella</h2>

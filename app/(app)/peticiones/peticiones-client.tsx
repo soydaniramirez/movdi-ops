@@ -14,8 +14,7 @@ import {
   mapPersonaConManagers, ordenSemaforo,
 } from '@/lib/equipo'
 import {
-  type HistorialMes, calcularLeaderboardMes, competeEnLeaderboard,
-  mapHistorialRow, mesAnteriorStr,
+  type HistorialMes, competeEnLeaderboard, mapHistorialRow, mesAnteriorStr,
 } from '@/lib/gamificacion'
 import {
   cambiarEstatus, cambiarFecha, crearPeticion, desocultarPeticion,
@@ -191,15 +190,21 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
           </button>
         </header>
 
-        {/* 🏆 podio del mes anterior (primeros 5 días, paridad renderBannerPodio) */}
-        <BannerPodio yo={yo} personas={personas} peticiones={peticiones} historial={historial} />
+        {/* 🏆 podio del MES CERRADO (primeros 5 días; Fase 4.8: sin cálculo
+            en vivo — solo el snapshot oficial del cierre) */}
+        <BannerPodio yo={yo} historial={historial} />
 
-        {/* KPIs (paridad calcKpis básica) */}
+        {/* KPIs (paridad calcKpis) con acentos de color por tipo (Paso B) */}
         <section className="mt-6 grid grid-cols-4 gap-3">
-          {([['pendientes', kpis.pendientes], ['vencidas', kpis.vencidas], ['esta semana', kpis.semana], ['entregadas', kpis.entregadas]] as const).map(([lab, val]) => (
-            <div key={lab} className="border border-neutral-800 bg-neutral-900 px-4 py-3">
+          {([
+            ['pendientes', kpis.pendientes, 'border-neutral-800', 'text-neutral-100'],
+            ['vencidas', kpis.vencidas, kpis.vencidas > 0 ? 'border-red-500/40 bg-red-500/5' : 'border-neutral-800', kpis.vencidas > 0 ? 'text-red-400' : 'text-neutral-100'],
+            ['esta semana', kpis.semana, kpis.semana > 0 ? 'border-amber-400/40 bg-amber-400/5' : 'border-neutral-800', kpis.semana > 0 ? 'text-amber-300' : 'text-neutral-100'],
+            ['entregadas', kpis.entregadas, 'border-emerald-500/30', 'text-emerald-400'],
+          ] as const).map(([lab, val, borde, color]) => (
+            <div key={lab} className={`border bg-neutral-900 px-4 py-3 transition-colors hover:border-neutral-600 ${borde}`}>
               <div className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">{lab}</div>
-              <div className="text-2xl font-semibold">{val}</div>
+              <div className={`text-2xl font-semibold ${color}`}>{val}</div>
             </div>
           ))}
         </section>
@@ -326,7 +331,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
           </section>
 
           {(bloques.length > 0 || (tab === 'general' && esDireccion(yo))) && (
-            <aside className="hidden w-64 shrink-0 space-y-5 lg:block" data-testid="semaforo">
+            <aside className="sticky top-16 hidden max-h-[calc(100vh-5rem)] w-64 shrink-0 space-y-5 overflow-y-auto lg:block" data-testid="semaforo">
               {bloques.map((b) => (
                 <div key={b.titulo}>
                   <h3 className="font-mono text-[11px] uppercase tracking-wider text-neutral-400">
@@ -408,16 +413,18 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
 }
 
 // ============================================================
-// 🏆 Banner de podio del mes anterior (paridad renderBannerPodio):
-// primeros 5 días del mes; snapshot oficial de historial_mensual si el mes
-// fue cerrado, cálculo provisional si no; dismiss por mes en localStorage.
-function BannerPodio({ yo, personas, peticiones, historial }: {
+// 🏆 Banner de podio — SOLO del MES CERRADO (Fase 4.8: nada de cálculo en
+// vivo; todos ven exactamente el mismo podio, el archivado por dirección).
+// Primeros 5 días del mes; dismiss por mes en localStorage. Los datos salen
+// de la RPC podio_mes_cerrado (expone solo el top 3 — funciona para todos
+// los roles aunque la RLS de historial esté cerrada); si la RPC aún no
+// existe (pre-cutover), cae al historial que la RLS deje leer.
+function BannerPodio({ yo, historial }: {
   yo: PersonaConManagers
-  personas: PersonaConManagers[]
-  peticiones: Peticion[]
   historial: HistorialMes[]
 }) {
   const [dismissed, setDismissed] = useState(true) // hasta leer localStorage
+  const [podioRpc, setPodioRpc] = useState<{ persona: string; cumplimiento: number }[] | null>(null)
   const mesActual = new Date().toISOString().slice(0, 7)
   const dismissKey = `movdi-podio-dismissed-${yo.nombre}-${mesActual}`
 
@@ -428,6 +435,14 @@ function BannerPodio({ yo, personas, peticiones, historial }: {
     try { setDismissed(localStorage.getItem(dismissKey) === '1') } catch { setDismissed(false) }
   }, [dismissKey])
 
+  useEffect(() => {
+    if (new Date().getDate() > 5) return
+    const sb = createClient()
+    void sb.rpc('podio_mes_cerrado', { p_mes: mesAnteriorStr() }).then(({ data, error }) => {
+      if (!error && Array.isArray(data)) setPodioRpc(data as { persona: string; cumplimiento: number }[])
+    })
+  }, [])
+
   const diaDelMes = new Date().getDate()
   if (diaDelMes > 5 || dismissed) return null
   if (!competeEnLeaderboard(yo) && !esDireccion(yo) && yo.nivel !== 'head') return null
@@ -435,13 +450,12 @@ function BannerPodio({ yo, personas, peticiones, historial }: {
   const mesAnt = mesAnteriorStr()
   const mesAntNombre = new Date(mesAnt + '-02T00:00:00').toLocaleDateString('es-MX', { month: 'long' })
 
-  // snapshot oficial (cierre de mes por dirección) > cálculo provisional
+  // RPC (post-cutover, para todos) > historial legible (pre-cutover/flag).
+  // Sin mes cerrado NO hay banner — el podio nunca se calcula en vivo.
   const snapshot = historial.filter((h) => h.mes === mesAnt).sort((a, b) => b.xpTotal - a.xpTotal)
-  const esOficial = snapshot.length > 0
-  const top3 = esOficial
-    ? snapshot.slice(0, 3).map((s) => ({ nombre: s.persona, porcentaje: s.cumplimiento }))
-    : calcularLeaderboardMes({ mes: mesAnt, personas, peticiones }).ranking
-        .slice(0, 3).map((r) => ({ nombre: r.persona.nombre, porcentaje: r.porcentaje }))
+  const top3 = (podioRpc && podioRpc.length > 0)
+    ? podioRpc.slice(0, 3).map((s) => ({ nombre: s.persona, porcentaje: s.cumplimiento }))
+    : snapshot.slice(0, 3).map((s) => ({ nombre: s.persona, porcentaje: s.cumplimiento }))
   if (top3.length === 0) return null
 
   return (
@@ -449,7 +463,7 @@ function BannerPodio({ yo, personas, peticiones, historial }: {
       className="mt-4 flex flex-wrap items-center gap-6 border border-amber-400/30 bg-gradient-to-br from-orange-600/10 to-amber-400/10 px-6 py-4">
       <div className="min-w-[200px] flex-1">
         <div className="font-mono text-[11px] uppercase tracking-widest text-amber-400">
-          🏆 podio de {mesAntNombre}{!esOficial && <span className="text-neutral-500"> · provisional</span>}
+          🏆 podio de {mesAntNombre} <span className="text-neutral-500">· mes cerrado</span>
         </div>
         <div className="mt-1 text-sm text-neutral-300">felicidades al equipo — estos fueron los más constantes del mes pasado</div>
       </div>
@@ -616,8 +630,8 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
 // ============================================================
 function ModalShell({ titulo, onCerrar, children }: { titulo: string; onCerrar: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onCerrar}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto border border-neutral-700 bg-neutral-900 p-5"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCerrar}>
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()} role="dialog" aria-label={titulo}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold">{titulo}</h2>

@@ -59,9 +59,14 @@ registro "test persona" existente (o crear una persona de prueba) para flujos
 destructivos, y revertir lo que se escriba.
 
 Limitación pre-migraciones (documentada, esperada): hasta la ventana NO existen
-en la BD `fecha_inicio`, la RPC de desactivación, ni las tablas del recordatorio.
-En staging fallarán (con error claro, sin corromper nada): **crear quincenal** y
-**desactivar con reasignación**. Todo lo demás es QA completo.
+en la BD `fecha_inicio`, la RPC de desactivación, las tablas del recordatorio,
+ni la migración de privacidad 4.8 (flag `ve_gamificacion_completa`, columna
+`recompensa_entregada`, RPC `podio_mes_cerrado`, policies cerradas). En staging
+fallarán (con error claro, sin corromper nada): **crear quincenal**, **desactivar
+con reasignación** y **marcar recompensa entregada**. Además, pre-cutover las
+LECTURAS de estrellas/recompensas/historial siguen abiertas en BD — la UI ya
+oculta todo por rol, pero la barrera RLS real llega con C5b. Todo lo demás es
+QA completo.
 
 ### A1. QA común a TODOS los roles
 - [ ] Login con email+contraseña · logout · sesión persiste al recargar (cookies).
@@ -188,6 +193,14 @@ el build con P3).
   llegando (admin client + realtime); y un `POST /rest/v1/notificaciones` con
   token de usuario → 403/42501.
 
+**C5b. Migración `20260705190000_cutover_gamificacion_privacidad.sql`** (requiere
+el build con la Fase 4.8; la UI por rol ya la respeta).
+- Estado esperado: con un usuario ejecutivo (API directa, su token):
+  `estrellas_colaboracion` → solo filas donde participa; `recompensas` → 0 filas;
+  `historial_mensual` → solo filas propias. `select ve_gamificacion_completa from
+  personas where es_direccion` → true (Dani y Emmanuel). La RPC
+  `podio_mes_cerrado(null)` responde el top 3 a cualquier autenticado.
+
 **C6. Migración `20260703231000_cutover_encender_cron_recordatorios.sql`** (el
 interruptor del recordatorio; al final a propósito).
 - Estado esperado: `select jobname, schedule from cron.job` muestra
@@ -221,6 +234,7 @@ interruptor del recordatorio; al final a propósito).
 | C4a | Nada que revertir en el site viejo (congelarlo no cambia lo que sirve). Si se aborta la ventana ANTES del swap: el merge a main es inerte para producción (site viejo congelado); se puede dejar mergeado o `git revert` si se prefiere main limpio | El freeze se queda puesto hasta C8. Si algún día hay que hotfixear el `index.html` (rollback largo), reactivar builds temporalmente, deployar y volver a congelar |
 | **C4b** | **El crítico y el más rápido**: deshacer el swap de nombres de Netlify (o reapuntar el dominio) → la URL vuelve a servir `index.html` en minutos, sin builds. Restaurar Site URL de Auth a la URL vieja | El deploy estático está GARANTIZADO intacto por el lock de C4a — el merge a main no pudo tocarlo. Por eso el site viejo NO se toca ni se borra hasta C8. Si C5 ya se aplicó, revertir también C5 (el SPA necesita la policy interim para notificar); si C3 ya se aplicó y el equipo necesita crear quincenales desde el SPA, revertir el constraint (fila C3) |
 | C5 | `create policy notif_insert on public.notificaciones for insert to authenticated with check (public.mi_nombre() is not null); grant insert on public.notificaciones to authenticated;` | Vuelve al interim documentado (spoofing entre autenticados posible otra vez — temporal) |
+| C5b | Recrear las policies abiertas: `create policy estrellas_select … using (true);` (ídem `hist_select`, `recomp_select`), `grant update on historial_mensual to authenticated;` y recrear `hist_update` con `mi_es_direccion()` | La columna flag y `recompensa_entregada` pueden QUEDARSE (aditivas); `podio_mes_cerrado` también. La UI 4.8 funciona igual con las policies abiertas |
 | C6 | `select cron.unschedule('recordatorio-recurrentes-diario');` | Idempotente; `recurrentes_avisos` conserva el dedup para cuando se reactive |
 | C8 | `git revert` del PR de retiro; recrear site desde el repo | El index.html vive en el historial de git |
 
@@ -240,5 +254,6 @@ lock de C4a); C5/C6 tienen rollback de una línea.
 | 3 | `20260703230000_cutover_quincenal_fecha_inicio.sql` | cambia comportamiento (constraint rompe quincenales del SPA) |
 | 4 | `20260704130000_cutover_endurecer_notif_insert.sql` | cambia comportamiento (rompe notifs del SPA; requiere build con P3) |
 | 5 | `20260703231000_cutover_encender_cron_recordatorios.sql` | interruptor (pg_cron 07:00 MX) |
+| 6 | `20260705190000_cutover_gamificacion_privacidad.sql` | cambia comportamiento (cierra lecturas de gamificación; requiere build 4.8) — se aplica como C5b |
 
 (la numeración de C1–C6 usa este orden de aplicación, no el timestamp del archivo)

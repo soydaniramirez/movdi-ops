@@ -296,8 +296,8 @@ function ModalPersona({ editar, personas, onCerrar, onGuardar }: {
   const candidatos = personas.filter((p) => (p.nivel === 'ceo' || p.nivel === 'head') && p.activo !== false)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onCerrar}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto border border-neutral-700 bg-neutral-900 p-5"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCerrar}>
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()} role="dialog" aria-label={editar ? 'editar persona' : 'agregar persona'}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold">{editar ? 'editar persona' : 'agregar persona'}</h2>
@@ -404,8 +404,8 @@ function ModalReasignacion({ persona, personas, peticiones, recurrentes, onCerra
     .sort((a, b) => a.nombre.localeCompare(b.nombre))
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onCerrar}>
-      <div className="w-full max-w-lg border border-neutral-700 bg-neutral-900 p-5"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCerrar}>
+      <div className="w-full max-w-lg border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()} role="dialog" aria-label={`desactivar a ${persona.nombre}`}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold">desactivar a {persona.nombre} {persona.apellido}</h2>

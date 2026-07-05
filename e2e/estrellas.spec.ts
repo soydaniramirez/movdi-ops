@@ -115,7 +115,7 @@ test('a sí mismo: imposible desde la UI (excluido del selector) — y la RLS lo
 })
 
 // ------------------------------------------------------------
-test('feed: mis recibidas (desc, con conteos) y últimas del equipo', async ({ page }) => {
+test('feed 4.8: mis recibidas y mis dadas — el feed del equipo solo para el flag', async ({ page, browser }) => {
   await login(page, 'antonio@movdi.mx')
   await page.goto('/estrellas')
 
@@ -126,7 +126,16 @@ test('feed: mis recibidas (desc, con conteos) y últimas del equipo', async ({ p
   await expect(item).toContainText('me ayudó con el pitch')
   await expect(item).toContainText('de Brenda')
 
-  // feed del equipo visible para todos (estrellas_select true)
-  await expect(page.getByTestId('feed-equipo')).toContainText('Brenda')
-  await expect(page.getByTestId('feed-equipo')).toContainText('Antonio')
+  // 4.8: el feed del equipo YA NO existe para un ejecutivo
+  await expect(page.getByTestId('feed-equipo')).toHaveCount(0)
+  await expect(page.getByTestId('feed-dadas')).toBeVisible()
+
+  // flag (Dani) sí ve el feed del equipo completo
+  const ctx = await browser.newContext()
+  const p2 = await ctx.newPage()
+  await login(p2, 'dani@movdi.mx')
+  await p2.goto('/estrellas')
+  await expect(p2.getByTestId('feed-equipo')).toContainText('Brenda')
+  await expect(p2.getByTestId('feed-equipo')).toContainText('Antonio')
+  await ctx.close()
 })

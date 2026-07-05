@@ -43,6 +43,8 @@ const PERSONAS_BASE = [
   activo: true,
   pausada_hasta: null,
   needs_pass: false,
+  // Fase 4.8: flag "ve todo" en gamificación — true solo dirección (Dani/Emmanuel)
+  ve_gamificacion_completa: p.es_direccion === true,
   // managers para el semáforo: Antonio→Dani (apoyo Karla), Brenda→Karla, Arylene→Dani
   managers: p.nombre === 'Antonio' ? ['Karla'] : [],
   manager_principal:
@@ -325,6 +327,22 @@ const server = http.createServer(async (req, res) => {
     // DENTRO, sin RLS en los updates (toca filas de terceros), transaccional
     // (en el mock: valida todo ANTES de mutar; un fallo inyectado ocurre
     // antes de cualquier mutación, como el raise de Postgres).
+    // RPC podio_mes_cerrado — espejo de la función SQL (security definer):
+    // top 3 del mes cerrado indicado (o el último anterior al actual), solo
+    // persona/cumplimiento/mes. Disponible para cualquier autenticado.
+    if (tabla === 'rpc/podio_mes_cerrado' && req.method === 'POST') {
+      const { p_mes } = JSON.parse(body || '{}')
+      const mesActual = new Date().toISOString().slice(0, 7)
+      const meses = db.historial_mensual.map((h) => h.mes).filter((m) => m < mesActual)
+      const mes = p_mes ?? (meses.length ? meses.sort().at(-1) : null)
+      const top3 = db.historial_mensual
+        .filter((h) => h.mes === mes)
+        .sort((a, b) => (b.xp_total ?? 0) - (a.xp_total ?? 0))
+        .slice(0, 3)
+        .map((h) => ({ persona: h.persona, cumplimiento: h.cumplimiento ?? 0, mes: h.mes }))
+      return json(200, top3)
+    }
+
     if (tabla === 'rpc/desactivar_persona_con_reasignacion' && req.method === 'POST') {
       const { p_persona_id, p_reasignar_peticiones_a, p_reasignar_recurrentes_a } = JSON.parse(body || '{}')
       if (!esAdmin(yo)) return json(400, { code: 'P0001', message: 'solo dirección o heads pueden desactivar personas' })
@@ -552,9 +570,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (tabla === 'estrellas_colaboracion') {
-      // RLS: SELECT true · INSERT con las reglas endurecidas
+      // RLS 4.8 (cutover): SELECT solo donde participo (di o recibí) o flag
+      // ve_gamificacion_completa · INSERT con las reglas endurecidas
       if (req.method === 'GET') {
-        return representar(aplicarFiltros(db.estrellas, url.searchParams))
+        const visibles = db.estrellas.filter((e) =>
+          e.de_persona === yo.nombre || e.para_persona === yo.nombre || yo.ve_gamificacion_completa === true)
+        return representar(aplicarFiltros(visibles, url.searchParams))
       }
       if (req.method === 'POST') {
         const input = JSON.parse(body || '[]')
@@ -578,28 +599,66 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (tabla === 'historial_mensual') {
-      // RLS: SELECT true · INSERT/UPDATE solo dirección (mi_es_direccion)
+      // RLS 4.8 (cutover): SELECT propio | rh | flag · INSERT dirección ·
+      // UPDATE limitado por grant de columna a recompensa_entregada (rh/dirección)
       const esDir = yo.es_direccion === true || yo.nivel === 'ceo'
       if (req.method === 'GET') {
-        return representar(aplicarFiltros(db.historial_mensual, url.searchParams))
+        const visibles = db.historial_mensual.filter((h) =>
+          h.persona === yo.nombre || yo.nivel === 'rh' || yo.ve_gamificacion_completa === true)
+        return representar(aplicarFiltros(visibles, url.searchParams))
       }
       if (req.method === 'POST') {
         if (!esDir) return json(403, { code: '42501', message: 'new row violates row-level security policy for table "historial_mensual"' })
         const input = JSON.parse(body || '[]')
         const filas = (Array.isArray(input) ? input : [input]).map((f) => ({
           id: uuid(), xp_total: 0, nivel_alcanzado: 1, entregadas: 0, cumplimiento: 0,
-          mejor_racha: 0, recompensa: null, cerrado_en: new Date().toISOString(), ...f,
+          mejor_racha: 0, recompensa: null, recompensa_entregada: false,
+          cerrado_en: new Date().toISOString(), ...f,
         }))
         db.historial_mensual.push(...filas)
         if (prefer.includes('return=representation')) return representar(filas)
         return json(201, [])
       }
+      if (req.method === 'PATCH') {
+        const cambios = JSON.parse(body || '{}')
+        // grant de COLUMNA: cualquier otra columna en el SET → permission denied
+        const cols = Object.keys(cambios)
+        if (cols.some((c) => c !== 'recompensa_entregada')) {
+          return json(403, { code: '42501', message: 'permission denied for table historial_mensual' })
+        }
+        if (yo.nivel !== 'rh' && !esDir) {
+          return json(403, { code: '42501', message: 'permission denied for table historial_mensual' })
+        }
+        const objetivo = aplicarFiltros(db.historial_mensual, url.searchParams)
+        objetivo.forEach((h) => Object.assign(h, cambios))
+        if (prefer.includes('return=representation')) return representar(objetivo)
+        return json(204, [])
+      }
     }
 
     if (tabla === 'recompensas') {
-      // RLS: SELECT true (recomp_select) · escritura solo dirección (recomp_write)
+      // RLS 4.8 (cutover): SELECT solo flag ve_gamificacion_completa ·
+      // escritura solo dirección (recomp_write, sin cambios)
+      const esDir = yo.es_direccion === true || yo.nivel === 'ceo'
       if (req.method === 'GET') {
-        return representar(aplicarFiltros(db.recompensas, url.searchParams))
+        const visibles = yo.ve_gamificacion_completa === true ? db.recompensas : []
+        return representar(aplicarFiltros(visibles, url.searchParams))
+      }
+      if (req.method === 'POST') {
+        if (!esDir) return json(403, { code: '42501', message: 'new row violates row-level security policy for table "recompensas"' })
+        const input = JSON.parse(body || '[]')
+        const filas = (Array.isArray(input) ? input : [input]).map((f) => ({ id: uuid(), activa: true, ...f }))
+        db.recompensas.push(...filas)
+        if (prefer.includes('return=representation')) return representar(filas)
+        return json(201, [])
+      }
+      if (req.method === 'PATCH') {
+        if (!esDir) return json(403, { code: '42501', message: 'permission denied for table recompensas' })
+        const cambios = JSON.parse(body || '{}')
+        const objetivo = aplicarFiltros(db.recompensas, url.searchParams)
+        objetivo.forEach((r) => Object.assign(r, cambios))
+        if (prefer.includes('return=representation')) return representar(objetivo)
+        return json(204, [])
       }
     }
 

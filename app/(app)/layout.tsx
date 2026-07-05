@@ -36,7 +36,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-neutral-950">
-      <div className="border-b border-neutral-800 bg-neutral-950 px-6 py-2">
+      {/* header pegajoso con glassmorphism (Paso B) */}
+      <div className="sticky top-0 z-40 border-b border-neutral-800 bg-neutral-950/80 px-6 py-2 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           <nav className="flex items-center gap-4 font-mono text-[11px]">
             <Link href="/" className="text-neutral-300 hover:text-orange-500">MOVDI·ops</Link>

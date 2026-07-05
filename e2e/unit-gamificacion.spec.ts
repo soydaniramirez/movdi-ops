@@ -19,7 +19,8 @@ const pet = (o: Partial<Peticion>): Peticion => ({
 })
 const per = (o: Partial<Persona>): Persona => ({
   id: Math.random().toString(36).slice(2), nombre: 'Antonio', apellido: 'L', rol: 'pm',
-  nivel: 'ejecutivo', areas: ['pm'], email: null, activo: true, pausadaHasta: null, esDireccion: false, ...o,
+  nivel: 'ejecutivo', areas: ['pm'], email: null, activo: true, pausadaHasta: null, esDireccion: false,
+  veGamificacionCompleta: false, ...o,
 })
 const est = (o: Partial<Estrella>): Estrella => ({
   id: Math.random().toString(36).slice(2), de: 'Brenda', para: 'Antonio', motivo: 'x',
