@@ -16,13 +16,12 @@ Qué está construido y probado (79/79 e2e) pero **SIN aplicar**: las 5 migracio
 
 **P1. Merge del refactor.** PR #2 de `refactor/nextjs-migration` → `main`
 (revisión humana, regla del proyecto). **Decisión 2026-07-04: el PR queda
-ABIERTO; el merge a main se hace EN la ventana de cutover**, después de
-verificar en la UI que el site viejo publica raíz estática sin build
-(Project configuration → Build & deploy → Continuous deployment → Build
-settings: build command vacío, publish directory raíz). Evidencia del último
-deploy (2026-07-03, vía MCP): framework `unknown`, deploy de 4 s, cero
-functions/plugins → consistente con publicación estática sin build, pero la
-confirmación final es la pantalla de Build settings.
+ABIERTO; el merge a main se hace EN la ventana de cutover, en el paso C4a,
+y SOLO con el site viejo ya congelado** (lock del deploy publicado + stop
+builds — ver C4a; es el blindaje contra la autodetección de framework de
+Netlify al entrar el package.json de Next a main). Build config del site
+viejo confirmado por Daniela 2026-07-04: estático puro, sin build command,
+sin plugins, branch main.
 
 **P2. Site NUEVO de Netlify para el Next** (no tocar el site actual):
 ✅ Site creado (2026-07-04): `movdi-ops-next` · siteId `b121e6df-3d3f-45af-a793-25775970f5cc`
@@ -146,11 +145,37 @@ eso estamos en ventana.
 - Estado esperado: `select nombre, fecha_inicio from recurrentes where
   frecuencia='quincenal'` → la de Mariana con `2026-05-25`.
 
-**C4. Switch de hosting: producción pasa a servir el Next.**
+**C4a. Blindaje anti-autodetección: CONGELAR el site viejo, y solo entonces
+mergear a main.** Confirmado 2026-07-04: `movdi-ops` es estático puro (sin build
+command, sin plugins). El riesgo es que, al entrar el `package.json` de Next a
+main, la autodetección de framework de Netlify dispare un build de Next en el
+site viejo en su siguiente deploy — lo que además **rompería el rollback** (D-C4
+depende de que el site viejo siga sirviendo el `index.html` intacto). El swap de
+nombres por sí solo NO protege esto: el site viejo sigue linkeado a main y
+seguiría deployando. Blindaje = congelarlo ANTES del merge, con DOS candados
+independientes (por estado del site — un `netlify.toml` NO sirve aquí: el repo
+lo comparten ambos sites y tras el cutover main ES Next; pinnearlo a estático
+rompería el site nuevo):
+1. **Lock del deploy publicado** — Deploys (site `movdi-ops`) → deploy publicado
+   actual → **"Lock deploy" / Stop auto publishing**. Aunque llegara a correr un
+   build, lo publicado queda clavado al deploy estático actual. Este candado es
+   la garantía del rollback.
+2. **Stop builds** — Project configuration → Build & deploy → Continuous
+   deployment → Build settings → **Stop builds**. Netlify ya ni siquiera
+   ejecuta builds para pushes a main → la autodetección no puede correr jamás.
+- Estado esperado ANTES de mergear: la UI del site viejo muestra deploys
+  bloqueados y builds detenidos; la URL vieja sirve el SPA idéntico.
+- **Merge del PR #2 a main.** Estado esperado: en Deploys del site viejo NO
+  aparece ningún build nuevo; la URL vieja sigue sirviendo el SPA.
+- Site nuevo (`movdi-ops-next`): cambiar production branch a `main` (Build &
+  deploy → Branches) y esperar **deploy verde de main** antes de seguir.
+- Nota: estos toggles no existen en el MCP de Netlify; son pasos de UI.
+
+**C4b. Switch de hosting: producción pasa a servir el Next.**
 - Plan recomendado (reversible en minutos, sin builds):
   - Si el equipo entra por `movdi-ops.netlify.app`: **renombrar** el site viejo a
     `movdi-ops-legado` y el nuevo a `movdi-ops` (swap de nombres → la URL pública
-    pasa a servir Next). El site viejo queda intacto y servible.
+    pasa a servir Next). El site viejo queda intacto, congelado y servible.
   - Si hay dominio propio: mover el dominio del site viejo al nuevo.
 - Supabase → Auth → URL Configuration: **Site URL** = URL de producción del Next;
   mantener temporalmente la URL vieja en Redirect URLs.
@@ -193,14 +218,16 @@ interruptor del recordatorio; al final a propósito).
 | C1 | `select cron.unschedule('recordatorio-recurrentes-diario');` (si ya C6) → `drop function public.notificar_recurrentes_del_dia(); drop table public.recurrentes_avisos;` | Aditiva: revertirla no afecta al SPA ni al Next |
 | C2 | `drop function public.desactivar_persona_con_reasignacion(uuid, text, text);` | Aditiva; solo la usa el módulo equipo del Next |
 | C3 | `alter table public.recurrentes drop constraint recurrentes_quincenal_requiere_fecha_inicio;` | Con esto el SPA vuelve a poder crear quincenales. La columna `fecha_inicio` puede QUEDARSE (el SPA la ignora); no hace falta revertir el backfill |
-| **C4** | **El crítico y el más rápido**: deshacer el swap de nombres de Netlify (o reapuntar el dominio) → la URL vuelve a servir `index.html` en minutos, sin builds. Restaurar Site URL de Auth a la URL vieja | Por eso el site viejo NO se toca ni se borra hasta C8. Si C5 ya se aplicó, revertir también C5 (el SPA necesita la policy interim para notificar); si C3 ya se aplicó y el equipo necesita crear quincenales desde el SPA, revertir el constraint (fila C3) |
+| C4a | Nada que revertir en el site viejo (congelarlo no cambia lo que sirve). Si se aborta la ventana ANTES del swap: el merge a main es inerte para producción (site viejo congelado); se puede dejar mergeado o `git revert` si se prefiere main limpio | El freeze se queda puesto hasta C8. Si algún día hay que hotfixear el `index.html` (rollback largo), reactivar builds temporalmente, deployar y volver a congelar |
+| **C4b** | **El crítico y el más rápido**: deshacer el swap de nombres de Netlify (o reapuntar el dominio) → la URL vuelve a servir `index.html` en minutos, sin builds. Restaurar Site URL de Auth a la URL vieja | El deploy estático está GARANTIZADO intacto por el lock de C4a — el merge a main no pudo tocarlo. Por eso el site viejo NO se toca ni se borra hasta C8. Si C5 ya se aplicó, revertir también C5 (el SPA necesita la policy interim para notificar); si C3 ya se aplicó y el equipo necesita crear quincenales desde el SPA, revertir el constraint (fila C3) |
 | C5 | `create policy notif_insert on public.notificaciones for insert to authenticated with check (public.mi_nombre() is not null); grant insert on public.notificaciones to authenticated;` | Vuelve al interim documentado (spoofing entre autenticados posible otra vez — temporal) |
 | C6 | `select cron.unschedule('recordatorio-recurrentes-diario');` | Idempotente; `recurrentes_avisos` conserva el dedup para cuando se reactive |
 | C8 | `git revert` del PR de retiro; recrear site desde el repo | El index.html vive en el historial de git |
 
 Regla general: los pasos están ordenados para que **el punto de no retorno sea
 tardío y pequeño** — hasta C4 todo es aditivo o reversible con un `drop
-constraint`; C4 es un swap de minutos; C5/C6 tienen rollback de una línea.
+constraint`; C4b es un swap de minutos (con el deploy viejo garantizado por el
+lock de C4a); C5/C6 tienen rollback de una línea.
 
 ---
 
