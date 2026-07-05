@@ -6,7 +6,7 @@ import {
   AREAS_LABEL, AREAS_VALIDAS, type ModoAsignacion,
   type Persona, type Peticion,
   destinatariosPorModo, diasHasta, dx, fechaCorta, isAdmin, labelFecha,
-  mapPeticionRow, matchNombre, personaDisponible, puedoVerPeticion,
+  mapPeticionRow, margenPeticion, matchNombre, personaDisponible, puedoVerPeticion,
 } from '@/lib/peticiones'
 import { type Recurrente, mapRecurRow, obtenerInstanciasRecur } from '@/lib/recurrentes'
 import {
@@ -26,8 +26,8 @@ type Tab = 'general' | 'mis' | 'pedi' | 'recur'
 type Filtro = 'todas' | 'vencidas' | 'semana' | (typeof AREAS_VALIDAS)[number]
 
 const PRIO_COLOR: Record<string, string> = {
-  alta: 'text-red-400 border-red-400/40',
-  media: 'text-amber-400 border-amber-400/40',
+  alta: 'text-movdi-naranja border-movdi-naranja/40',
+  media: 'text-movdi-amarillo border-movdi-amarillo/40',
   baja: 'text-neutral-400 border-neutral-600',
 }
 
@@ -40,13 +40,13 @@ const AREA_COLOR: Record<string, string> = {
   ventas: 'border-lime-400/40 text-lime-300',
   digital: 'border-cyan-400/40 text-cyan-300',
   rh: 'border-rose-400/40 text-rose-300',
-  heads: 'border-amber-400/40 text-amber-300',
+  heads: 'border-movdi-amarillo/40 text-movdi-amarillo',
 }
 
 const SEM_COLOR: Record<'r' | 'y' | 'g' | 'x', string> = {
-  r: 'bg-red-500',
-  y: 'bg-amber-400',
-  g: 'bg-emerald-500',
+  r: 'bg-movdi-naranja',
+  y: 'bg-movdi-amarillo',
+  g: 'bg-movdi-verde',
   x: 'bg-neutral-600',
 }
 
@@ -179,11 +179,11 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
         <header className="flex items-center justify-between border-b border-neutral-800 pb-4">
           <div>
             <div className="font-mono text-xs uppercase tracking-widest text-neutral-500">movdi · ops</div>
-            <h1 className="text-xl font-semibold">peticiones</h1>
+            <h1 className="text-2xl font-bold tracking-tight">peticiones</h1>
           </div>
           <button
             onClick={() => setModalCrear(true)}
-            className="bg-orange-600 px-4 py-2 text-sm font-medium hover:bg-orange-500"
+            className="rounded-full bg-movdi-naranja px-4 py-2 text-sm font-medium hover:bg-movdi-naranja/85"
             data-testid="btn-nueva-peticion"
           >
             + nueva petición
@@ -194,17 +194,17 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
             en vivo — solo el snapshot oficial del cierre) */}
         <BannerPodio yo={yo} historial={historial} />
 
-        {/* KPIs (paridad calcKpis) con acentos de color por tipo (Paso B) */}
+        {/* KPIs (paridad calcKpis) — bloques sólidos de la paleta (zona resumen) */}
         <section className="mt-6 grid grid-cols-4 gap-3">
           {([
-            ['pendientes', kpis.pendientes, 'border-neutral-800', 'text-neutral-100'],
-            ['vencidas', kpis.vencidas, kpis.vencidas > 0 ? 'border-red-500/40 bg-red-500/5' : 'border-neutral-800', kpis.vencidas > 0 ? 'text-red-400' : 'text-neutral-100'],
-            ['esta semana', kpis.semana, kpis.semana > 0 ? 'border-amber-400/40 bg-amber-400/5' : 'border-neutral-800', kpis.semana > 0 ? 'text-amber-300' : 'text-neutral-100'],
-            ['entregadas', kpis.entregadas, 'border-emerald-500/30', 'text-emerald-400'],
-          ] as const).map(([lab, val, borde, color]) => (
-            <div key={lab} className={`border bg-neutral-900 px-4 py-3 transition-colors hover:border-neutral-600 ${borde}`}>
-              <div className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">{lab}</div>
-              <div className={`text-2xl font-semibold ${color}`}>{val}</div>
+            ['pendientes', kpis.pendientes, 'bg-movdi-gris text-black'],
+            ['vencidas', kpis.vencidas, kpis.vencidas > 0 ? 'bg-movdi-naranja text-black' : 'border border-neutral-800 bg-neutral-900 text-neutral-500'],
+            ['esta semana', kpis.semana, kpis.semana > 0 ? 'bg-movdi-amarillo text-black' : 'border border-neutral-800 bg-neutral-900 text-neutral-500'],
+            ['entregadas', kpis.entregadas, 'bg-movdi-verde text-black'],
+          ] as const).map(([lab, val, bloque]) => (
+            <div key={lab} className={`card-hover rounded-2xl px-4 py-3.5 ${bloque}`}>
+              <div className="font-mono text-[10px] uppercase tracking-wider opacity-70">{lab}</div>
+              <div className="text-3xl font-bold tracking-tight">{val}</div>
             </div>
           ))}
         </section>
@@ -214,15 +214,15 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
           <button
             onClick={() => setTab('mis')}
             data-testid="banner-mis-pendientes"
-            className="mt-4 flex w-full items-center justify-between border border-orange-600/30 bg-orange-600/10 px-4 py-3 text-left hover:bg-orange-600/15"
+            className="card-hover mt-4 flex w-full items-center justify-between rounded-2xl border border-movdi-naranja/40 bg-movdi-naranja/10 px-5 py-3.5 text-left transition-colors hover:bg-movdi-naranja/20"
           >
             <span>
-              <span className="block font-mono text-[11px] uppercase tracking-widest text-orange-500">📌 tareas asignadas a ti</span>
+              <span className="block font-mono text-[11px] uppercase tracking-widest text-movdi-naranja">📌 tareas asignadas a ti</span>
               <span className="mt-0.5 block text-[13px] text-neutral-300">
                 tienes <strong className="text-neutral-100">{misPendientes}</strong> {misPendientes === 1 ? 'petición pendiente' : 'peticiones pendientes'} esperando tu acción
               </span>
             </span>
-            <span className="font-mono text-xs text-orange-500">ver mis peticiones →</span>
+            <span className="font-mono text-xs text-movdi-naranja">ver mis peticiones →</span>
           </button>
         )}
 
@@ -230,7 +230,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
         <nav className="mt-6 flex flex-wrap items-center gap-2">
           {([['general', 'general'], ['mis', 'mis pendientes'], ['pedi', 'lo que pedí'], ['recur', 'instancias recurrentes']] as const).map(([k, lab]) => (
             <button key={k} onClick={() => setTab(k)}
-              className={`border px-3 py-1.5 font-mono text-xs ${tab === k ? 'border-orange-600 text-orange-500' : 'border-neutral-800 text-neutral-400 hover:border-neutral-600'}`}>
+              className={`rounded-full border px-3 py-1.5 font-mono text-xs ${tab === k ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-400 hover:border-neutral-600'}`}>
               {lab}
             </button>
           ))}
@@ -239,7 +239,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
             .filter((f) => f !== 'rh' || yo.esDireccion || yo.nivel === 'rh')
             .map((f) => (
               <button key={f} onClick={() => setFiltro(f)}
-                className={`border px-2.5 py-1 font-mono text-[11px] ${filtro === f ? 'border-orange-600 text-orange-500' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}>
+                className={`rounded-full border px-2.5 py-1 font-mono text-[11px] ${filtro === f ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}>
                 {AREAS_LABEL[f] ?? f}
               </button>
             ))}
@@ -248,7 +248,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
         {/* filtro por persona activo (viene del semáforo) */}
         {tab === 'general' && personaFiltro && (
           <p className="mt-3 flex items-center gap-2 font-mono text-[11px] text-neutral-400">
-            viendo peticiones de <strong className="text-orange-500">{personaFiltro}</strong>
+            viendo peticiones de <strong className="text-movdi-naranja">{personaFiltro}</strong>
             <button onClick={() => setPersonaFiltro(null)} data-testid="quitar-filtro-persona"
               className="border border-neutral-700 px-1.5 text-neutral-400 hover:border-neutral-500 hover:text-neutral-200">
               ✕ quitar filtro
@@ -283,7 +283,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
         )}
 
         {aviso && (
-          <p role="alert" className="mt-4 border border-orange-600/40 bg-orange-600/10 px-3 py-2 font-mono text-xs text-orange-500">
+          <p role="alert" className="mt-4 border border-movdi-naranja/40 bg-movdi-naranja/10 px-3 py-2 font-mono text-xs text-movdi-naranja">
             {aviso}
           </p>
         )}
@@ -296,7 +296,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
               <p className="font-mono text-xs text-neutral-500">no hay peticiones en esta vista</p>
             )}
             {lista.length > 0 && (
-              <div className="overflow-x-auto border border-neutral-800">
+              <div className="overflow-x-auto rounded-2xl border border-neutral-800">
                 <table className="w-full border-collapse text-left">
                   <thead>
                     <tr className="border-b border-neutral-800 bg-neutral-900">
@@ -341,7 +341,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
                     {b.items.map(({ p, total, estado }) => (
                       <button key={p.id} data-testid="semaforo-item"
                         onClick={() => setPersonaFiltro((f) => (f === p.nombre ? null : p.nombre))}
-                        className={`flex w-full items-center gap-2 border px-2.5 py-1.5 text-left hover:border-neutral-600 ${personaFiltro === p.nombre ? 'border-orange-600/60 bg-orange-600/10' : 'border-neutral-800 bg-neutral-900'}`}>
+                        className={`flex w-full items-center gap-2 rounded-full border px-2.5 py-1.5 text-left hover:border-neutral-600 ${personaFiltro === p.nombre ? 'border-movdi-naranja/60 bg-movdi-naranja/10' : 'border-neutral-800 bg-neutral-900'}`}>
                         <span data-testid={`sem-${estado}`} className={`h-2.5 w-2.5 rounded-full ${SEM_COLOR[estado]}`} />
                         <span className="flex-1 truncate text-xs">{p.nombre} {p.apellido}</span>
                         <span className="font-mono text-[10px] text-neutral-500">{total}</span>
@@ -351,7 +351,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
                 </div>
               ))}
               {tab === 'general' && esDireccion(yo) && (
-                <div className="border border-red-500/30 bg-red-500/5 px-3 py-2.5" data-testid="card-privadas">
+                <div className="border border-movdi-naranja/30 bg-movdi-naranja/5 px-3 py-2.5" data-testid="card-privadas">
                   <div className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">peticiones privadas 🔒</div>
                   <div className="mt-1 text-2xl font-semibold">{rhCount}</div>
                   <div className="font-mono text-[10px] text-neutral-500">peticiones confidenciales activas</div>
@@ -460,25 +460,25 @@ function BannerPodio({ yo, historial }: {
 
   return (
     <section data-testid="banner-podio"
-      className="mt-4 flex flex-wrap items-center gap-6 border border-amber-400/30 bg-gradient-to-br from-orange-600/10 to-amber-400/10 px-6 py-4">
+      className="card-hover mt-4 flex flex-wrap items-center gap-6 rounded-2xl bg-movdi-rosa px-6 py-5 text-black">
       <div className="min-w-[200px] flex-1">
-        <div className="font-mono text-[11px] uppercase tracking-widest text-amber-400">
-          🏆 podio de {mesAntNombre} <span className="text-neutral-500">· mes cerrado</span>
+        <div className="font-mono text-[11px] font-semibold uppercase tracking-widest">
+          🏆 podio de {mesAntNombre} <span className="opacity-60">· mes cerrado</span>
         </div>
-        <div className="mt-1 text-sm text-neutral-300">felicidades al equipo — estos fueron los más constantes del mes pasado</div>
+        <div className="mt-1 text-sm opacity-80">felicidades al equipo — estos fueron los más constantes del mes pasado</div>
       </div>
       <div className="flex flex-wrap gap-5">
         {top3.map((r, i) => (
-          <div key={r.nombre} className="min-w-[90px] text-center">
+          <div key={r.nombre} className="min-w-[90px] rounded-xl bg-black/10 px-3 py-2 text-center">
             <div className="text-2xl leading-none">{i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</div>
-            <div className="mt-1 text-[13px]">{r.nombre}</div>
-            <div className="font-mono text-[10px] uppercase text-neutral-500">{r.porcentaje}%</div>
+            <div className="mt-1 text-[13px] font-semibold">{r.nombre}</div>
+            <div className="font-mono text-[10px] uppercase opacity-70">{r.porcentaje}%</div>
           </div>
         ))}
       </div>
       <button
         onClick={() => { try { localStorage.setItem(dismissKey, '1') } catch { /* sin storage */ } setDismissed(true) }}
-        className="border border-neutral-700 px-2.5 py-1.5 font-mono text-[11px] uppercase text-neutral-400 hover:border-neutral-500 hover:text-neutral-200">
+        className="rounded-full border border-black/30 px-3 py-1.5 font-mono text-[11px] uppercase transition-colors hover:bg-black/10">
         ✕ cerrar
       </button>
     </section>
@@ -507,7 +507,7 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
   const vencida = t.estatus !== 'entregado' && diasHasta(t.fecha) < 0
   const oculta = estaOcultaParaMi(t, yo.nombre)
 
-  const btn = 'border px-2 py-0.5 font-mono text-[10px] whitespace-nowrap'
+  const btn = 'rounded-md border px-2 py-0.5 font-mono text-[10px] whitespace-nowrap'
 
   return (
     <tr data-testid="card-peticion"
@@ -518,21 +518,35 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
           {oculta && <span className="mr-1 text-[11px] text-neutral-500" title="oculta de tu vista">🙈</span>}
           {t.privada && <span title="privada · solo creador y destinatario">🔒 </span>}
           {t.nombre}
-          {t.origenRecur && <span className="ml-2 whitespace-nowrap font-mono text-[10px] text-amber-400" title="instancia de recurrente">↻ recurrente</span>}
+          {t.origenRecur && <span className="ml-2 whitespace-nowrap font-mono text-[10px] text-movdi-amarillo" title="instancia de recurrente">↻ recurrente</span>}
           {t.grupoId && <span className="ml-2 font-mono text-[10px] text-neutral-500">grupo</span>}
           {t.estatus === 'entregado' && (t.linkEntrega || t.notaEntrega) && (
-            <span className="ml-1 text-[11px] text-emerald-400" title="con evidencia de entrega">📎</span>
+            <span className="ml-1 text-[11px] text-movdi-verde" title="con evidencia de entrega">📎</span>
           )}
+          {/* ⚠ plazo ajustado (paridad SPA: margen de nacimiento ≤ 2 días;
+              ≤ 1 = "muy ajustado" en naranja, 2 = "ajustado" en amarillo) */}
+          {t.estatus !== 'entregado' && !t.origenRecur && (() => {
+            const m = margenPeticion(t)
+            if (m === null || m > 2) return null
+            const txt = m <= 1 ? 'plazo muy ajustado' : 'plazo ajustado'
+            return (
+              <span data-testid="alerta-plazo"
+                className={`ml-1 text-[11px] ${m <= 1 ? 'text-movdi-naranja' : 'text-movdi-amarillo'}`}
+                title={`${txt}: pedida con ${m} ${m === 1 ? 'día' : 'días'} de margen`}>
+                ⚠
+              </span>
+            )
+          })()}
         </div>
         {t.descripcion && <p className="mt-0.5 text-xs text-neutral-400">{t.descripcion}</p>}
         {t.motivoCambioFecha && (
-          <p className="mt-1 border-l-2 border-amber-400/50 pl-2 font-mono text-[11px] text-amber-400/90">
+          <p className="mt-1 border-l-2 border-movdi-amarillo/50 pl-2 font-mono text-[11px] text-movdi-amarillo/90">
             fecha movida{t.fechaOriginal ? ` (original: ${t.fechaOriginal})` : ''} · {t.motivoCambioFecha}
             {t.extensionJustificada === false && ' · cuenta contra la fecha original'}
           </p>
         )}
         {t.estatus === 'entregado' && (t.linkEntrega || t.notaEntrega) && (
-          <p className="mt-1 font-mono text-[11px] text-emerald-400/90" data-testid="evidencia">
+          <p className="mt-1 font-mono text-[11px] text-movdi-verde/90" data-testid="evidencia">
             evidencia: {t.linkEntrega && <a className="underline" href={t.linkEntrega} target="_blank" rel="noreferrer">{t.linkEntrega}</a>}
             {t.linkEntrega && t.notaEntrega && ' · '}
             {t.notaEntrega}
@@ -548,36 +562,36 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
       {/* área */}
       <td className="whitespace-nowrap px-3 py-2.5">
         {t.area
-          ? <span className={`border px-2 py-0.5 font-mono text-[10px] uppercase ${AREA_COLOR[t.area] ?? 'border-neutral-700 text-neutral-400'}`}>{AREAS_LABEL[t.area] ?? t.area}</span>
+          ? <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase ${AREA_COLOR[t.area] ?? 'border-neutral-700 text-neutral-400'}`}>{AREAS_LABEL[t.area] ?? t.area}</span>
           : <span className="font-mono text-[10px] text-neutral-600">—</span>}
       </td>
       {/* fecha + sub (vencida Nd en rojo, paridad date-cell) */}
       <td className="whitespace-nowrap px-3 py-2.5">
-        <div className={`text-[13px] ${t.estatus === 'entregado' ? 'text-emerald-400' : vencida ? 'font-medium text-red-400' : 'text-neutral-300'}`}>
+        <div className={`text-[13px] ${t.estatus === 'entregado' ? 'text-movdi-verde' : vencida ? 'font-medium text-movdi-naranja' : 'text-neutral-300'}`}>
           {fechaCorta(t.fecha)}
         </div>
-        <div className={`font-mono text-[10px] ${t.estatus === 'entregado' ? 'text-emerald-400/80' : vencida ? 'text-red-400' : 'text-neutral-500'}`}>
+        <div className={`font-mono text-[10px] ${t.estatus === 'entregado' ? 'text-movdi-verde/80' : vencida ? 'text-movdi-naranja' : 'text-neutral-500'}`}>
           {lf}
         </div>
       </td>
       {/* prioridad */}
       <td className="whitespace-nowrap px-3 py-2.5">
-        <span className={`border px-2 py-0.5 font-mono text-[10px] uppercase ${PRIO_COLOR[t.prioridad]}`}>{t.prioridad}</span>
+        <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase ${PRIO_COLOR[t.prioridad]}`}>{t.prioridad}</span>
       </td>
       {/* estatus */}
       <td className="whitespace-nowrap px-3 py-2.5">
-        <span className={`font-mono text-[10px] uppercase ${t.estatus === 'entregado' ? 'text-emerald-400' : t.estatus === 'proceso' ? 'text-amber-400' : 'text-neutral-400'}`}>
+        <span className={`font-mono text-[10px] uppercase ${t.estatus === 'entregado' ? 'text-movdi-verde' : t.estatus === 'proceso' ? 'text-movdi-amarillo' : 'text-neutral-400'}`}>
           {t.estatus === 'entregado' ? 'entregado ✓' : t.estatus === 'proceso' ? 'en proceso' : t.estatus}
         </span>
       </td>
       {/* acciones */}
       <td className="px-3 py-2.5">
         {puedoActuar && (
-          <div className="flex max-w-[15rem] flex-wrap gap-1.5">
+          <div className="reveal-acciones flex max-w-[15rem] flex-wrap gap-1.5">
             {t.estatus !== 'entregado' && (
               <>
                 <button onClick={onEntregar} data-testid="btn-entregar"
-                  className={`${btn} border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10`}>
+                  className={`${btn} border-movdi-verde/50 text-movdi-verde hover:bg-movdi-verde/85/10`}>
                   entregar ✓
                 </button>
                 <button onClick={() => onEstatus(t.estatus === 'proceso' ? 'pendiente' : 'proceso')}
@@ -610,13 +624,13 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
             )}
             {t.origenRecur && (soyCreador || admin) && t.estatus !== 'entregado' && (
               <button onClick={onMover} data-testid="btn-mover-instancia"
-                className={`${btn} border-amber-400/50 text-amber-400 hover:bg-amber-400/10`}>
+                className={`${btn} border-movdi-amarillo/50 text-movdi-amarillo hover:bg-movdi-amarillo/85/10`}>
                 mover instancia
               </button>
             )}
             {soyCreador && (
               <button onClick={onEliminar}
-                className={`${btn} border-red-500/40 text-red-400 hover:bg-red-500/10`}>
+                className={`${btn} border-movdi-naranja/40 text-movdi-naranja hover:bg-movdi-naranja/10`}>
                 eliminar
               </button>
             )}
@@ -631,7 +645,7 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
 function ModalShell({ titulo, onCerrar, children }: { titulo: string; onCerrar: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCerrar}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()} role="dialog" aria-label={titulo}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold">{titulo}</h2>
@@ -643,7 +657,7 @@ function ModalShell({ titulo, onCerrar, children }: { titulo: string; onCerrar: 
   )
 }
 
-const inputCls = 'w-full border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-neutral-100 outline-none focus:border-orange-600'
+const inputCls = 'w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-neutral-100 outline-none focus:border-movdi-naranja'
 const labelCls = 'mb-1 block font-mono text-[11px] uppercase tracking-wider text-neutral-400'
 
 // ============================================================
@@ -798,12 +812,12 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
           <span>🔒 petición privada <span className="text-neutral-500">— solo tú y el destinatario la ven (ni dirección)</span></span>
         </label>
 
-        {err && <p role="alert" className="font-mono text-xs text-orange-500">{err}</p>}
+        {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
 
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onCerrar} className="border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+          <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
           <button onClick={guardar} disabled={guardando} data-testid="btn-crear-confirmar"
-            className="bg-orange-600 px-4 py-2 text-xs font-medium hover:bg-orange-500 disabled:opacity-50">
+            className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85 disabled:opacity-50">
             {guardando ? 'creando…' : 'crear petición'}
           </button>
         </div>
@@ -833,9 +847,9 @@ function ModalEntrega({ t, onCerrar, onConfirmar }: {
           <textarea id="ent-nota" rows={2} className={inputCls} value={nota} onChange={(e) => setNota(e.target.value)} />
         </div>
         <div className="flex justify-end gap-2">
-          <button onClick={onCerrar} className="border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+          <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
           <button onClick={() => onConfirmar(link, nota)} data-testid="btn-entrega-confirmar"
-            className="bg-emerald-600 px-4 py-2 text-xs font-medium hover:bg-emerald-500">
+            className="rounded-full bg-movdi-verde px-4 py-2 text-xs font-medium hover:bg-movdi-verde/85">
             marcar entregado ✓
           </button>
         </div>
@@ -860,7 +874,7 @@ function ModalCambioFecha({ t, soyCreador, onCerrar, onConfirmar }: {
   return (
     <ModalShell titulo={`cambiar fecha · ${t.nombre}`} onCerrar={onCerrar}>
       <div className="space-y-4">
-        <p className="border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-xs text-neutral-300">
+        <p className="border border-movdi-amarillo/30 bg-movdi-amarillo/5 px-3 py-2 text-xs text-neutral-300">
           {soyCreador
             ? <>tú creaste esta petición para <strong>{t.para}</strong>. al cambiar la fecha le das más tiempo — verá la nueva fecha y tu motivo.</>
             : <>esta petición fue creada por <strong>{t.creadoPor}</strong>. al cambiarla, le aparecerá una alerta con tu motivo.</>}
@@ -890,15 +904,15 @@ function ModalCambioFecha({ t, soyCreador, onCerrar, onConfirmar }: {
             </div>
           </div>
         )}
-        {err && <p role="alert" className="font-mono text-xs text-orange-500">{err}</p>}
+        {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
         <div className="flex justify-end gap-2">
-          <button onClick={onCerrar} className="border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+          <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
           <button data-testid="btn-fecha-confirmar"
             onClick={async () => {
               if (motivo.trim().length < 10) { setErr('escribe al menos 10 caracteres explicando el motivo'); return }
               await onConfirmar(fecha, motivo, soyCreador ? justif : undefined)
             }}
-            className="bg-orange-600 px-4 py-2 text-xs font-medium hover:bg-orange-500">
+            className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85">
             guardar cambio
           </button>
         </div>
@@ -948,19 +962,19 @@ function ModalMoverInstancia({ t, onCerrar, onConfirmar }: {
             </label>
           </div>
         </div>
-        <p className="border border-amber-400/20 bg-amber-400/5 px-3 py-2 font-mono text-[10px] uppercase tracking-wide text-neutral-400">
+        <p className="border border-movdi-amarillo/20 bg-movdi-amarillo/5 px-3 py-2 font-mono text-[10px] uppercase tracking-wide text-neutral-400">
           ℹ la siguiente entrega del patrón llegará en su fecha habitual
         </p>
-        {err && <p role="alert" className="font-mono text-xs text-orange-500">{err}</p>}
+        {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
         <div className="flex justify-end gap-2">
-          <button onClick={onCerrar} className="border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+          <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
           <button data-testid="btn-mover-confirmar"
             onClick={async () => {
               if (motivo.trim().length < 10) { setErr('el motivo debe tener al menos 10 caracteres'); return }
               if (fecha === t.fecha) { setErr('la nueva fecha es igual a la actual. elige otra'); return }
               await onConfirmar(fecha, motivo, justif)
             }}
-            className="bg-amber-500 px-4 py-2 text-xs font-medium text-black hover:bg-amber-400">
+            className="rounded-full bg-movdi-amarillo px-4 py-2 text-xs font-medium text-black hover:bg-movdi-amarillo/85">
             mover entrega
           </button>
         </div>

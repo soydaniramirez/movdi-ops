@@ -15,11 +15,11 @@ import {
   pausarPersona, reactivarPersona, reanudarPersona,
 } from './actions'
 
-const inputCls = 'w-full border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-neutral-100 outline-none focus:border-orange-600'
+const inputCls = 'w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-neutral-100 outline-none focus:border-movdi-naranja'
 const labelCls = 'mb-1 block font-mono text-[11px] uppercase tracking-wider text-neutral-400'
 
 const SEM_COLOR: Record<string, string> = {
-  r: 'bg-red-500', y: 'bg-amber-400', g: 'bg-emerald-500', x: 'bg-neutral-600',
+  r: 'bg-movdi-naranja', y: 'bg-movdi-amarillo', g: 'bg-movdi-verde', x: 'bg-neutral-600',
 }
 
 type FiltroEquipo = 'activas' | 'pausadas' | 'inactivas'
@@ -89,26 +89,26 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
           <header className="flex items-center justify-between border-b border-neutral-800 pb-4">
             <div>
               <div className="font-mono text-xs uppercase tracking-widest text-neutral-500">movdi · ops</div>
-              <h1 className="text-xl font-semibold">👥 equipo</h1>
+              <h1 className="text-2xl font-bold tracking-tight">👥 equipo</h1>
               <p className="mt-0.5 font-mono text-[11px] text-neutral-500">
                 {activas.length} activas · {pausadas.length} pausadas · {inactivas.length} inactivas
               </p>
             </div>
             {admin && (
               <button onClick={() => setModalPersona({ editar: null })} data-testid="btn-agregar-persona"
-                className="bg-orange-600 px-4 py-2 text-sm font-medium hover:bg-orange-500">
+                className="rounded-full bg-movdi-naranja px-4 py-2 text-sm font-medium hover:bg-movdi-naranja/85">
                 + agregar persona
               </button>
             )}
           </header>
 
           {aviso && (
-            <p role="alert" className="mt-4 border border-orange-600/40 bg-orange-600/10 px-3 py-2 font-mono text-xs text-orange-500">
+            <p role="alert" className="mt-4 border border-movdi-naranja/40 bg-movdi-naranja/10 px-3 py-2 font-mono text-xs text-movdi-naranja">
               {aviso}
             </p>
           )}
           {nota && (
-            <p role="status" data-testid="nota-equipo" className="mt-4 border border-amber-400/40 bg-amber-400/10 px-3 py-2 font-mono text-xs text-amber-400">
+            <p role="status" data-testid="nota-equipo" className="mt-4 border border-movdi-amarillo/40 bg-movdi-amarillo/10 px-3 py-2 font-mono text-xs text-movdi-amarillo">
               {nota}
             </p>
           )}
@@ -116,7 +116,7 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
           <nav className="mt-5 flex gap-2">
             {(['activas', 'pausadas', 'inactivas'] as FiltroEquipo[]).map((f) => (
               <button key={f} onClick={() => setFiltro(f)}
-                className={`border px-3 py-1.5 font-mono text-xs ${filtro === f ? 'border-orange-600 text-orange-500' : 'border-neutral-800 text-neutral-400'}`}>
+                className={`rounded-full border px-3 py-1.5 font-mono text-xs ${filtro === f ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-400'}`}>
                 {f}
               </button>
             ))}
@@ -143,7 +143,7 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
                       {p.managers.length > 0 && <> · apoyo: {p.managers.join(', ')}</>}
                     </p>
                     {estaPausada(p) && (
-                      <p className="mt-0.5 font-mono text-[10px] text-amber-400">⏸ pausada hasta {p.pausadaHasta}</p>
+                      <p className="mt-0.5 font-mono text-[10px] text-movdi-amarillo">⏸ pausada hasta {p.pausadaHasta}</p>
                     )}
                   </div>
                   {admin && (
@@ -188,7 +188,7 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
                                 }
                                 setModalReasign(p)
                               }}
-                              className="border border-red-500/40 px-2 py-1 font-mono text-[10px] text-red-400">
+                              className="border border-movdi-naranja/40 px-2 py-1 font-mono text-[10px] text-movdi-naranja">
                               desactivar
                             </button>
                           )}
@@ -199,7 +199,7 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
                             if (!confirm(`¿reactivar a ${p.nombre} ${p.apellido}?`)) return
                             await accion(() => reactivarPersona({ id: p.id }))
                           }}
-                          className="border border-emerald-500/40 px-2 py-1 font-mono text-[10px] text-emerald-400">
+                          className="border border-movdi-verde/40 px-2 py-1 font-mono text-[10px] text-movdi-verde">
                           reactivar
                         </button>
                       )}
@@ -297,7 +297,7 @@ function ModalPersona({ editar, personas, onCerrar, onGuardar }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCerrar}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()} role="dialog" aria-label={editar ? 'editar persona' : 'agregar persona'}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold">{editar ? 'editar persona' : 'agregar persona'}</h2>
@@ -360,9 +360,9 @@ function ModalPersona({ editar, personas, onCerrar, onGuardar }: {
               ))}
             </div>
           </div>
-          {err && <p role="alert" className="font-mono text-xs text-orange-500">{err}</p>}
+          {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
           <div className="flex justify-end gap-2 pt-1">
-            <button onClick={onCerrar} className="border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+            <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
             <button data-testid="btn-guardar-persona" disabled={guardando}
               onClick={async () => {
                 setErr(null)
@@ -375,7 +375,7 @@ function ModalPersona({ editar, personas, onCerrar, onGuardar }: {
                 setGuardando(false)
                 if (!ok) setErr('no se pudo guardar — revisa el aviso')
               }}
-              className="bg-orange-600 px-4 py-2 text-xs font-medium hover:bg-orange-500 disabled:opacity-50">
+              className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85 disabled:opacity-50">
               {guardando ? 'guardando…' : editar ? 'guardar cambios' : 'agregar e invitar'}
             </button>
           </div>
@@ -405,14 +405,14 @@ function ModalReasignacion({ persona, personas, peticiones, recurrentes, onCerra
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCerrar}>
-      <div className="w-full max-w-lg border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
+      <div className="w-full max-w-lg rounded-2xl border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()} role="dialog" aria-label={`desactivar a ${persona.nombre}`}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold">desactivar a {persona.nombre} {persona.apellido}</h2>
           <button onClick={onCerrar} className="text-neutral-500 hover:text-neutral-200">✕</button>
         </div>
-        <div className="mb-4 border border-orange-600/30 bg-orange-600/5 px-3 py-2.5 text-xs leading-relaxed">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-orange-500">⚠ requiere reasignación</p>
+        <div className="mb-4 border border-movdi-naranja/30 bg-movdi-naranja/5 px-3 py-2.5 text-xs leading-relaxed">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-movdi-naranja">⚠ requiere reasignación</p>
           <p className="mt-1">
             <strong>{persona.nombre}</strong> tiene
             {peticiones.length > 0 && <> · <strong>{peticiones.length}</strong> petición(es) activa(s)</>}
@@ -437,9 +437,9 @@ function ModalReasignacion({ persona, personas, peticiones, recurrentes, onCerra
             </select>
             {recurrentes.length === 0 && <p className="mt-1 font-mono text-[10px] text-neutral-500">no tiene recurrentes, este campo es opcional</p>}
           </div>
-          {err && <p role="alert" className="font-mono text-xs text-orange-500">{err}</p>}
+          {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
           <div className="flex justify-end gap-2">
-            <button onClick={onCerrar} className="border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+            <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
             <button data-testid="btn-reasign-confirmar"
               onClick={async () => {
                 setErr(null)
@@ -447,7 +447,7 @@ function ModalReasignacion({ persona, personas, peticiones, recurrentes, onCerra
                 if (recurrentes.length > 0 && !destRec) { setErr('elige a quién reasignar las recurrentes'); return }
                 await onConfirmar(destPet, destRec)
               }}
-              className="bg-red-600 px-4 py-2 text-xs font-medium hover:bg-red-500">
+              className="bg-red-600 px-4 py-2 text-xs font-medium hover:bg-movdi-naranja">
               reasignar y desactivar
             </button>
           </div>

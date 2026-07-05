@@ -265,3 +265,39 @@ test('mover instancia NO visible para quien no es creador ni admin', async ({ pa
   await expect(card).toBeVisible() // es el destinatario, la ve
   await expect(card.getByTestId('btn-mover-instancia')).toHaveCount(0) // pero no puede moverla
 })
+
+// ------------------------------------------------------------
+test('⚠ plazo ajustado (paridad margenPeticion): margen 1 → naranja, 2 → amarillo, 3+ → nada', async ({ page }) => {
+  await login(page, 'antonio@movdi.mx')
+  await irAPeticiones(page)
+
+  const dx = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
+  const crear = async (nombre: string, fecha: string) => {
+    await page.getByTestId('btn-nueva-peticion').click()
+    await page.locator('#pet-nombre').fill(nombre)
+    await page.locator('#pet-area').selectOption('imkt')
+    await page.locator('#pet-para').selectOption('Brenda')
+    await page.locator('#pet-fecha').fill(fecha)
+    await page.getByTestId('btn-crear-confirmar').click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  }
+
+  await crear('urgencia mañana', dx(1))   // margen 1 → muy ajustado
+  await crear('urgencia pasado', dx(2))   // margen 2 → ajustado
+  await crear('con margen', dx(5))        // margen 5 → sin alerta
+
+  await page.getByRole('button', { name: 'lo que pedí' }).click()
+  const f1 = page.getByTestId('card-peticion').filter({ hasText: 'urgencia mañana' })
+  const f2 = page.getByTestId('card-peticion').filter({ hasText: 'urgencia pasado' })
+  const f3 = page.getByTestId('card-peticion').filter({ hasText: 'con margen' })
+
+  await expect(f1.getByTestId('alerta-plazo')).toBeVisible()
+  await expect(f1.getByTestId('alerta-plazo')).toHaveAttribute('title', /plazo muy ajustado: pedida con 1 día de margen/)
+  await expect(f2.getByTestId('alerta-plazo')).toBeVisible()
+  await expect(f2.getByTestId('alerta-plazo')).toHaveAttribute('title', /plazo ajustado: pedida con 2 días de margen/)
+  await expect(f3.getByTestId('alerta-plazo')).toHaveCount(0)
+
+  // grados → color (amarillo advertencia vs naranja urgente)
+  await expect(f1.getByTestId('alerta-plazo')).toHaveClass(/text-movdi-naranja/)
+  await expect(f2.getByTestId('alerta-plazo')).toHaveClass(/text-movdi-amarillo/)
+})

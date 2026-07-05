@@ -57,7 +57,7 @@ export default function UpdatePasswordPage() {
             autoComplete="new-password"
             value={pass1}
             onChange={(e) => setPass1(e.target.value)}
-            className="w-full border border-neutral-800 bg-neutral-900 px-3.5 py-3 text-sm text-neutral-100 outline-none focus:border-orange-600"
+            className="w-full border border-neutral-800 bg-neutral-900 px-3.5 py-3 text-sm text-neutral-100 outline-none focus:border-movdi-naranja"
           />
         </div>
         <div>
@@ -70,14 +70,14 @@ export default function UpdatePasswordPage() {
             autoComplete="new-password"
             value={pass2}
             onChange={(e) => setPass2(e.target.value)}
-            className="w-full border border-neutral-800 bg-neutral-900 px-3.5 py-3 text-sm text-neutral-100 outline-none focus:border-orange-600"
+            className="w-full border border-neutral-800 bg-neutral-900 px-3.5 py-3 text-sm text-neutral-100 outline-none focus:border-movdi-naranja"
           />
         </div>
-        {err && <p role="alert" className="font-mono text-xs text-orange-500">{err}</p>}
+        {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
         <button
           type="submit"
           disabled={cargando}
-          className="w-full bg-orange-600 px-5 py-3 text-sm font-medium text-white hover:bg-orange-500 disabled:opacity-50"
+          className="w-full bg-movdi-naranja px-5 py-3 text-sm font-medium text-white hover:bg-movdi-naranja/85 disabled:opacity-50"
         >
           {cargando ? 'guardando…' : 'guardar contraseña'}
         </button>

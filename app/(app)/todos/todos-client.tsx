@@ -64,14 +64,14 @@ export default function TodosClient({ yo }: { yo: Persona }) {
       <div className="mx-auto max-w-2xl">
         <header className="border-b border-neutral-800 pb-4">
           <div className="font-mono text-xs uppercase tracking-widest text-neutral-500">movdi · ops</div>
-          <h1 className="text-xl font-semibold">✓ mis to-dos</h1>
+          <h1 className="text-2xl font-bold tracking-tight">✓ mis to-dos</h1>
           <p className="mt-0.5 font-mono text-[11px] text-neutral-500" data-testid="contador-todos">
             {pendientes} pendiente(s) · solo tú puedes ver esta lista ({yo.nombre})
           </p>
         </header>
 
         {aviso && (
-          <p role="alert" className="mt-4 border border-orange-600/40 bg-orange-600/10 px-3 py-2 font-mono text-xs text-orange-500">
+          <p role="alert" className="mt-4 border border-movdi-naranja/40 bg-movdi-naranja/10 px-3 py-2 font-mono text-xs text-movdi-naranja">
             {aviso}
           </p>
         )}
@@ -79,13 +79,13 @@ export default function TodosClient({ yo }: { yo: Persona }) {
         <form onSubmit={agregar} className="mt-6 flex gap-2">
           <input
             id="todo-input"
-            className="flex-1 border border-neutral-700 bg-neutral-900 px-3.5 py-3 text-sm text-neutral-100 outline-none focus:border-orange-600"
+            className="flex-1 border border-neutral-700 bg-neutral-900 px-3.5 py-3 text-sm text-neutral-100 outline-none focus:border-movdi-naranja"
             placeholder="agregar tarea personal…"
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
           />
           <button type="submit" data-testid="btn-agregar-todo"
-            className="bg-orange-600 px-4 py-2 text-sm font-medium hover:bg-orange-500">
+            className="rounded-full bg-movdi-naranja px-4 py-2 text-sm font-medium hover:bg-movdi-naranja/85">
             agregar
           </button>
         </form>
@@ -102,14 +102,14 @@ export default function TodosClient({ yo }: { yo: Persona }) {
             <div key={t.id} data-testid="todo-item"
               className={`group flex items-center gap-3 border border-neutral-800 bg-neutral-900 px-3 py-2.5 ${t.hecho ? 'opacity-60' : ''}`}>
               <button onClick={() => toggle(t)} data-testid="todo-check" aria-label={t.hecho ? 'marcar pendiente' : 'marcar hecho'}
-                className={`flex h-5 w-5 shrink-0 items-center justify-center border text-[11px] ${t.hecho ? 'border-emerald-500 bg-emerald-500/20 text-emerald-400' : 'border-neutral-600 text-transparent hover:border-orange-500'}`}>
+                className={`flex h-5 w-5 shrink-0 items-center justify-center border text-[11px] ${t.hecho ? 'border-movdi-verde bg-movdi-verde/20 text-movdi-verde' : 'border-neutral-600 text-transparent hover:border-movdi-naranja'}`}>
                 ✓
               </button>
               {editando === t.id ? (
                 <input
                   autoFocus
                   data-testid="todo-edit-input"
-                  className="flex-1 border border-orange-600 bg-neutral-950 px-2 py-1 text-sm text-neutral-100 outline-none"
+                  className="flex-1 border border-movdi-naranja bg-neutral-950 px-2 py-1 text-sm text-neutral-100 outline-none"
                   value={textoEdit}
                   onChange={(e) => setTextoEdit(e.target.value)}
                   onBlur={() => guardarEdicion(t)}
@@ -128,7 +128,7 @@ export default function TodosClient({ yo }: { yo: Persona }) {
                 editar
               </button>
               <button onClick={() => borrar(t.id)} data-testid="btn-borrar-todo"
-                className="text-neutral-600 opacity-0 hover:text-red-400 group-hover:opacity-100">
+                className="text-neutral-600 opacity-0 hover:text-movdi-naranja group-hover:opacity-100">
                 ✕
               </button>
             </div>

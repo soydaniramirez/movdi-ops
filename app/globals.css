@@ -1,8 +1,20 @@
 @import "tailwindcss";
 
+/* ══════════════════════════════════════════════════════════════
+   Sistema de diseño MOVDI — capa de PRESENTACIÓN (Fase 4.9).
+   Base oscura conservada; la paleta entra como acentos y bloques.
+   Paleta semántica:
+     naranja #ff4612 → marca / CTA / activo / vencida / prio alta
+     verde   #00ad68 → éxito / entregado / a tiempo
+     amarillo#f5bd47 → advertencia / esta semana / plazo ajustado
+     azul    #0055b8 → info / áreas / enlaces secundarios
+     rosa    #f7acb8 → reconocimiento / estrellas / destacados
+     gris    #dbd9d6 · negro #000000 → superficies y texto
+   ══════════════════════════════════════════════════════════════ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 @theme inline {
@@ -12,15 +24,45 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@theme {
+  /* utilidades bg-movdi-* / text-movdi-* / border-movdi-* */
+  --color-movdi-naranja: #ff4612;
+  --color-movdi-verde: #00ad68;
+  --color-movdi-amarillo: #f5bd47;
+  --color-movdi-azul: #0055b8;
+  --color-movdi-rosa: #f7acb8;
+  --color-movdi-gris: #dbd9d6;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Fondo grid tipo blueprint — MUY sutil, solo zonas hero/vacías */
+.bg-blueprint {
+  background-image:
+    linear-gradient(to right, rgb(219 217 214 / 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(219 217 214 / 0.045) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* Hover-reveal de acciones secundarias en filas (150–200ms ease) */
+.reveal-acciones {
+  opacity: 0.25;
+  transition: opacity 0.18s ease;
+}
+tr:hover .reveal-acciones,
+.grupo-reveal:hover .reveal-acciones {
+  opacity: 1;
+}
+
+/* Elevación suave al hover para cards/bloques */
+.card-hover {
+  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+.card-hover:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
 }

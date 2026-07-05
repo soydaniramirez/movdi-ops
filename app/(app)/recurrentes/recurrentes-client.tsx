@@ -15,7 +15,7 @@ import { moverInstancia } from '../peticiones/actions'
 import { entregarPeticion } from '../peticiones/actions'
 import { crearRecurrente, eliminarRecurrente, entregarInstanciaVirtual, toggleRecurrente } from './actions'
 
-const inputCls = 'w-full border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-neutral-100 outline-none focus:border-orange-600'
+const inputCls = 'w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-neutral-100 outline-none focus:border-movdi-naranja'
 const labelCls = 'mb-1 block font-mono text-[11px] uppercase tracking-wider text-neutral-400'
 
 export default function RecurrentesClient({ yo }: { yo: Persona }) {
@@ -81,21 +81,21 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
         <header className="flex items-center justify-between border-b border-neutral-800 pb-4">
           <div>
             <div className="font-mono text-xs uppercase tracking-widest text-neutral-500">movdi · ops</div>
-            <h1 className="text-xl font-semibold">tareas recurrentes ↻</h1>
+            <h1 className="text-2xl font-bold tracking-tight">tareas recurrentes ↻</h1>
             <p className="mt-0.5 font-mono text-[11px] text-neutral-500">
               se generan automáticamente · {visibles.length} configuradas
             </p>
           </div>
           {puedeCrear && (
             <button onClick={() => setModalCrear(true)} data-testid="btn-nueva-recurrente"
-              className="bg-orange-600 px-4 py-2 text-sm font-medium hover:bg-orange-500">
+              className="rounded-full bg-movdi-naranja px-4 py-2 text-sm font-medium hover:bg-movdi-naranja/85">
               + nueva recurrente
             </button>
           )}
         </header>
 
         {aviso && (
-          <p role="alert" className="mt-4 border border-orange-600/40 bg-orange-600/10 px-3 py-2 font-mono text-xs text-orange-500">
+          <p role="alert" className="mt-4 border border-movdi-naranja/40 bg-movdi-naranja/10 px-3 py-2 font-mono text-xs text-movdi-naranja">
             {aviso}
           </p>
         )}
@@ -115,19 +115,19 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
                     de {t.creadoPor} · {t.esVirtual ? 'próxima del patrón' : 'instancia programada'}
                   </span>
                   {t.motivoCambioFecha && (
-                    <p className="mt-0.5 font-mono text-[11px] text-amber-400/90">movida · {t.motivoCambioFecha}</p>
+                    <p className="mt-0.5 font-mono text-[11px] text-movdi-amarillo/90">movida · {t.motivoCambioFecha}</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-[11px] text-neutral-300">{labelFecha(t)} · {t.fecha}</span>
                   <button data-testid="btn-entregar-instancia"
                     onClick={() => setModalEntrega(t)}
-                    className="border border-emerald-500/50 px-2.5 py-1 font-mono text-[11px] text-emerald-400 hover:bg-emerald-500/10">
+                    className="border border-movdi-verde/50 px-2.5 py-1 font-mono text-[11px] text-movdi-verde hover:bg-movdi-verde/85/10">
                     entregar ✓
                   </button>
                   {(t.creadoPor === yo.nombre || admin) && (
                     <button data-testid="btn-mover-mi-instancia" onClick={() => setModalMover(t)}
-                      className="border border-amber-400/50 px-2.5 py-1 font-mono text-[11px] text-amber-400 hover:bg-amber-400/10">
+                      className="border border-movdi-amarillo/50 px-2.5 py-1 font-mono text-[11px] text-movdi-amarillo hover:bg-movdi-amarillo/85/10">
                       mover
                     </button>
                   )}
@@ -140,7 +140,7 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
         {/* Patrones */}
         <section className="mt-8">
           <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">patrones configurados</h2>
-          <div className="mt-3 overflow-x-auto border border-neutral-800">
+          <div className="mt-3 overflow-x-auto rounded-2xl border border-neutral-800">
             <table className="w-full text-left text-xs" data-testid="tabla-recurrentes">
               <thead className="bg-neutral-900 font-mono text-[10px] uppercase tracking-wider text-neutral-500">
                 <tr>
@@ -164,7 +164,7 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
                       <td className="px-3 py-2 font-mono text-[11px]">{fechaCorta(proximaFecha(r))}</td>
                       <td className="px-3 py-2 font-mono text-[11px] text-neutral-500">{r.creadoPor}</td>
                       <td className="px-3 py-2">
-                        <span className={`font-mono text-[10px] ${r.activa ? 'text-emerald-400' : 'text-neutral-500'}`}>
+                        <span className={`font-mono text-[10px] ${r.activa ? 'text-movdi-verde' : 'text-neutral-500'}`}>
                           {r.activa ? 'activa' : 'pausada'}
                         </span>
                       </td>
@@ -178,7 +178,7 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
                                   if (!inst) { setAviso(`no hay una entrega pendiente próxima de ${r.para} (¿pausada/inactiva?)`); return }
                                   setModalMover(inst)
                                 }}
-                                className="border border-amber-400/40 px-2 py-0.5 font-mono text-[10px] text-amber-400">
+                                className="border border-movdi-amarillo/40 px-2 py-0.5 font-mono text-[10px] text-movdi-amarillo">
                                 mover próxima
                               </button>
                             )}
@@ -192,7 +192,7 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
                                 if (!confirm('¿eliminar esta recurrente?')) return
                                 await accion(() => eliminarRecurrente({ id: r.id }))
                               }}
-                              className="border border-red-500/40 px-2 py-0.5 font-mono text-[10px] text-red-400">
+                              className="border border-movdi-naranja/40 px-2 py-0.5 font-mono text-[10px] text-movdi-naranja">
                               ✕
                             </button>
                           </div>
@@ -258,7 +258,7 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
 function ModalShell({ titulo, onCerrar, children }: { titulo: string; onCerrar: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCerrar}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()} role="dialog" aria-label={titulo}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold">{titulo}</h2>
@@ -427,12 +427,12 @@ function ModalCrearRecurrente({ yo, personas, admin, onCerrar, onCrear }: {
           )}
         </div>
 
-        {err && <p role="alert" className="font-mono text-xs text-orange-500">{err}</p>}
+        {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
 
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onCerrar} className="border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+          <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
           <button onClick={guardar} disabled={guardando} data-testid="btn-crear-rec-confirmar"
-            className="bg-orange-600 px-4 py-2 text-xs font-medium hover:bg-orange-500 disabled:opacity-50">
+            className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85 disabled:opacity-50">
             {guardando ? 'creando…' : 'crear recurrente'}
           </button>
         </div>
@@ -464,9 +464,9 @@ function ModalEntregaInstancia({ t, onCerrar, onConfirmar }: {
           <textarea id="ent-nota" rows={2} className={inputCls} value={nota} onChange={(e) => setNota(e.target.value)} />
         </div>
         <div className="flex justify-end gap-2">
-          <button onClick={onCerrar} className="border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+          <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
           <button onClick={() => onConfirmar(link, nota)} data-testid="btn-entrega-inst-confirmar"
-            className="bg-emerald-600 px-4 py-2 text-xs font-medium hover:bg-emerald-500">
+            className="rounded-full bg-movdi-verde px-4 py-2 text-xs font-medium hover:bg-movdi-verde/85">
             marcar entregado ✓
           </button>
         </div>
@@ -517,19 +517,19 @@ function ModalMover({ t, onCerrar, onConfirmar }: {
             </label>
           </div>
         </div>
-        <p className="border border-amber-400/20 bg-amber-400/5 px-3 py-2 font-mono text-[10px] uppercase tracking-wide text-neutral-400">
+        <p className="border border-movdi-amarillo/20 bg-movdi-amarillo/5 px-3 py-2 font-mono text-[10px] uppercase tracking-wide text-neutral-400">
           ℹ la siguiente entrega del patrón llegará en su fecha habitual
         </p>
-        {err && <p role="alert" className="font-mono text-xs text-orange-500">{err}</p>}
+        {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
         <div className="flex justify-end gap-2">
-          <button onClick={onCerrar} className="border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+          <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
           <button data-testid="btn-mover-inst-confirmar"
             onClick={async () => {
               if (motivo.trim().length < 10) { setErr('el motivo debe tener al menos 10 caracteres'); return }
               if (fecha === t.fecha) { setErr('la nueva fecha es igual a la actual. elige otra'); return }
               await onConfirmar(fecha, motivo, justif)
             }}
-            className="bg-amber-500 px-4 py-2 text-xs font-medium text-black hover:bg-amber-400">
+            className="rounded-full bg-movdi-amarillo px-4 py-2 text-xs font-medium text-black hover:bg-movdi-amarillo/85">
             mover entrega
           </button>
         </div>

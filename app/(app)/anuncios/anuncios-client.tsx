@@ -9,7 +9,7 @@ import {
 } from '@/lib/anuncios'
 import { archivarAnuncio, crearAnuncio, marcarAnuncioVisto } from './actions'
 
-const inputCls = 'w-full border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-neutral-100 outline-none focus:border-orange-600'
+const inputCls = 'w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-neutral-100 outline-none focus:border-movdi-naranja'
 const labelCls = 'mb-1 block font-mono text-[11px] uppercase tracking-wider text-neutral-400'
 
 export default function AnunciosClient({ yo }: { yo: Persona }) {
@@ -56,21 +56,21 @@ export default function AnunciosClient({ yo }: { yo: Persona }) {
         <header className="flex items-center justify-between border-b border-neutral-800 pb-4">
           <div>
             <div className="font-mono text-xs uppercase tracking-widest text-neutral-500">movdi · ops</div>
-            <h1 className="text-xl font-semibold">📣 anuncios</h1>
+            <h1 className="text-2xl font-bold tracking-tight">📣 anuncios</h1>
             <p className="mt-0.5 font-mono text-[11px] text-neutral-500" data-testid="contador-no-vistos">
               {visibles.length} activos · {noVistos} sin leer
             </p>
           </div>
           {puedeCrearAnuncios(yo) && (
             <button onClick={() => setModalCrear(true)} data-testid="btn-nuevo-anuncio"
-              className="bg-orange-600 px-4 py-2 text-sm font-medium hover:bg-orange-500">
+              className="rounded-full bg-movdi-naranja px-4 py-2 text-sm font-medium hover:bg-movdi-naranja/85">
               + nuevo anuncio
             </button>
           )}
         </header>
 
         {aviso && (
-          <p role="alert" className="mt-4 border border-orange-600/40 bg-orange-600/10 px-3 py-2 font-mono text-xs text-orange-500">
+          <p role="alert" className="mt-4 border border-movdi-naranja/40 bg-movdi-naranja/10 px-3 py-2 font-mono text-xs text-movdi-naranja">
             {aviso}
           </p>
         )}
@@ -98,7 +98,7 @@ export default function AnunciosClient({ yo }: { yo: Persona }) {
                     </p>
                   </div>
                   <span data-testid="estado-visto"
-                    className={`shrink-0 font-mono text-[10px] ${visto ? 'text-emerald-400' : 'text-orange-500'}`}>
+                    className={`shrink-0 font-mono text-[10px] ${visto ? 'text-movdi-verde' : 'text-movdi-naranja'}`}>
                     {visto ? 'leído ✓' : '● sin leer'}
                   </span>
                 </div>
@@ -155,7 +155,7 @@ function ModalDetalle({ a, yo, vistos, onCerrar, onVisto, onArchivar }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCerrar}>
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()} role="dialog" aria-label={a.titulo}>
         <div className="mb-3 flex items-center justify-between">
           <span className={`border px-1.5 py-0.5 font-mono text-[10px] ${t.clase}`}>{t.label}</span>
@@ -167,8 +167,8 @@ function ModalDetalle({ a, yo, vistos, onCerrar, onVisto, onArchivar }: {
           creado por <strong className="text-neutral-200">{a.creadoPor}</strong> · para {AUDIENCIAS_LABEL[a.audiencia] ?? a.audiencia}<br />
           publicado: {a.creadoEn.slice(0, 10)} · {a.expiraEn ? `expira: ${a.expiraEn.slice(0, 10)}` : 'no expira'}<br />
           {visto
-            ? <span className="text-emerald-400">tú ya lo viste ✓</span>
-            : <span className="text-orange-500">aún no marcado como visto</span>}
+            ? <span className="text-movdi-verde">tú ya lo viste ✓</span>
+            : <span className="text-movdi-naranja">aún no marcado como visto</span>}
         </div>
 
         {esCreador && (
@@ -189,16 +189,16 @@ function ModalDetalle({ a, yo, vistos, onCerrar, onVisto, onArchivar }: {
         )}
 
         <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onCerrar} className="border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cerrar</button>
+          <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cerrar</button>
           {!visto && !esCreador && (
             <button onClick={onVisto} data-testid="btn-marcar-visto"
-              className="bg-orange-600 px-4 py-2 text-xs font-medium hover:bg-orange-500">
+              className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85">
               ✓ marcar como visto
             </button>
           )}
           {esCreador && (
             <button onClick={onArchivar} data-testid="btn-archivar-anuncio"
-              className="border border-red-500/40 px-4 py-2 text-xs text-red-400 hover:bg-red-500/10">
+              className="border border-movdi-naranja/40 px-4 py-2 text-xs text-movdi-naranja hover:bg-movdi-naranja/10">
               archivar
             </button>
           )}
@@ -223,7 +223,7 @@ function ModalCrearAnuncio({ onCerrar, onCrear }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCerrar}>
-      <div className="w-full max-w-lg border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
+      <div className="w-full max-w-lg rounded-2xl border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()} role="dialog" aria-label="nuevo anuncio">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold">nuevo anuncio</h2>
@@ -259,9 +259,9 @@ function ModalCrearAnuncio({ onCerrar, onCrear }: {
             <label className={labelCls} htmlFor="anu-expira">expira (opcional — vacío = permanente)</label>
             <input id="anu-expira" type="date" className={inputCls} value={expira} onChange={(e) => setExpira(e.target.value)} />
           </div>
-          {err && <p role="alert" className="font-mono text-xs text-orange-500">{err}</p>}
+          {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
           <div className="flex justify-end gap-2 pt-1">
-            <button onClick={onCerrar} className="border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+            <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
             <button data-testid="btn-crear-anuncio-confirmar" disabled={guardando}
               onClick={async () => {
                 setErr(null)
@@ -271,7 +271,7 @@ function ModalCrearAnuncio({ onCerrar, onCrear }: {
                 setGuardando(false)
                 if (!ok) setErr('no se pudo publicar — revisa el aviso')
               }}
-              className="bg-orange-600 px-4 py-2 text-xs font-medium hover:bg-orange-500 disabled:opacity-50">
+              className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85 disabled:opacity-50">
               {guardando ? 'publicando…' : 'publicar anuncio'}
             </button>
           </div>

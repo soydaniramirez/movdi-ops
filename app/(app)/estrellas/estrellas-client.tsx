@@ -10,7 +10,7 @@ import {
 } from '@/lib/estrellas'
 import { darEstrella } from './actions'
 
-const inputCls = 'w-full border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-neutral-100 outline-none focus:border-orange-600'
+const inputCls = 'w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-neutral-100 outline-none focus:border-movdi-naranja'
 const labelCls = 'mb-1 block font-mono text-[11px] uppercase tracking-wider text-neutral-400'
 
 export default function EstrellasClient({ yo }: { yo: Persona }) {
@@ -54,19 +54,19 @@ export default function EstrellasClient({ yo }: { yo: Persona }) {
         <header className="flex items-center justify-between border-b border-neutral-800 pb-4">
           <div>
             <div className="font-mono text-xs uppercase tracking-widest text-neutral-500">movdi · ops</div>
-            <h1 className="text-xl font-semibold">⭐ estrellas de colaboración</h1>
+            <h1 className="text-2xl font-bold tracking-tight">⭐ estrellas de colaboración</h1>
             <p className="mt-0.5 font-mono text-[11px] text-neutral-500" data-testid="contador-estrellas">
               {misRecibidas.length} recibida(s) en total · {recibidasMes.length} este mes (+{recibidasMes.length * 15} XP)
             </p>
           </div>
           <button onClick={() => setModalDar(true)} data-testid="btn-dar-estrella"
-            className="bg-orange-600 px-4 py-2 text-sm font-medium hover:bg-orange-500">
+            className="rounded-full bg-movdi-naranja px-4 py-2 text-sm font-medium hover:bg-movdi-naranja/85">
             ⭐ dar estrella {restantes > 0 ? `(${restantes})` : ''}
           </button>
         </header>
 
         {aviso && (
-          <p role="alert" className="mt-4 border border-orange-600/40 bg-orange-600/10 px-3 py-2 font-mono text-xs text-orange-500">
+          <p role="alert" className="mt-4 border border-movdi-naranja/40 bg-movdi-naranja/10 px-3 py-2 font-mono text-xs text-movdi-naranja">
             {aviso}
           </p>
         )}
@@ -81,7 +81,7 @@ export default function EstrellasClient({ yo }: { yo: Persona }) {
               </p>
             )}
             {misRecibidas.slice(0, 8).map((e) => (
-              <div key={e.id} data-testid="estrella-item" className="flex items-start gap-3 border border-neutral-800 bg-neutral-900 px-3.5 py-2.5">
+              <div key={e.id} data-testid="estrella-item" className="flex items-start gap-3 card-hover rounded-xl card-hover rounded-xl border border-neutral-800 bg-neutral-900 px-3.5 py-2.5">
                 <span className="text-lg leading-tight">⭐</span>
                 <div>
                   <p className="text-sm">&ldquo;{e.motivo}&rdquo;</p>
@@ -176,7 +176,7 @@ function ModalDarEstrella({ yo, personas, estrellas, restantes, onCerrar, onDar 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCerrar}>
-      <div className="w-full max-w-md border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
+      <div className="w-full max-w-md rounded-2xl border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
         onClick={(e) => e.stopPropagation()} role="dialog" aria-label="dar estrella">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold">⭐ dar una estrella</h2>
@@ -201,9 +201,9 @@ function ModalDarEstrella({ yo, personas, estrellas, restantes, onCerrar, onDar 
               placeholder="ej: me salvó con el cierre del cliente"
               value={motivo} onChange={(e) => setMotivo(e.target.value)} />
           </div>
-          {err && <p role="alert" className="font-mono text-xs text-orange-500">{err}</p>}
+          {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
           <div className="flex justify-end gap-2">
-            <button onClick={onCerrar} className="border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+            <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
             <button data-testid="btn-dar-confirmar" disabled={guardando || restantes === 0}
               onClick={async () => {
                 setErr(null)
@@ -216,7 +216,7 @@ function ModalDarEstrella({ yo, personas, estrellas, restantes, onCerrar, onDar 
                 setGuardando(false)
                 if (!ok) setErr('no se pudo — revisa el aviso')
               }}
-              className="bg-orange-600 px-4 py-2 text-xs font-medium hover:bg-orange-500 disabled:opacity-50">
+              className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85 disabled:opacity-50">
               {guardando ? 'dando…' : 'dar estrella ⭐'}
             </button>
           </div>

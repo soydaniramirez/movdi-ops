@@ -70,6 +70,21 @@ export function mapPersonaRow(r: any): Persona {
   }
 }
 
+// ⚠ plazo ajustado — paridad EXACTA de margenPeticion del SPA (index.html
+// L1500): días de margen con los que NACIÓ la petición (día de creación →
+// fecha límite ORIGINAL si hubo cambios). El indicador se enciende con
+// margen ≤ 2 ('plazo ajustado') y margen ≤ 1 ('plazo muy ajustado'), solo
+// en no entregadas y nunca en instancias recurrentes.
+export function margenPeticion(
+  t: Pick<Peticion, 'creadaEn' | 'fecha' | 'fechaOriginal'>,
+): number | null {
+  if (!t.creadaEn || !t.fecha) return null
+  const pedida = new Date((t.creadaEn || '').slice(0, 10))
+  const limite = new Date(t.fechaOriginal || t.fecha)
+  if (isNaN(pedida.getTime()) || isNaN(limite.getTime())) return null
+  return Math.round((limite.getTime() - pedida.getTime()) / (24 * 3600 * 1000))
+}
+
 export function mapPeticionRow(r: any): Peticion {
   return {
     id: r.id,

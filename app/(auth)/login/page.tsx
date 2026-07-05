@@ -10,21 +10,21 @@ export default async function LoginPage({
   const { error } = await searchParams
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-neutral-950 px-4">
+    <main className="bg-blueprint flex min-h-screen items-center justify-center bg-neutral-950 px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8">
           <div className="font-mono text-xs uppercase tracking-widest text-neutral-500">
             / acceso interno
           </div>
           <h1 className="mt-2 text-2xl font-semibold text-neutral-100">
-            MOVDI <span className="text-orange-600">·</span> ops
+            MOVDI <span className="text-movdi-naranja">·</span> ops
           </h1>
           <p className="mt-2 text-sm text-neutral-400">
             ingresa con tu correo y contraseña.
           </p>
         </div>
         {error === 'link_invalido' && (
-          <p className="mb-4 border border-orange-600/40 bg-orange-600/10 px-3 py-2 font-mono text-xs text-orange-500">
+          <p className="mb-4 border border-movdi-naranja/40 bg-movdi-naranja/10 px-3 py-2 font-mono text-xs text-movdi-naranja">
             el link expiró o no es válido. solicita uno nuevo con “¿olvidaste tu contraseña?”.
           </p>
         )}

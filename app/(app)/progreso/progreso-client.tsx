@@ -89,18 +89,18 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
       <div className="mx-auto max-w-4xl space-y-8">
         <header className="border-b border-neutral-800 pb-4">
           <div className="font-mono text-xs uppercase tracking-widest text-neutral-500">movdi · ops</div>
-          <h1 className="text-xl font-semibold">🏆 progreso</h1>
+          <h1 className="text-2xl font-bold tracking-tight">🏆 progreso</h1>
         </header>
 
-        {aviso && <p role="alert" className="border border-orange-600/40 bg-orange-600/10 px-3 py-2 font-mono text-xs text-orange-500">{aviso}</p>}
-        {okMsg && <p role="status" data-testid="cierre-ok" className="border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 font-mono text-xs text-emerald-400">{okMsg}</p>}
+        {aviso && <p role="alert" className="border border-movdi-naranja/40 bg-movdi-naranja/10 px-3 py-2 font-mono text-xs text-movdi-naranja">{aviso}</p>}
+        {okMsg && <p role="status" data-testid="cierre-ok" className="border border-movdi-verde/40 bg-movdi-verde/10 px-3 py-2 font-mono text-xs text-movdi-verde">{okMsg}</p>}
 
         {/* Mi progreso del mes */}
-        <section data-testid="mi-progreso" className="border border-neutral-800 bg-neutral-900 p-5">
+        <section data-testid="mi-progreso" className="bg-blueprint rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
           <h2 className="font-mono text-[11px] uppercase tracking-wider text-neutral-400">mi progreso · {mes}</h2>
           <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-3xl font-semibold text-orange-500" data-testid="mi-xp">{game.xp} <span className="text-sm text-neutral-400">XP</span></p>
+              <p className="text-3xl font-semibold text-movdi-naranja" data-testid="mi-xp">{game.xp} <span className="text-sm text-neutral-400">XP</span></p>
               <p className="mt-1 font-mono text-xs text-neutral-300" data-testid="mi-nivel">nivel {game.nivel} · {game.nivelNombre}</p>
               <p className="mt-0.5 font-mono text-[10px] text-neutral-500">
                 base {game.xpBase} · anticipación +{game.bonusAnticipacion} · estrellas +{game.xpEstrellas} · {game.entregadas} entrega(s)
@@ -110,13 +110,13 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
               {game.siguienteNivel ? (
                 <>
                   <div className="h-2 w-full bg-neutral-800">
-                    <div className="h-2 bg-orange-600" style={{ width: `${Math.max(0, Math.min(100, game.progresoNivel))}%` }} />
+                    <div className="h-2 bg-movdi-naranja" style={{ width: `${Math.max(0, Math.min(100, game.progresoNivel))}%` }} />
                   </div>
                   <p className="mt-1 font-mono text-[10px] text-neutral-500">
                     {game.xpParaSiguiente} XP para nivel {game.siguienteNivel.nivel} · {game.siguienteNivel.nombre}
                   </p>
                 </>
-              ) : <p className="font-mono text-[10px] text-emerald-400">nivel máximo 🎉</p>}
+              ) : <p className="font-mono text-[10px] text-movdi-verde">nivel máximo 🎉</p>}
             </div>
           </div>
         </section>
@@ -129,9 +129,9 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
               <p className="font-mono text-xs text-neutral-500">no tienes recurrentes asignadas todavía</p>
             )}
             {miRitmo.map(({ recur, cumpli }) => (
-              <div key={recur.id} data-testid="ritmo-item" className="flex items-center justify-between border border-neutral-800 bg-neutral-900 px-4 py-2.5">
+              <div key={recur.id} data-testid="ritmo-item" className="flex items-center justify-between card-hover rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-2.5">
                 <span className="text-sm">↻ {recur.nombre}</span>
-                <span className={`font-mono text-sm ${cumpli.porcentaje >= 80 ? 'text-emerald-400' : cumpli.porcentaje >= 50 ? 'text-amber-400' : 'text-orange-500'}`}>
+                <span className={`font-mono text-sm ${cumpli.porcentaje >= 80 ? 'text-movdi-verde' : cumpli.porcentaje >= 50 ? 'text-movdi-amarillo' : 'text-movdi-naranja'}`}>
                   {cumpli.entregadas}/{cumpli.total} · {cumpli.porcentaje}%
                 </span>
               </div>
@@ -151,11 +151,11 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
               )}
               {lb.ranking.map((r, i) => (
                 <div key={r.persona.id} data-testid="lb-item"
-                  className={`flex items-center gap-3 border px-3.5 py-2 transition-colors hover:border-neutral-600 ${r.persona.nombre === yo.nombre ? 'border-orange-600/40 bg-orange-600/5' : 'border-neutral-800 bg-neutral-900'}`}>
+                  className={`flex items-center gap-3 border px-3.5 py-2 transition-colors hover:border-neutral-600 ${r.persona.nombre === yo.nombre ? 'border-movdi-naranja/40 bg-movdi-naranja/5' : 'border-neutral-800 bg-neutral-900'}`}>
                   <span className="w-7 text-lg">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
                   <span className="flex-1 text-sm">{r.persona.nombre} {r.persona.apellido}</span>
                   <span className="font-mono text-[11px] text-neutral-400">{r.aTiempo}/{r.total}</span>
-                  <span className={`font-mono text-sm ${r.porcentaje >= 80 ? 'text-emerald-400' : r.porcentaje >= 50 ? 'text-amber-400' : 'text-orange-500'}`}>{r.porcentaje}%</span>
+                  <span className={`font-mono text-sm ${r.porcentaje >= 80 ? 'text-movdi-verde' : r.porcentaje >= 50 ? 'text-movdi-amarillo' : 'text-movdi-naranja'}`}>{r.porcentaje}%</span>
                 </div>
               ))}
             </div>
@@ -179,7 +179,7 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
           <div className="mt-3 flex flex-wrap gap-2">
             {logros.desbloqueados.map((l) => (
               <span key={l.id} data-testid="logro-on" title={l.desc}
-                className="border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 font-mono text-[11px] text-emerald-300">
+                className="border border-movdi-verde/40 bg-movdi-verde/10 px-2.5 py-1 font-mono text-[11px] text-movdi-verde">
                 {l.icono} {l.nombre}
               </span>
             ))}
@@ -202,10 +202,10 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
               </p>
             )}
             {historial.filter((h) => h.persona === yo.nombre && h.recompensa).map((h) => (
-              <div key={h.id} className="flex flex-wrap items-center gap-3 border border-emerald-500/30 bg-emerald-500/5 px-3.5 py-2">
+              <div key={h.id} className="flex flex-wrap items-center gap-3 border border-movdi-verde/30 bg-movdi-verde/5 px-3.5 py-2">
                 <span className="font-mono text-[11px] text-neutral-400">{h.mes}</span>
-                <span className="flex-1 text-sm text-emerald-300">🎁 {h.recompensa}</span>
-                <span className={`font-mono text-[10px] uppercase ${h.recompensaEntregada ? 'text-emerald-400' : 'text-amber-400'}`}>
+                <span className="flex-1 text-sm text-movdi-verde">🎁 {h.recompensa}</span>
+                <span className={`font-mono text-[10px] uppercase ${h.recompensaEntregada ? 'text-movdi-verde' : 'text-movdi-amarillo'}`}>
                   {h.recompensaEntregada ? 'entregada ✓' : 'pendiente de entrega'}
                 </span>
               </div>
@@ -215,7 +215,7 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
 
         {/* RH / dirección: entregar recompensas ganadas */}
         {(soyRH || veTodo) && historial.some((h) => h.recompensa) && (
-          <section data-testid="entregas-rh" className="border border-neutral-800 bg-neutral-900 p-5">
+          <section data-testid="entregas-rh" className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
             <h2 className="font-mono text-[11px] uppercase tracking-widest text-neutral-400">🎁 entrega de recompensas</h2>
             <p className="mt-1 font-mono text-[10px] text-neutral-500">recompensas ganadas en meses cerrados · márcalas al entregarlas físicamente</p>
             <div className="mt-3 space-y-1.5">
@@ -223,9 +223,9 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
                 <div key={h.id} data-testid="entrega-item" className="flex flex-wrap items-center gap-3 border border-neutral-800 bg-neutral-950 px-3.5 py-2">
                   <span className="font-mono text-[11px] text-neutral-400">{h.mes}</span>
                   <span className="text-sm text-neutral-200">{h.persona}</span>
-                  <span className="flex-1 text-sm text-emerald-300">🎁 {h.recompensa}</span>
+                  <span className="flex-1 text-sm text-movdi-verde">🎁 {h.recompensa}</span>
                   {h.recompensaEntregada ? (
-                    <span className="font-mono text-[10px] uppercase text-emerald-400">entregada ✓</span>
+                    <span className="font-mono text-[10px] uppercase text-movdi-verde">entregada ✓</span>
                   ) : (
                     <button data-testid="btn-marcar-entregada"
                       onClick={async () => {
@@ -233,7 +233,7 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
                         if (!r.ok) setAviso(r.error)
                         await recargar()
                       }}
-                      className="border border-emerald-500/50 px-2.5 py-1 font-mono text-[10px] uppercase text-emerald-400 transition-colors hover:bg-emerald-500/10">
+                      className="border border-movdi-verde/50 px-2.5 py-1 font-mono text-[10px] uppercase text-movdi-verde transition-colors hover:bg-movdi-verde/85/10">
                       marcar entregada ✓
                     </button>
                   )}
@@ -252,8 +252,8 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
             </p>
             <div className="mt-3 space-y-1.5">
               {recompensas.filter((r) => r.activa).map((r) => (
-                <div key={r.id} className="flex items-center gap-3 border border-neutral-800 bg-neutral-900 px-3.5 py-2">
-                  <span className="font-mono text-[11px] text-orange-500">nivel {r.nivel}</span>
+                <div key={r.id} className="flex items-center gap-3 card-hover rounded-xl border border-neutral-800 bg-neutral-900 px-3.5 py-2">
+                  <span className="font-mono text-[11px] text-movdi-naranja">nivel {r.nivel}</span>
                   <span className="text-sm text-neutral-200">{r.descripcion}</span>
                 </div>
               ))}
@@ -269,8 +269,8 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
 
         {/* Cierre de mes (solo dirección) + historial */}
         {soyDireccion && !cerrado && preview.length > 0 && (
-          <section data-testid="cierre-pendiente" className="border border-orange-600/30 bg-orange-600/5 p-5">
-            <h2 className="font-mono text-[11px] uppercase tracking-widest text-orange-500">📋 cierre de mes pendiente</h2>
+          <section data-testid="cierre-pendiente" className="border border-movdi-naranja/30 bg-movdi-naranja/5 p-5">
+            <h2 className="font-mono text-[11px] uppercase tracking-widest text-movdi-naranja">📋 cierre de mes pendiente</h2>
             <p className="mt-2 text-sm text-neutral-300">
               el mes <strong>{mesAnt}</strong> aún no se cierra. al cerrarlo se archivará el progreso de{' '}
               {preview.length} persona(s) y {preview.filter((r) => r.recompensa).length} calificarán para recompensa.
@@ -279,7 +279,7 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
               {preview.slice(0, 5).map((r, i) => (
                 <p key={r.persona} className="font-mono text-[11px] text-neutral-400">
                   {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`} {r.persona} · nivel {r.nivel} · {r.xp} XP ·{' '}
-                  {r.recompensa ? <span className="text-emerald-400">🎁 {r.recompensa}</span> : 'sin recompensa'}
+                  {r.recompensa ? <span className="text-movdi-verde">🎁 {r.recompensa}</span> : 'sin recompensa'}
                 </p>
               ))}
             </div>
@@ -291,7 +291,7 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
                 else { setAviso(r.error); setOkMsg(null) }
                 await recargar()
               }}
-              className="mt-4 bg-orange-600 px-4 py-2 text-sm font-medium hover:bg-orange-500">
+              className="mt-4 rounded-full bg-movdi-naranja px-4 py-2 text-sm font-medium hover:bg-movdi-naranja/85">
               cerrar {mesAnt} y generar recompensas
             </button>
           </section>
@@ -304,12 +304,12 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
             </h2>
             <div className="mt-3 space-y-1.5">
               {historial.filter((h) => veTodo || soyRH || h.persona === yo.nombre).map((h) => (
-                <div key={h.id} data-testid="historial-item" className="flex flex-wrap items-center gap-3 border border-neutral-800 bg-neutral-900 px-3.5 py-2 font-mono text-[11px] text-neutral-400">
+                <div key={h.id} data-testid="historial-item" className="flex flex-wrap items-center gap-3 card-hover rounded-xl border border-neutral-800 bg-neutral-900 px-3.5 py-2 font-mono text-[11px] text-neutral-400">
                   <span className="text-neutral-200">{h.mes}</span>
                   <span className="flex-1">{h.persona}</span>
                   <span>{h.xpTotal} XP · nivel {h.nivelAlcanzado}</span>
                   <span>{h.entregadas} entregas · {h.cumplimiento}%</span>
-                  {h.recompensa && <span className="text-emerald-400">🎁 {h.recompensa}</span>}
+                  {h.recompensa && <span className="text-movdi-verde">🎁 {h.recompensa}</span>}
                 </div>
               ))}
             </div>
@@ -346,13 +346,13 @@ function EditorCatalogo({ recompensas, onGuardado, onError }: {
   }
 
   return (
-    <div data-testid="editor-catalogo" className="mt-4 border border-orange-600/30 bg-orange-600/5 p-4">
-      <h3 className="font-mono text-[11px] uppercase tracking-widest text-orange-500">✏️ editar catálogo (admin)</h3>
+    <div data-testid="editor-catalogo" className="mt-4 border border-movdi-naranja/30 bg-movdi-naranja/5 p-4">
+      <h3 className="font-mono text-[11px] uppercase tracking-widest text-movdi-naranja">✏️ editar catálogo (admin)</h3>
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <div>
           <label className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-neutral-400" htmlFor="cat-nivel">nivel</label>
           <select id="cat-nivel" value={nivel} onChange={(e) => elegirNivel(Number(e.target.value))}
-            className="border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-orange-600">
+            className="rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-movdi-naranja">
             {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>nivel {n}</option>)}
           </select>
         </div>
@@ -360,7 +360,7 @@ function EditorCatalogo({ recompensas, onGuardado, onError }: {
           <label className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-neutral-400" htmlFor="cat-desc">recompensa</label>
           <input id="cat-desc" value={desc} onChange={(e) => setDesc(e.target.value)}
             placeholder={actual ? undefined : '— este nivel no tiene recompensa aún —'}
-            className="w-full border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-orange-600" />
+            className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-movdi-naranja" />
         </div>
         <label className="flex cursor-pointer items-center gap-2 pb-2 font-mono text-[11px] text-neutral-300">
           <input type="checkbox" checked={activa} onChange={(e) => setActiva(e.target.checked)} /> activa
@@ -373,7 +373,7 @@ function EditorCatalogo({ recompensas, onGuardado, onError }: {
             if (!r.ok) { onError(r.error); return }
             await onGuardado()
           }}
-          className="bg-orange-600 px-4 py-2 text-xs font-medium transition-colors hover:bg-orange-500 disabled:opacity-50">
+          className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium transition-colors hover:bg-movdi-naranja/85 disabled:opacity-50">
           {guardando ? 'guardando…' : 'guardar'}
         </button>
       </div>

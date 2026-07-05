@@ -10,7 +10,7 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser()
 
   return (
-    <main className="min-h-screen bg-neutral-950 px-6 py-10">
+    <main className="bg-blueprint min-h-screen bg-neutral-950 px-6 py-10">
       <div className="mx-auto max-w-3xl">
         <header className="flex items-center justify-between border-b border-neutral-800 pb-4">
           <div>
@@ -18,7 +18,7 @@ export default async function DashboardPage() {
               centro de operaciones
             </div>
             <h1 className="text-xl font-semibold text-neutral-100">
-              MOVDI <span className="text-orange-600">·</span> ops
+              MOVDI <span className="text-movdi-naranja">·</span> ops
             </h1>
           </div>
           <LogoutButton />
@@ -28,10 +28,10 @@ export default async function DashboardPage() {
             sesión activa: <strong data-testid="user-email">{user?.email}</strong>
           </p>
           <nav className="mt-4">
-            <a href="/peticiones" className="inline-block border border-orange-600/50 px-4 py-2 font-mono text-xs text-orange-500 hover:bg-orange-600/10">
+            <a href="/peticiones" className="inline-block border border-movdi-naranja/50 px-4 py-2 font-mono text-xs text-movdi-naranja hover:bg-movdi-naranja/10">
               📋 peticiones →
             </a>
-            <a href="/recurrentes" className="ml-2 inline-block border border-orange-600/50 px-4 py-2 font-mono text-xs text-orange-500 hover:bg-orange-600/10">
+            <a href="/recurrentes" className="ml-2 inline-block border border-movdi-naranja/50 px-4 py-2 font-mono text-xs text-movdi-naranja hover:bg-movdi-naranja/10">
               ↻ recurrentes →
             </a>
           </nav>

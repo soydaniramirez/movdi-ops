@@ -18,7 +18,7 @@ export default async function PanelRHPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-neutral-950">
         <div className="text-center" data-testid="rh-denegado">
-          <p className="font-mono text-xs uppercase tracking-widest text-orange-500">acceso restringido</p>
+          <p className="font-mono text-xs uppercase tracking-widest text-movdi-naranja">acceso restringido</p>
           <p className="mt-2 text-sm text-neutral-400">
             el panel de recursos humanos es solo para RH y dirección.
           </p>

@@ -71,13 +71,13 @@ export default function Campana({ nombre }: { nombre: string }) {
       <button
         onClick={() => setAbierto((a) => !a)}
         data-testid="btn-campana"
-        className="relative border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 hover:border-orange-600"
+        className="relative border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 hover:border-movdi-naranja"
         aria-label="notificaciones"
       >
         🔔
         {sinVer > 0 && (
           <span data-testid="badge-notif"
-            className="absolute -right-1.5 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-600 px-1 font-mono text-[10px] text-white">
+            className="absolute -right-1.5 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-movdi-naranja px-1 font-mono text-[10px] text-white">
             {sinVer > 9 ? '9+' : sinVer}
           </span>
         )}
@@ -97,7 +97,7 @@ export default function Campana({ nombre }: { nombre: string }) {
               )}
               {notifs.length > 0 && (
                 <button onClick={borrarTodas} data-testid="btn-borrar-todas"
-                  className="font-mono text-[10px] text-neutral-400 hover:text-red-400">
+                  className="font-mono text-[10px] text-neutral-400 hover:text-movdi-naranja">
                   🗑 borrar todas
                 </button>
               )}
@@ -118,11 +118,11 @@ export default function Campana({ nombre }: { nombre: string }) {
                   {n.detalle && <p className="mt-0.5 text-[11px] text-neutral-400">{n.detalle}</p>}
                   <p className="mt-0.5 font-mono text-[10px] text-neutral-500">{tiempoRelativo(n.creadaEn)}</p>
                 </div>
-                {!n.vista && <span data-testid="notif-dot" className="mt-1 h-2 w-2 shrink-0 rounded-full bg-orange-500" />}
+                {!n.vista && <span data-testid="notif-dot" className="mt-1 h-2 w-2 shrink-0 rounded-full bg-movdi-naranja" />}
                 <button
                   onClick={(e) => { e.stopPropagation(); void borrar(n.id) }}
                   data-testid="btn-borrar-notif"
-                  className="text-neutral-600 opacity-0 hover:text-red-400 group-hover:opacity-100">
+                  className="text-neutral-600 opacity-0 hover:text-movdi-naranja group-hover:opacity-100">
                   ✕
                 </button>
               </div>
