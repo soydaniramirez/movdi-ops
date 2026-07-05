@@ -56,6 +56,17 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
     return recurrentes.filter((r) => r.area && misAreas.includes(r.area))
   }, [recurrentes, admin, yo])
 
+  // Filtro POR PERSONA (mismo acomodo que en peticiones, aquí como menú)
+  const [filtroPersona, setFiltroPersona] = useState<string>('')
+  const personasConPatron = useMemo(
+    () => [...new Set(visibles.map((r) => r.para))].sort((a, b) => a.localeCompare(b)),
+    [visibles],
+  )
+  const visiblesFiltradas = useMemo(
+    () => (filtroPersona ? visibles.filter((r) => r.para === filtroPersona) : visibles),
+    [visibles, filtroPersona],
+  )
+
   // Mis próximas entregas (motor de instancias, paridad obtenerInstanciasRecur)
   const misInstancias = useMemo(
     () => obtenerInstanciasRecur({ recurrentes, peticiones, personas, nombre: yo.nombre }),
@@ -122,12 +133,12 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
                   <span className="font-mono text-[11px] text-neutral-300">{labelFecha(t)} · {t.fecha}</span>
                   <button data-testid="btn-entregar-instancia"
                     onClick={() => setModalEntrega(t)}
-                    className="border border-movdi-verde/50 px-2.5 py-1 font-mono text-[11px] text-movdi-verde hover:bg-movdi-verde/85/10">
+                    className="border border-movdi-verde/50 px-2.5 py-1 font-mono text-[11px] text-movdi-verde hover:bg-movdi-verde/10">
                     entregar ✓
                   </button>
                   {(t.creadoPor === yo.nombre || admin) && (
                     <button data-testid="btn-mover-mi-instancia" onClick={() => setModalMover(t)}
-                      className="border border-movdi-amarillo/50 px-2.5 py-1 font-mono text-[11px] text-movdi-amarillo hover:bg-movdi-amarillo/85/10">
+                      className="border border-movdi-amarillo/50 px-2.5 py-1 font-mono text-[11px] text-movdi-amarillo hover:bg-movdi-amarillo/10">
                       mover
                     </button>
                   )}
@@ -139,7 +150,24 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
 
         {/* Patrones */}
         <section className="mt-8">
-          <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">patrones configurados</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">
+              patrones configurados
+              {filtroPersona && <span className="ml-2 text-movdi-naranja">· {filtroPersona} ({visiblesFiltradas.length})</span>}
+            </h2>
+            <select
+              aria-label="filtrar patrones por persona"
+              data-testid="filtro-persona-recur"
+              value={filtroPersona}
+              onChange={(e) => setFiltroPersona(e.target.value)}
+              className={`rounded-full border bg-neutral-950 px-2.5 py-1 font-mono text-[11px] outline-none transition-colors ${filtroPersona ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}
+            >
+              <option value="">persona: todas ({visibles.length})</option>
+              {personasConPatron.map((n) => (
+                <option key={n} value={n}>{n} ({visibles.filter((r) => r.para === n).length})</option>
+              ))}
+            </select>
+          </div>
           <div className="mt-3 overflow-x-auto rounded-2xl border border-neutral-800">
             <table className="w-full text-left text-xs" data-testid="tabla-recurrentes">
               <thead className="bg-neutral-900 font-mono text-[10px] uppercase tracking-wider text-neutral-500">
@@ -151,7 +179,7 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
                 </tr>
               </thead>
               <tbody>
-                {visibles.map((r) => {
+                {visiblesFiltradas.map((r) => {
                   const puedeAdministrar = r.creadoPor === yo.nombre || admin
                   return (
                     <tr key={r.id} data-testid="fila-recurrente" className="border-t border-neutral-800">

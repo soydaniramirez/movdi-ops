@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { mapPeticionRow, mapPersonaRow } from '@/lib/peticiones'
 import { esDireccion } from '@/lib/equipo'
+import RhLista from './rh-lista'
 
 // Panel RH — acceso por nivel, verificado EN EL SERVIDOR contra la sesión
 // (decisión 2026-07-03: sin contraseña extra). Los datos ya están cubiertos
@@ -43,19 +44,7 @@ export default async function PanelRHPage() {
             peticiones del área RH · acceso por nivel ({yo!.nivel}) verificado en servidor · las privadas solo las ven creador y destinatario
           </p>
         </header>
-        <section className="mt-6 space-y-2">
-          {peticiones.length === 0 && (
-            <p className="font-mono text-xs text-neutral-500">no hay peticiones del área RH visibles para ti</p>
-          )}
-          {peticiones.map((t) => (
-            <article key={t.id} data-testid="rh-peticion" className="border border-neutral-800 bg-neutral-900 px-4 py-3">
-              <p className="text-sm font-semibold">{t.privada && '🔒 '}{t.nombre}</p>
-              <p className="mt-0.5 font-mono text-[11px] text-neutral-500">
-                de {t.creadoPor} para {t.para} · {t.fecha} · {t.estatus}
-              </p>
-            </article>
-          ))}
-        </section>
+        <RhLista peticiones={peticiones} />
       </div>
     </main>
   )

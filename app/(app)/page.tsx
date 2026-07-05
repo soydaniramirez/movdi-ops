@@ -35,9 +35,6 @@ export default async function DashboardPage() {
               ↻ recurrentes →
             </a>
           </nav>
-          <p className="mt-4 font-mono text-xs text-neutral-500">
-            fase 4 en curso — los demás módulos se migran uno por uno.
-          </p>
         </section>
       </div>
     </main>

@@ -235,14 +235,26 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
             </button>
           ))}
           <span className="mx-2 h-4 w-px bg-neutral-800" />
-          {(['todas', 'vencidas', 'semana', ...AREAS_VALIDAS] as Filtro[])
-            .filter((f) => f !== 'rh' || yo.esDireccion || yo.nivel === 'rh')
-            .map((f) => (
-              <button key={f} onClick={() => setFiltro(f)}
-                className={`rounded-full border px-2.5 py-1 font-mono text-[11px] ${filtro === f ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}>
-                {AREAS_LABEL[f] ?? f}
-              </button>
-            ))}
+          {(['todas', 'vencidas', 'semana'] as Filtro[]).map((f) => (
+            <button key={f} onClick={() => setFiltro(f)}
+              className={`rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors ${filtro === f ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}>
+              {f === 'semana' ? 'esta semana' : f}
+            </button>
+          ))}
+          {/* áreas como menú desplegable (misma semántica que los chips:
+              un solo filtro activo a la vez) */}
+          <select
+            aria-label="filtrar por área"
+            data-testid="filtro-area"
+            value={(AREAS_VALIDAS as readonly string[]).includes(filtro) ? filtro : ''}
+            onChange={(e) => setFiltro((e.target.value || 'todas') as Filtro)}
+            className={`rounded-full border bg-neutral-950 px-2.5 py-1 font-mono text-[11px] outline-none transition-colors ${(AREAS_VALIDAS as readonly string[]).includes(filtro) ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}
+          >
+            <option value="">área: todas</option>
+            {AREAS_VALIDAS
+              .filter((a) => a !== 'rh' || yo.esDireccion || yo.nivel === 'rh')
+              .map((a) => <option key={a} value={a}>{AREAS_LABEL[a]}</option>)}
+          </select>
         </nav>
 
         {/* filtro por persona activo (viene del semáforo) */}
@@ -591,7 +603,7 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
             {t.estatus !== 'entregado' && (
               <>
                 <button onClick={onEntregar} data-testid="btn-entregar"
-                  className={`${btn} border-movdi-verde/50 text-movdi-verde hover:bg-movdi-verde/85/10`}>
+                  className={`${btn} border-movdi-verde/50 text-movdi-verde hover:bg-movdi-verde/10`}>
                   entregar ✓
                 </button>
                 <button onClick={() => onEstatus(t.estatus === 'proceso' ? 'pendiente' : 'proceso')}
@@ -624,7 +636,7 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
             )}
             {t.origenRecur && (soyCreador || admin) && t.estatus !== 'entregado' && (
               <button onClick={onMover} data-testid="btn-mover-instancia"
-                className={`${btn} border-movdi-amarillo/50 text-movdi-amarillo hover:bg-movdi-amarillo/85/10`}>
+                className={`${btn} border-movdi-amarillo/50 text-movdi-amarillo hover:bg-movdi-amarillo/10`}>
                 mover instancia
               </button>
             )}

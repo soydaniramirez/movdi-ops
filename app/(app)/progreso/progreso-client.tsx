@@ -233,7 +233,7 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
                         if (!r.ok) setAviso(r.error)
                         await recargar()
                       }}
-                      className="border border-movdi-verde/50 px-2.5 py-1 font-mono text-[10px] uppercase text-movdi-verde transition-colors hover:bg-movdi-verde/85/10">
+                      className="border border-movdi-verde/50 px-2.5 py-1 font-mono text-[10px] uppercase text-movdi-verde transition-colors hover:bg-movdi-verde/10">
                       marcar entregada ✓
                     </button>
                   )}
