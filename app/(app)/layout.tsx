@@ -45,7 +45,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </Link>
             {([
               ['/peticiones', 'peticiones'], ['/recurrentes', 'recurrentes'], ['/anuncios', 'anuncios'],
-              ['/todos', 'to-dos'], ['/estrellas', 'estrellas'], ['/progreso', 'progreso'],
+              ['/todos', 'to-dos'], ['/estrellas', 'estrellas'], ['/feedback', 'feedback'], ['/progreso', 'progreso'],
               ['/equipo', 'equipo'], ['/rh', 'rh'],
             ] as const).map(([href, lab]) => (
               <Link key={href} href={href}

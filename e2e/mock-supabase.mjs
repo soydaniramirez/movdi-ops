@@ -149,6 +149,7 @@ function reset() {
       { id: 'e-seed-1', de_persona: 'Brenda', para_persona: 'Antonio', motivo: 'me ayudó con el pitch', semana: '2020-W01', creada_en: `${MES_PREV}-22T12:00:00Z` },
     ],
     historial_mensual: [],
+    feedback: [],
     recompensas: [
       { id: 'rw-2', nivel: 2, descripcion: 'tarde libre', activa: true },
       { id: 'rw-3', nivel: 3, descripcion: 'comida con dirección', activa: true },
@@ -247,6 +248,7 @@ const server = http.createServer(async (req, res) => {
       todos: db.todos, estrellas: db.estrellas,
       personas: db.personas, invites: db.invites,
       historial_mensual: db.historial_mensual, recompensas: db.recompensas,
+      feedback: db.feedback,
     })
   }
 
@@ -657,6 +659,59 @@ const server = http.createServer(async (req, res) => {
         const cambios = JSON.parse(body || '{}')
         const objetivo = aplicarFiltros(db.recompensas, url.searchParams)
         objetivo.forEach((r) => Object.assign(r, cambios))
+        if (prefer.includes('return=representation')) return representar(objetivo)
+        return json(204, [])
+      }
+    }
+
+    if (tabla === 'feedback') {
+      // RLS cutover 7: muro público (reconocimiento+es_publico) · autor
+      // firmado ve lo suyo · destinatario su reconocimiento · dirección/flag
+      // TODO. INSERT sin suplantar autor + trigger de anonimato. UPDATE solo
+      // dirección/flag y limitado por grant a estado/respuesta/
+      // compartible_loop/es_publico (autor_id y es_anonimo congelados).
+      const esDir = yo.es_direccion === true || yo.nivel === 'ceo'
+      const flag = yo.ve_gamificacion_completa === true
+      if (req.method === 'GET') {
+        const visibles = db.feedback.filter((f) =>
+          (f.categoria === 'reconocimiento' && f.es_publico)
+          || (f.autor_id && f.autor_id === yo.id)
+          || (f.categoria === 'reconocimiento' && f.destinatario_id === yo.id)
+          || esDir || flag)
+        return representar(aplicarFiltros(visibles, url.searchParams))
+      }
+      if (req.method === 'POST') {
+        const input = JSON.parse(body || '[]')
+        const filas = Array.isArray(input) ? input : [input]
+        for (const f of filas) {
+          // with_check: autor null (anónimo) o yo — nunca otro
+          if (f.autor_id && f.autor_id !== yo.id) {
+            return json(403, { code: '42501', message: 'new row violates row-level security policy for table "feedback"' })
+          }
+        }
+        const creadas = filas.map((f) => ({
+          id: uuid(), estado: 'nuevo', respuesta: null, es_publico: false,
+          compartible_loop: false, destinatario_id: null,
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+          ...f,
+          // trigger feedback_anonimato: fuerza autor_id null en BD
+          autor_id: f.es_anonimo ? null : (f.autor_id ?? null),
+        }))
+        db.feedback.push(...creadas)
+        if (prefer.includes('return=representation')) return representar(creadas)
+        return json(201, [])
+      }
+      if (req.method === 'PATCH') {
+        const cambios = JSON.parse(body || '{}')
+        const permitidas = ['estado', 'respuesta', 'compartible_loop', 'es_publico']
+        if (Object.keys(cambios).some((c) => !permitidas.includes(c))) {
+          return json(403, { code: '42501', message: 'permission denied for table feedback' })
+        }
+        if (!esDir && !flag) {
+          return json(403, { code: '42501', message: 'permission denied for table feedback' })
+        }
+        const objetivo = aplicarFiltros(db.feedback, url.searchParams)
+        objetivo.forEach((f) => Object.assign(f, cambios, { updated_at: new Date().toISOString() }))
         if (prefer.includes('return=representation')) return representar(objetivo)
         return json(204, [])
       }

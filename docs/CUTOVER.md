@@ -63,7 +63,8 @@ en la BD `fecha_inicio`, la RPC de desactivación, las tablas del recordatorio,
 ni la migración de privacidad 4.8 (flag `ve_gamificacion_completa`, columna
 `recompensa_entregada`, RPC `podio_mes_cerrado`, policies cerradas). En staging
 fallarán (con error claro, sin corromper nada): **crear quincenal**, **desactivar
-con reasignación** y **marcar recompensa entregada**. Además, pre-cutover las
+con reasignación** y **marcar recompensa entregada**; el módulo **feedback** se
+muestra desactivado con aviso (su tabla nace en C5c). Además, pre-cutover las
 LECTURAS de estrellas/recompensas/historial siguen abiertas en BD — la UI ya
 oculta todo por rol, pero la barrera RLS real llega con C5b. Todo lo demás es
 QA completo.
@@ -201,6 +202,15 @@ el build con la Fase 4.8; la UI por rol ya la respeta).
   personas where es_direccion` → true (Dani y Emmanuel). La RPC
   `podio_mes_cerrado(null)` responde el top 3 a cualquier autenticado.
 
+**C5c. Migración `20260705220000_cutover_feedback_interno.sql`** (módulo de
+feedback; aplicar DESPUÉS de C5b — usa `mi_ve_gamificacion()`).
+- Estado esperado: existe `public.feedback` con RLS; con un usuario
+  ejecutivo: INSERT anónimo → la fila queda con `autor_id = null` (trigger);
+  INSERT con `autor_id` de OTRA persona → 42501; GET → solo muro + lo suyo;
+  una fila de categoría `mejora` ajena NO aparece. Con dirección: GET → todo;
+  UPDATE de `estado/respuesta/compartible_loop` → OK; UPDATE de `mensaje`
+  → permission denied (grant de columna).
+
 **C6. Migración `20260703231000_cutover_encender_cron_recordatorios.sql`** (el
 interruptor del recordatorio; al final a propósito).
 - Estado esperado: `select jobname, schedule from cron.job` muestra
@@ -235,6 +245,7 @@ interruptor del recordatorio; al final a propósito).
 | **C4b** | **El crítico y el más rápido**: deshacer el swap de nombres de Netlify (o reapuntar el dominio) → la URL vuelve a servir `index.html` en minutos, sin builds. Restaurar Site URL de Auth a la URL vieja | El deploy estático está GARANTIZADO intacto por el lock de C4a — el merge a main no pudo tocarlo. Por eso el site viejo NO se toca ni se borra hasta C8. Si C5 ya se aplicó, revertir también C5 (el SPA necesita la policy interim para notificar); si C3 ya se aplicó y el equipo necesita crear quincenales desde el SPA, revertir el constraint (fila C3) |
 | C5 | `create policy notif_insert on public.notificaciones for insert to authenticated with check (public.mi_nombre() is not null); grant insert on public.notificaciones to authenticated;` | Vuelve al interim documentado (spoofing entre autenticados posible otra vez — temporal) |
 | C5b | Recrear las policies abiertas: `create policy estrellas_select … using (true);` (ídem `hist_select`, `recomp_select`), `grant update on historial_mensual to authenticated;` y recrear `hist_update` con `mi_es_direccion()` | La columna flag y `recompensa_entregada` pueden QUEDARSE (aditivas); `podio_mes_cerrado` también. La UI 4.8 funciona igual con las policies abiertas |
+| C5c | `drop table public.feedback; drop type public.feedback_categoria; drop type public.feedback_estado; drop function public.feedback_forzar_anonimato(); drop function public.feedback_before_update();` | Aditiva: solo la usa el módulo feedback del Next (que se auto-desactiva con aviso si la tabla no existe) |
 | C6 | `select cron.unschedule('recordatorio-recurrentes-diario');` | Idempotente; `recurrentes_avisos` conserva el dedup para cuando se reactive |
 | C8 | `git revert` del PR de retiro; recrear site desde el repo | El index.html vive en el historial de git |
 
@@ -255,5 +266,6 @@ lock de C4a); C5/C6 tienen rollback de una línea.
 | 4 | `20260704130000_cutover_endurecer_notif_insert.sql` | cambia comportamiento (rompe notifs del SPA; requiere build con P3) |
 | 5 | `20260703231000_cutover_encender_cron_recordatorios.sql` | interruptor (pg_cron 07:00 MX) |
 | 6 | `20260705190000_cutover_gamificacion_privacidad.sql` | cambia comportamiento (cierra lecturas de gamificación; requiere build 4.8) — se aplica como C5b |
+| 7 | `20260705220000_cutover_feedback_interno.sql` | aditiva (tabla+enums+trigger+RLS del feedback; requiere build 4.10) — se aplica como C5c, después de la 6 |
 
 (la numeración de C1–C6 usa este orden de aplicación, no el timestamp del archivo)
