@@ -39,8 +39,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* header pegajoso con glassmorphism (Paso B) */}
       <div className="sticky top-0 z-40 border-b border-neutral-800 bg-neutral-950/80 px-6 py-2 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
-          <nav className="flex items-center gap-1 font-mono text-[11px]">
-            <Link href="/" className="rounded-full px-2.5 py-1 font-semibold text-neutral-200 transition-colors hover:bg-movdi-naranja hover:text-black">
+          {/* nav accesible: 14px, alto contraste y área de toque generosa */}
+          <nav className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+            <Link href="/" className="rounded-full px-3 py-1.5 font-mono font-bold tracking-tight text-neutral-100 transition-colors hover:bg-movdi-naranja hover:text-black">
               MOVDI·ops<span aria-hidden className="ml-1">→</span>
             </Link>
             {([
@@ -49,7 +50,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               ['/equipo', 'equipo'], ['/rh', 'rh'],
             ] as const).map(([href, lab]) => (
               <Link key={href} href={href}
-                className="rounded-full px-2.5 py-1 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-movdi-naranja">
+                className="rounded-full px-3 py-1.5 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-movdi-naranja">
                 {lab}
               </Link>
             ))}

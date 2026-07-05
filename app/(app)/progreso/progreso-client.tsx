@@ -78,6 +78,25 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
       .map((r) => ({ recur: r, cumpli: calcularCumplimiento(r, peticiones, 12) })),
     [recurrentes, peticiones, yo])
 
+  // meses cerrados: navegación ← → un mes a la vez + toggle de entradas
+  // (solo presentación — nada de editar los valores archivados)
+  const [mesHistSel, setMesHistSel] = useState<string | null>(null)
+  const [ocultarHistorial, setOcultarHistorial] = useState(false)
+  const historialVisible = useMemo(
+    () => historial.filter((h) => veTodo || soyRH || h.persona === yo.nombre),
+    [historial, veTodo, soyRH, yo],
+  )
+  const mesesHistorial = useMemo(
+    () => [...new Set(historialVisible.map((h) => h.mes))].sort((a, b) => (a < b ? 1 : -1)),
+    [historialVisible],
+  )
+  const mesHistActivo = mesHistSel && mesesHistorial.includes(mesHistSel) ? mesHistSel : mesesHistorial[0] ?? null
+  const idxMesHist = mesHistActivo ? mesesHistorial.indexOf(mesHistActivo) : -1
+  const filasMesHist = useMemo(
+    () => historialVisible.filter((h) => h.mes === mesHistActivo),
+    [historialVisible, mesHistActivo],
+  )
+
   const mesAnt = mesAnteriorStr()
   const cerrado = mesCerrado(historial, mesAnt)
   const preview = useMemo(() => calcularReporteCierre({
@@ -297,22 +316,49 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
           </section>
         )}
 
-        {historial.filter((h) => veTodo || soyRH || h.persona === yo.nombre).length > 0 && (
+        {historialVisible.length > 0 && (
           <section data-testid="historial">
-            <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">
-              📚 meses cerrados {!veTodo && !soyRH && <span className="text-neutral-600">· lo mío</span>}
-            </h2>
-            <div className="mt-3 space-y-1.5">
-              {historial.filter((h) => veTodo || soyRH || h.persona === yo.nombre).map((h) => (
-                <div key={h.id} data-testid="historial-item" className="flex flex-wrap items-center gap-3 card-hover rounded-xl border border-neutral-800 bg-neutral-900 px-3.5 py-2 font-mono text-[11px] text-neutral-400">
-                  <span className="text-neutral-200">{h.mes}</span>
-                  <span className="flex-1">{h.persona}</span>
-                  <span>{h.xpTotal} XP · nivel {h.nivelAlcanzado}</span>
-                  <span>{h.entregadas} entregas · {h.cumplimiento}%</span>
-                  {h.recompensa && <span className="text-movdi-verde">🎁 {h.recompensa}</span>}
-                </div>
-              ))}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">
+                📚 meses cerrados {!veTodo && !soyRH && <span className="text-neutral-600">· lo mío</span>}
+              </h2>
+              {/* navegación por mes (un mes a la vez) + toggle de entradas.
+                  Solo presentación: los valores archivados no se tocan. */}
+              <div className="flex items-center gap-1.5">
+                <button data-testid="hist-mes-anterior" aria-label="mes anterior"
+                  disabled={idxMesHist >= mesesHistorial.length - 1}
+                  onClick={() => setMesHistSel(mesesHistorial[idxMesHist + 1])}
+                  className="rounded-full border border-neutral-700 px-2.5 py-1 font-mono text-xs text-neutral-300 transition-colors hover:border-neutral-500 disabled:opacity-30">
+                  ←
+                </button>
+                <span data-testid="hist-mes-actual" className="min-w-[5.5rem] text-center font-mono text-xs text-movdi-azul">
+                  {mesHistActivo ?? '—'}
+                </span>
+                <button data-testid="hist-mes-siguiente" aria-label="mes siguiente"
+                  disabled={idxMesHist <= 0}
+                  onClick={() => setMesHistSel(mesesHistorial[idxMesHist - 1])}
+                  className="rounded-full border border-neutral-700 px-2.5 py-1 font-mono text-xs text-neutral-300 transition-colors hover:border-neutral-500 disabled:opacity-30">
+                  →
+                </button>
+                <button data-testid="hist-toggle" onClick={() => setOcultarHistorial((v) => !v)}
+                  className="ml-2 rounded-full border border-neutral-700 px-2.5 py-1 font-mono text-[11px] text-neutral-400 transition-colors hover:border-neutral-500 hover:text-neutral-200">
+                  {ocultarHistorial ? `👁 mostrar (${filasMesHist.length})` : '🙈 ocultar entradas'}
+                </button>
+              </div>
             </div>
+            {!ocultarHistorial && (
+              <div className="mt-3 space-y-1.5">
+                {filasMesHist.map((h) => (
+                  <div key={h.id} data-testid="historial-item" className="flex flex-wrap items-center gap-3 card-hover rounded-xl border border-neutral-800 bg-neutral-900 px-3.5 py-2 font-mono text-[11px] text-neutral-400">
+                    <span className="text-neutral-200">{h.mes}</span>
+                    <span className="flex-1">{h.persona}</span>
+                    <span>{h.xpTotal} XP · nivel {h.nivelAlcanzado}</span>
+                    <span>{h.entregadas} entregas · {h.cumplimiento}%</span>
+                    {h.recompensa && <span className="text-movdi-verde">🎁 {h.recompensa}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
       </div>

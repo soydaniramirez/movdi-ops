@@ -819,6 +819,24 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
           </div>
         </div>
 
+        {/* nudge de plazo ajustado (mismo umbral del ⚠: margen ≤ 2 días).
+            NO bloquea — solo invita a verificar con quien entrega. */}
+        {(() => {
+          const m = diasHasta(fecha)
+          if (isNaN(m) || m > 2) return null
+          const quien = modo === 'una' && para ? para : 'quien va a entregar'
+          const fuerte = m <= 1
+          return (
+            <p data-testid="nudge-plazo" role="status"
+              className={`rounded-xl border px-3 py-2 text-xs ${fuerte
+                ? 'border-movdi-naranja/60 bg-movdi-naranja/10 text-movdi-naranja'
+                : 'border-movdi-amarillo/50 bg-movdi-amarillo/10 text-movdi-amarillo'}`}>
+              ⚠ estás dando poco tiempo para entregar ({m <= 0 ? 'para hoy' : m === 1 ? 'mañana' : `${m} días`}) —{' '}
+              ¿ya verificaste con <strong>{quien}</strong> si es posible esta entrega?
+            </p>
+          )
+        })()}
+
         <label className="flex cursor-pointer items-center gap-2 text-xs">
           <input type="checkbox" id="pet-privada" checked={privada} onChange={(e) => setPrivada(e.target.checked)} />
           <span>🔒 petición privada <span className="text-neutral-500">— solo tú y el destinatario la ven (ni dirección)</span></span>
