@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { mapPersonaConManagers } from '@/lib/equipo'
 import EquipoClient from './equipo-client'
@@ -18,5 +19,10 @@ export default async function EquipoPage() {
     )
   }
 
-  return <EquipoClient yo={mapPersonaConManagers(row)} />
+  // 4.14: la pestaña equipo es de heads y dirección; el resto va a home
+  const yo = mapPersonaConManagers(row)
+  const esDir = yo.esDireccion || yo.nivel === 'ceo'
+  if (yo.nivel !== 'head' && !esDir) redirect('/')
+
+  return <EquipoClient yo={yo} />
 }

@@ -32,13 +32,16 @@ test.beforeEach(async () => {
 })
 
 // ------------------------------------------------------------
-test('gating: ejecutivo ve el roster pero sin ninguna acción de gestión', async ({ page }) => {
+test('gating 4.14: ejecutivo NO entra a /equipo (redirect a home) ni ve la pestaña', async ({ page }) => {
   await login(page, 'antonio@movdi.mx')
-  await irAEquipo(page)
-  await expect(page.getByTestId('card-persona').first()).toBeVisible()
-  await expect(page.getByTestId('btn-agregar-persona')).toHaveCount(0)
-  await expect(page.getByTestId('btn-editar-persona')).toHaveCount(0)
-  await expect(page.getByTestId('btn-desactivar')).toHaveCount(0)
+  await page.goto('/equipo')
+  // redirigido a home, sin mensaje de "no acceso"
+  await expect(page.getByTestId('user-email')).toHaveText('antonio@movdi.mx')
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByTestId('card-persona')).toHaveCount(0)
+  // la nav no ofrece equipo ni rh
+  await expect(page.getByRole('link', { name: 'equipo' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'rh', exact: true })).toHaveCount(0)
 })
 
 // ------------------------------------------------------------
@@ -248,8 +251,9 @@ test('semáforo: dirección ve directos+resto; head ve directos+soy apoyo; ejecu
 
   const ctx2 = await browser.newContext()
   const p3 = await ctx2.newPage()
-  await login(p3, 'antonio@movdi.mx') // ejecutivo: sin semáforo
-  await irAEquipo(p3)
+  await login(p3, 'antonio@movdi.mx') // ejecutivo: 4.14 → redirect a home
+  await p3.goto('/equipo')
+  await expect(p3).toHaveURL(/\/$/)
   await expect(p3.getByTestId('semaforo')).toHaveCount(0)
   await ctx2.close()
 })
@@ -258,7 +262,8 @@ test('semáforo: dirección ve directos+resto; head ve directos+soy apoyo; ejecu
 test('panel RH: acceso por nivel verificado en servidor (rh y dirección sí; ejecutivo no)', async ({ page, browser }) => {
   await login(page, 'antonio@movdi.mx')
   await page.goto('/rh')
-  await expect(page.getByTestId('rh-denegado')).toBeVisible()
+  // 4.14: sin pantalla de "no acceso" — redirect directo a home
+  await expect(page).toHaveURL(/\/$/)
   await expect(page.getByTestId('rh-titulo')).toHaveCount(0)
 
   const ctx = await browser.newContext()
@@ -278,10 +283,11 @@ test('panel RH: acceso por nivel verificado en servidor (rh y dirección sí; ej
 
 // ------------------------------------------------------------
 test('REASIGNACIÓN DE TERCEROS (hallazgo 4.6): la RPC reasigna peticiones que el admin no creó', async ({ page }) => {
-  // p-seed-3: creada por ANTONIO para Brenda. Karla (head) no es creadora ni
-  // destinataria → la RLS peticiones_update se lo impediría; la RPC
-  // SECURITY DEFINER debe poder reasignarla igual.
-  await login(page, 'karla@movdi.mx')
+  // p-seed-3: creada por ANTONIO para Brenda. Dani (dirección) no es creadora
+  // ni destinataria → la RLS peticiones_update se lo impediría; la RPC
+  // SECURITY DEFINER debe poder reasignarla igual. (4.14: la gestión quedó
+  // solo en dirección, por eso el flujo corre como Dani.)
+  await login(page, 'dani@movdi.mx')
   await irAEquipo(page)
 
   await page.getByTestId('card-persona').filter({ hasText: 'Brenda' }).getByTestId('btn-desactivar').click()

@@ -6,7 +6,9 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { AREAS_VALIDAS, isAdmin, mapPersonaRow, matchNombre, personaDisponible } from '@/lib/peticiones'
+import { AREAS_VALIDAS, mapPersonaRow, matchNombre, personaDisponible } from '@/lib/peticiones'
+import { esDireccion } from '@/lib/equipo'
+import { notificarToque } from '@/lib/supabase/notificar'
 
 type Resultado = { ok: true; aviso?: string } | { ok: false; error: string }
 
@@ -23,7 +25,11 @@ async function getAdminContexto() {
   const yo = mapPersonaRow(row)
   if (!yo.activo) throw new Error('cuenta archivada')
   // gating server-side: solo ceo|head gestionan personas (paridad policy)
-  if (!isAdmin(yo)) throw new Error('solo dirección o heads pueden gestionar personas')
+  // 4.14: la gestión de personas queda SOLO en dirección; los heads pasan
+  // a modo panorama (ver + toque) en la pestaña equipo.
+  if (!esDireccion({ esDireccion: yo.esDireccion, nivel: yo.nivel })) {
+    throw new Error('solo dirección puede gestionar personas')
+  }
   return { supabase, yo }
 }
 
@@ -231,6 +237,45 @@ export async function desactivarConReasignacion(input: {
       return { ok: false, error: `no se pudo completar — nada quedó desactivado: ${error.message}` }
     }
     return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
+  }
+}
+
+
+// ⚡ TOQUE (4.14): notificación de ánimo. Heads → su equipo (la misma
+// relación del semáforo); dirección → cualquiera. El insert va por el
+// helper único de notificaciones (anti-spoof: remitente = sesión) con
+// límite suave de 1 por persona por día.
+export async function darToque(input: { para: string; mensaje: string }): Promise<Resultado> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.email) return { ok: false, error: 'sin sesión' }
+    const { data: row } = await supabase
+      .from('personas').select('*').eq('email', user.email).maybeSingle()
+    if (!row) return { ok: false, error: 'tu cuenta no está ligada a una persona del equipo' }
+    const yo = mapPersonaRow(row)
+
+    const dir = esDireccion({ esDireccion: yo.esDireccion, nivel: yo.nivel })
+    if (!dir && yo.nivel !== 'head') {
+      return { ok: false, error: 'el toque es para heads y dirección' }
+    }
+
+    const mensaje = (input.mensaje || '').trim()
+    if (!mensaje) return { ok: false, error: 'elige o escribe un mensaje de ánimo' }
+    if (mensaje.length > 60) return { ok: false, error: 'máximo 60 caracteres' }
+
+    // heads: solo a su equipo (manager principal o apoyo — como el semáforo)
+    if (!dir) {
+      const { data: personasRows } = await supabase.from('personas').select('*')
+      const dest = (personasRows ?? []).find((r) => matchNombre(r.nombre, input.para))
+      const esMio = !!dest &&
+        (dest.manager_principal === yo.nombre || (dest.managers ?? []).includes(yo.nombre))
+      if (!esMio) return { ok: false, error: 'solo puedes dar toques a tu equipo' }
+    }
+
+    return await notificarToque({ de: yo.nombre, para: input.para, mensaje })
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
   }

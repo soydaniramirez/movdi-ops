@@ -30,6 +30,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     )
   }
 
+  // pestañas por rol (4.14): rh → nivel rh o dirección · equipo → heads o
+  // dirección (los datos ya están protegidos por RLS; esto es UX)
+  const esDir = !!persona && (persona.esDireccion || persona.nivel === 'ceo')
+  const veRH = !!persona && (persona.nivel === 'rh' || esDir)
+  const veEquipo = !!persona && (persona.nivel === 'head' || esDir)
+
   const iniciales = persona
     ? `${persona.nombre.charAt(0)}${(persona.apellido || '').charAt(0)}`.toUpperCase()
     : ''
@@ -47,8 +53,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             {([
               ['/peticiones', 'peticiones'], ['/recurrentes', 'recurrentes'], ['/anuncios', 'anuncios'],
               ['/todos', 'to-dos'], ['/estrellas', 'estrellas'], ['/feedback', 'feedback'], ['/progreso', 'progreso'],
-              ['/equipo', 'equipo'], ['/rh', 'rh'],
-            ] as const).map(([href, lab]) => (
+              ...(veEquipo ? [['/equipo', 'equipo']] : []),
+              ...(veRH ? [['/rh', 'rh']] : []),
+            ] as [string, string][]).map(([href, lab]) => (
               <Link key={href} href={href}
                 className="rounded-full px-3 py-1.5 text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-movdi-naranja">
                 {lab}

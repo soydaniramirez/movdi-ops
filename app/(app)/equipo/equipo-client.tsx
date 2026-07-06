@@ -4,16 +4,30 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   AREAS_LABEL, AREAS_VALIDAS, type Peticion,
-  dx, estaPausada, isAdmin, mapPeticionRow, matchNombre,
+  dx, estaPausada, mapPeticionRow, matchNombre,
 } from '@/lib/peticiones'
 import { type Recurrente, mapRecurRow, obtenerInstanciasRecur } from '@/lib/recurrentes'
 import {
-  type PersonaConManagers, bloquesEquipo, calcularSemaforo, mapPersonaConManagers, ordenSemaforo,
+  type PersonaConManagers, bloquesEquipo, calcularSemaforo, esDireccion,
+  mapPersonaConManagers, ordenSemaforo,
 } from '@/lib/equipo'
 import {
-  crearPersona, desactivarConReasignacion, editarPersona,
+  crearPersona, darToque, desactivarConReasignacion, editarPersona,
   pausarPersona, reactivarPersona, reanudarPersona,
 } from './actions'
+
+// mensajes de ánimo listos para el ⚡ toque (custom máx. 60)
+const TOQUE_PRESETS = [
+  '¡vas muy bien, sigue así! 💪',
+  'ánimo con esta semana ⚡',
+  'gran trabajo con tus entregas 🙌',
+  'cuenta conmigo si necesitas apoyo 🤝',
+  'recta final — tú puedes 🚀',
+]
+
+const SEM_TEXTO: Record<string, string> = {
+  r: 'text-movdi-naranja', y: 'text-movdi-amarillo', g: 'text-movdi-verde', x: 'text-neutral-300',
+}
 
 const inputCls = 'w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-neutral-100 outline-none focus:border-movdi-naranja'
 const labelCls = 'mb-1 block font-mono text-[11px] uppercase tracking-wider text-neutral-400'
@@ -34,8 +48,10 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
   const [cargando, setCargando] = useState(true)
   const [modalPersona, setModalPersona] = useState<{ editar: PersonaConManagers | null } | null>(null)
   const [modalReasign, setModalReasign] = useState<PersonaConManagers | null>(null)
+  const [modalToque, setModalToque] = useState<PersonaConManagers | null>(null)
 
-  const admin = isAdmin(yo)
+  // 4.14: gestión SOLO dirección; heads en modo panorama (ver + toque)
+  const dir = esDireccion(yo)
 
   const recargar = useCallback(async () => {
     const sb = createClient()
@@ -54,10 +70,28 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void recargar() }, [recargar])
 
-  const activas = personas.filter((p) => p.activo !== false && !estaPausada(p))
-  const pausadas = personas.filter((p) => p.activo !== false && estaPausada(p))
-  const inactivas = personas.filter((p) => p.activo === false)
+  // heads ven SOLO su equipo (manager principal o apoyo — como el semáforo);
+  // dirección ve a todos
+  const visibles = useMemo(() => (
+    dir ? personas : personas.filter((p) =>
+      p.managerPrincipal === yo.nombre || (p.managers || []).includes(yo.nombre))
+  ), [dir, personas, yo])
+
+  const activas = visibles.filter((p) => p.activo !== false && !estaPausada(p))
+  const pausadas = visibles.filter((p) => p.activo !== false && estaPausada(p))
+  const inactivas = visibles.filter((p) => p.activo === false)
   const lista = filtro === 'activas' ? activas : filtro === 'pausadas' ? pausadas : inactivas
+
+  // estado de semáforo por persona (para pintar el nombre)
+  const estadoSemaforo = useMemo(() => {
+    const visiblesParaSem = peticiones.filter(
+      (t) => !t.privada || t.creadoPor === yo.nombre || matchNombre(t.para, yo.nombre))
+    return Object.fromEntries(visibles.map((p) => [
+      p.id,
+      calcularSemaforo(p, visiblesParaSem,
+        obtenerInstanciasRecur({ recurrentes, peticiones, personas, nombre: p.nombre })).estado,
+    ]))
+  }, [visibles, peticiones, recurrentes, personas, yo])
 
   // semáforo (paridad renderSide) — instancias del motor por persona
   const bloques = useMemo(() => {
@@ -94,7 +128,7 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
                 {activas.length} activas · {pausadas.length} pausadas · {inactivas.length} inactivas
               </p>
             </div>
-            {admin && (
+            {dir && (
               <button onClick={() => setModalPersona({ editar: null })} data-testid="btn-agregar-persona"
                 className="rounded-full bg-movdi-naranja px-4 py-2 text-sm font-medium hover:bg-movdi-naranja/85">
                 + agregar persona
@@ -132,7 +166,11 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold">
-                      {p.nombre} {p.apellido}
+                      <span data-sem={estadoSemaforo[p.id] ?? 'x'}
+                        className={SEM_TEXTO[estadoSemaforo[p.id] ?? 'x']}
+                        title={{ r: 'con vencidas', y: 'entregas esta semana', g: 'al corriente', x: 'sin tareas activas' }[estadoSemaforo[p.id] ?? 'x']}>
+                        {p.nombre} {p.apellido}
+                      </span>
                       <span className="ml-2 font-mono text-[10px] uppercase text-neutral-500">
                         {p.nivel === 'ceo' ? 'dirección' : p.nivel}
                       </span>
@@ -146,7 +184,15 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
                       <p className="mt-0.5 font-mono text-[10px] text-movdi-amarillo">⏸ pausada hasta {p.pausadaHasta}</p>
                     )}
                   </div>
-                  {admin && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {p.activo !== false && p.id !== yo.id && (
+                      <button data-testid="btn-toque"
+                        onClick={() => setModalToque(p)}
+                        className="rounded-full border border-movdi-amarillo/50 px-2.5 py-1 font-mono text-[10px] text-movdi-amarillo transition-colors hover:bg-movdi-amarillo/10">
+                        ⚡ toque
+                      </button>
+                    )}
+                  {dir && (
                     <div className="flex flex-wrap gap-1.5">
                       {p.activo !== false ? (
                         <>
@@ -205,6 +251,7 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
                       )}
                     </div>
                   )}
+                  </div>
                 </div>
               </article>
             ))}
@@ -235,6 +282,18 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
         )}
       </div>
 
+      {modalToque && (
+        <ModalToque
+          para={modalToque}
+          onCerrar={() => setModalToque(null)}
+          onEnviar={async (mensaje) => {
+            const r = await darToque({ para: modalToque.nombre, mensaje })
+            if (r.ok) { setNota(`⚡ toque enviado a ${modalToque.nombre}`); setAviso(null) }
+            else { setAviso(r.error); setNota(null) }
+            setModalToque(null) // cerrar siempre: el aviso/nota queda visible en la página
+          }}
+        />
+      )}
       {modalPersona && (
         <ModalPersona
           editar={modalPersona.editar}
@@ -451,6 +510,59 @@ function ModalReasignacion({ persona, personas, peticiones, recurrentes, onCerra
               reasignar y desactivar
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+// ============================================================
+// ⚡ Modal de toque: preset alentador o mensaje corto (máx 60); muestra
+// quién lo envía (el título de la notificación lleva el remitente).
+function ModalToque({ para, onCerrar, onEnviar }: {
+  para: PersonaConManagers
+  onCerrar: () => void
+  onEnviar: (mensaje: string) => Promise<void>
+}) {
+  const [preset, setPreset] = useState(TOQUE_PRESETS[0])
+  const [custom, setCustom] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const mensaje = custom.trim() || preset
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCerrar}>
+      <div className="w-full max-w-md rounded-2xl border border-neutral-700 bg-neutral-900/90 p-5 shadow-2xl backdrop-blur-xl"
+        onClick={(e) => e.stopPropagation()} role="dialog" aria-label="dar toque">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-semibold">⚡ toque para {para.nombre}</h2>
+          <button onClick={onCerrar} className="text-neutral-500 hover:text-neutral-200">✕</button>
+        </div>
+        <p className="mb-3 font-mono text-[11px] text-neutral-500">
+          un empujón de ánimo — {para.nombre} verá quién se lo manda · máx. 1 al día
+        </p>
+        <div className="space-y-1.5">
+          {TOQUE_PRESETS.map((t) => (
+            <label key={t} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs transition-colors ${!custom.trim() && preset === t ? 'border-movdi-amarillo/60 bg-movdi-amarillo/10' : 'border-neutral-800 hover:border-neutral-600'}`}>
+              <input type="radio" name="toque-preset" checked={!custom.trim() && preset === t}
+                onChange={() => { setPreset(t); setCustom('') }} />
+              <span>{t}</span>
+            </label>
+          ))}
+        </div>
+        <div className="mt-3">
+          <label className={labelCls} htmlFor="toque-custom">o escribe el tuyo (máx. 60)</label>
+          <input id="toque-custom" maxLength={60} className={inputCls}
+            placeholder="ej: ese cliente difícil no te merece 😄"
+            value={custom} onChange={(e) => setCustom(e.target.value)} />
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+          <button data-testid="btn-toque-enviar" disabled={enviando}
+            onClick={async () => { setEnviando(true); await onEnviar(mensaje); setEnviando(false) }}
+            className="rounded-full bg-movdi-amarillo px-4 py-2 text-xs font-medium text-black transition-colors hover:bg-movdi-amarillo/85 disabled:opacity-50">
+            {enviando ? 'enviando…' : 'enviar toque ⚡'}
+          </button>
         </div>
       </div>
     </div>

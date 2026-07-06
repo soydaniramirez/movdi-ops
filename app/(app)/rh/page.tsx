@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { mapPeticionRow, mapPersonaRow } from '@/lib/peticiones'
 import { esDireccion } from '@/lib/equipo'
@@ -15,18 +16,8 @@ export default async function PanelRHPage() {
 
   const tieneAcceso = !!yo && (yo.nivel === 'rh' || esDireccion({ esDireccion: yo.esDireccion, nivel: yo.nivel }))
 
-  if (!tieneAcceso) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-neutral-950">
-        <div className="text-center" data-testid="rh-denegado">
-          <p className="font-mono text-xs uppercase tracking-widest text-movdi-naranja">acceso restringido</p>
-          <p className="mt-2 text-sm text-neutral-400">
-            el panel de recursos humanos es solo para RH y dirección.
-          </p>
-        </div>
-      </main>
-    )
-  }
+  // 4.14: sin pantalla de "no acceso" — directo a home
+  if (!tieneAcceso) redirect('/')
 
   // Peticiones del área RH (las privadas siguen filtradas por RLS:
   // solo creador/destinatario las reciben, ni siquiera aquí)

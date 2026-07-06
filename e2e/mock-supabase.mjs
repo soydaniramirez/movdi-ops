@@ -328,7 +328,8 @@ const server = http.createServer(async (req, res) => {
     if (!yo && !esService) return denied() // todas nuestras tablas requieren sesión
     if (esService && !(
       (tabla === 'personas' && req.method === 'GET') ||
-      (tabla === 'notificaciones' && req.method === 'POST')
+      (tabla === 'notificaciones' && req.method === 'POST') ||
+      (tabla === 'notificaciones' && req.method === 'GET') // límite diario del ⚡ toque
     )) return denied()
 
     // fallo inyectable (pruebas de atomicidad)
@@ -499,7 +500,8 @@ const server = http.createServer(async (req, res) => {
     if (tabla === 'notificaciones') {
       // RLS: SELECT/UPDATE/DELETE para = mi_nombre() · INSERT autenticado (interim)
       if (req.method === 'GET') {
-        const mias = db.notificaciones.filter((n) => n.para === yo.nombre)
+        // service key (helper del toque): sin RLS · sesión: solo las mías
+        const mias = esService ? db.notificaciones : db.notificaciones.filter((n) => n.para === yo.nombre)
         return representar(aplicarFiltros(mias, url.searchParams))
       }
       if (req.method === 'POST') {

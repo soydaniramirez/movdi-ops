@@ -51,3 +51,45 @@ export async function notificarServidor(opts: { de: string; rows: NotifRow[] }):
   const { error } = await admin.from('notificaciones').insert(validas)
   if (error) console.warn('[notificar] inserción fallida:', error.message)
 }
+
+// ⚡ Toque (4.14): notificación de ánimo con límite suave de 1 por persona
+// por día POR REMITENTE. El chequeo del límite lee notificaciones con el
+// admin client — sigue siendo ESTE archivo el único punto con service_role
+// que toca notificaciones (lectura y escritura, ambas auditables aquí).
+export async function notificarToque(opts: {
+  de: string
+  para: string
+  mensaje: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const admin = createAdminClient()
+
+  const { data: personasRows, error: eP } = await admin.from('personas').select('*')
+  if (eP) return { ok: false, error: 'no se pudieron validar personas' }
+  const personas = (personasRows ?? []).map(mapPersonaRow)
+  const dest = personas.find((x) => matchNombre(x.nombre, opts.para))
+  if (!dest || dest.activo === false) return { ok: false, error: 'destinatario inválido' }
+  if (matchNombre(dest.nombre, opts.de)) return { ok: false, error: 'el toque es para alguien más 😉' }
+
+  const titulo = `⚡ ${opts.de} te mandó un toque`
+  const hoyInicio = new Date(new Date().toDateString()).toISOString()
+
+  // límite 1/persona/día (por remitente): mismo título exacto + hoy
+  const { data: previas, error: eQ } = await admin
+    .from('notificaciones').select('id')
+    .eq('para', dest.nombre).eq('tipo', 'toque').eq('titulo', titulo)
+    .gte('creada_en', hoyInicio)
+  if (eQ) return { ok: false, error: 'no se pudo verificar el límite diario' }
+  if (previas && previas.length > 0) {
+    return { ok: false, error: `ya le mandaste un toque hoy a ${dest.nombre} — mañana otro 💪` }
+  }
+
+  const { error } = await admin.from('notificaciones').insert({
+    para: dest.nombre,
+    tipo: 'toque',
+    titulo,
+    detalle: opts.mensaje || null,
+    peticion_id: null,
+  })
+  if (error) return { ok: false, error: 'no se pudo enviar el toque' }
+  return { ok: true }
+}
