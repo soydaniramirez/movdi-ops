@@ -1,5 +1,5 @@
 -- ============================================================
--- ⚠️⚠️ NO APLICADA — APLICAR EN CUTOVER (ver docs/CUTOVER.md) ⚠️⚠️
+-- ✅ APLICADA en el cutover del 2026-07-06 (histórico: estuvo staged sin aplicar).
 -- Requiere el build con la Fase 4.8 (la UI por rol ya la respeta).
 -- ============================================================
 -- CUTOVER 6 — Privacidad de gamificación + entrega de recompensas

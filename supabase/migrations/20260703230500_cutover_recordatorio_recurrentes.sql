@@ -1,5 +1,5 @@
 -- ============================================================
--- ⚠️⚠️ NO APLICADA — APLICAR EN CUTOVER (ver docs/CUTOVER.md) ⚠️⚠️
+-- ✅ APLICADA en el cutover del 2026-07-06 (histórico: estuvo staged sin aplicar).
 -- Requiere 20260703230000 (fecha_inicio). El cron se programa aparte
 -- en 20260703231000 (encendido explícito).
 -- ============================================================

@@ -381,9 +381,11 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
           admin={admin}
           onCerrar={() => setModalCrear(false)}
           onCrear={async (input) => {
-            const ok = await accion(() => crearPeticion(input))
-            if (ok) setModalCrear(false)
-            return ok
+            const r = await crearPeticion(input)
+            setAviso(r.ok ? null : r.error)
+            await recargar()
+            if (r.ok) setModalCrear(false)
+            return r
           }}
         />
       )}
@@ -678,7 +680,7 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
   personas: Persona[]
   admin: boolean
   onCerrar: () => void
-  onCrear: (input: Parameters<typeof crearPeticion>[0]) => Promise<boolean>
+  onCrear: (input: Parameters<typeof crearPeticion>[0]) => Promise<{ ok: boolean; error?: string }>
 }) {
   const areaDefault = yo.areas?.find((a) => (AREAS_VALIDAS as readonly string[]).includes(a)) || 'imkt'
   // candado por default para RH / Salvador (paridad SPA)
@@ -696,6 +698,12 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
   const [seleccion, setSeleccion] = useState<string[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
+  // fricción de plazo ajustado (nunca bloqueo total): con margen ≤ 2 días el
+  // botón se habilita solo tras confirmar que ya se verificó con quien entrega
+  const [verificado, setVerificado] = useState(false)
+
+  const margenNudge = diasHasta(fecha)
+  const nudgeActivo = !isNaN(margenNudge) && margenNudge <= 2
 
   const elegibles = personas
     .filter((p) => p.nombre !== yo.nombre && personaDisponible(p))
@@ -722,14 +730,14 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
     if (destinatarios.length > 5 &&
       !confirm(`vas a asignar esta petición a ${destinatarios.length} personas. ¿confirmas?\n\n${destinatarios.join(', ')}`)) return
     setGuardando(true)
-    const ok = await onCrear({
+    const r = await onCrear({
       nombre, descripcion: desc, fecha, prioridad: prio, privada, modo,
       para: modo === 'una' ? para : undefined,
       seleccion: modo === 'varias' ? seleccion : undefined,
       area: modo === 'una' ? areaUna : modo === 'area' ? areaGrupo : undefined,
     })
     setGuardando(false)
-    if (!ok) setErr('no se pudo crear — revisa el aviso')
+    if (!r.ok) setErr(r.error || 'no se pudo crear la petición')
   }
 
   return (
@@ -807,7 +815,8 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={labelCls} htmlFor="pet-fecha">fecha límite</label>
-            <input id="pet-fecha" type="date" className={inputCls} value={fecha} onChange={(e) => setFecha(e.target.value)} />
+            <input id="pet-fecha" type="date" className={inputCls} value={fecha}
+              onChange={(e) => { setFecha(e.target.value); setVerificado(false) }} />
           </div>
           <div>
             <label className={labelCls} htmlFor="pet-prio">prioridad</label>
@@ -820,20 +829,28 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
         </div>
 
         {/* nudge de plazo ajustado (mismo umbral del ⚠: margen ≤ 2 días).
-            NO bloquea — solo invita a verificar con quien entrega. */}
-        {(() => {
-          const m = diasHasta(fecha)
-          if (isNaN(m) || m > 2) return null
+            Fricción, no bloqueo: el aviso pide confirmar con quien entrega y
+            el botón de crear se habilita al marcar el checkbox. Cambiar la
+            fecha resetea la confirmación. */}
+        {nudgeActivo && (() => {
+          const m = margenNudge
           const quien = modo === 'una' && para ? para : 'quien va a entregar'
           const fuerte = m <= 1
           return (
-            <p data-testid="nudge-plazo" role="status"
-              className={`rounded-xl border px-3 py-2 text-xs ${fuerte
+            <div data-testid="nudge-plazo" role="status"
+              className={`space-y-2 rounded-xl border px-3 py-2 text-xs ${fuerte
                 ? 'border-movdi-naranja/60 bg-movdi-naranja/10 text-movdi-naranja'
                 : 'border-movdi-amarillo/50 bg-movdi-amarillo/10 text-movdi-amarillo'}`}>
-              ⚠ estás dando poco tiempo para entregar ({m <= 0 ? 'para hoy' : m === 1 ? 'mañana' : `${m} días`}) —{' '}
-              ¿ya verificaste con <strong>{quien}</strong> si es posible esta entrega?
-            </p>
+              <p>
+                ⚠ estás dando poco tiempo para entregar ({m <= 0 ? 'para hoy' : m === 1 ? 'mañana' : `${m} días`}) —{' '}
+                ¿ya verificaste con <strong>{quien}</strong> si es posible esta entrega?
+              </p>
+              <label className="flex cursor-pointer items-start gap-2">
+                <input type="checkbox" data-testid="nudge-verificado" checked={verificado}
+                  onChange={(e) => setVerificado(e.target.checked)} />
+                <span>✓ sí, ya verifiqué con <strong>{quien}</strong> que es posible esta entrega</span>
+              </label>
+            </div>
           )
         })()}
 
@@ -846,7 +863,8 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
 
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
-          <button onClick={guardar} disabled={guardando} data-testid="btn-crear-confirmar"
+          <button onClick={guardar} disabled={guardando || (nudgeActivo && !verificado)} data-testid="btn-crear-confirmar"
+            title={nudgeActivo && !verificado ? 'confirma que ya verificaste la entrega con el plazo ajustado' : undefined}
             className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85 disabled:opacity-50">
             {guardando ? 'creando…' : 'crear petición'}
           </button>

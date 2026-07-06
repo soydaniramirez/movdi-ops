@@ -1,7 +1,23 @@
 # RUNBOOK de CUTOVER — SPA vieja (index.html) → Next.js
 
-Estado: **borrador para revisión — nada de este documento se ha ejecutado.**
+Estado: **CUTOVER EJECUTADO el 2026-07-06** — C0→C7 completos y verificados.
+Pendiente solo C8 (retirar index.html, unos días después) y los manuales de
+Daniela (Site URL de Auth confirmada, leaked password protection).
 Proyecto Supabase: `nxyhgbrretusqbgfodmo` · Rama: `refactor/nextjs-migration`.
+
+Bitácora de la ejecución (2026-07-06):
+- C0 snapshot: 853 peticiones / 40 recurrentes / 437 notificaciones / 21 personas / 27 historial / 25 estrellas.
+- C1–C3 aplicadas y verificadas (quincenal fecha_inicio con backfill de Mariana 2026-05-25, recordatorio, RPC desactivar).
+- C4a: freeze manual del site viejo confirmado por Daniela (lock deploy + stop builds) → merge PR #2 (`ce1b73e`), sin build en el site viejo.
+- C4b: swap de nombres — `movdi-ops`→`movdi-ops-legado` (rollback congelado) y `movdi-ops-next`→`movdi-ops` (Next.js en producción).
+- C5/C5b/C5c/C5d aplicadas y verificadas por rol vía simulación de JWT + un fix extra: `cutover_feedback_grants_fix`
+  (los default privileges de Supabase dejaban a authenticated con UPDATE/DELETE de tabla completa en feedback).
+- Incidente post-switch: faltaba `SUPABASE_SERVICE_ROLE_KEY` en el hosting → notificaciones no salían y la creación
+  reportaba error (la petición sí se insertaba). Resuelto: variable secreta cargada por Daniela + redeploy +
+  notificaciones best-effort en `lib/supabase/notificar.ts`; notificación perdida repuesta a Fernanda.
+- C6: pg_cron `recordatorio-recurrentes-diario` (13:00 UTC = 07:00 MX) activo + corrida manual del día: 12 avisos correctos.
+- C7: advisors sin hallazgos nuevos; anon = 0 filas en todas las tablas (personas/feedback/avisos: permission denied);
+  RLS habilitado en las 12 tablas; conteos consistentes con C0 + actividad del día.
 
 Qué ya está en producción (no confundir con lo pendiente):
 - Login por email+contraseña en la SPA (PR #1, 2026-07-03) — el equipo **ya usa** email+contraseña.

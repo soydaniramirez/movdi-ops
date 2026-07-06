@@ -77,28 +77,40 @@ test('panel RH: toggle ocultar entregadas', async ({ page, browser }) => {
 })
 
 // ------------------------------------------------------------
-test('nudge al crear con plazo ajustado: aparece con ≤2 días, no bloquea', async ({ page }) => {
+test('nudge al crear con plazo ajustado: fricción con checkbox, nunca bloqueo total', async ({ page }) => {
   await login(page, 'antonio@movdi.mx')
   await page.goto('/peticiones')
   await page.getByTestId('btn-nueva-peticion').click()
 
   const dx = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
 
-  // 7 días: sin nudge
+  // 7 días: sin nudge y botón habilitado
   await page.locator('#pet-fecha').fill(dx(7))
   await expect(page.getByTestId('nudge-plazo')).toHaveCount(0)
+  await expect(page.getByTestId('btn-crear-confirmar')).toBeEnabled()
 
-  // 2 días: nudge amarillo
+  // 2 días: nudge amarillo + botón deshabilitado hasta confirmar
   await page.locator('#pet-fecha').fill(dx(2))
   await expect(page.getByTestId('nudge-plazo')).toContainText('estás dando poco tiempo para entregar')
+  await expect(page.getByTestId('btn-crear-confirmar')).toBeDisabled()
 
-  // 1 día + destinatario elegido: aviso fuerte y personalizado
+  // 1 día + destinatario elegido: aviso fuerte y personalizado, sigue deshabilitado
   await page.locator('#pet-area').selectOption('imkt')
   await page.locator('#pet-para').selectOption('Brenda')
   await page.locator('#pet-fecha').fill(dx(1))
   await expect(page.getByTestId('nudge-plazo')).toContainText('¿ya verificaste con Brenda si es posible esta entrega?')
+  await expect(page.getByTestId('btn-crear-confirmar')).toBeDisabled()
 
-  // NO bloquea: crear procede igual
+  // el checkbox de verificación habilita el botón
+  await page.getByTestId('nudge-verificado').check()
+  await expect(page.getByTestId('btn-crear-confirmar')).toBeEnabled()
+
+  // cambiar la fecha resetea la confirmación (sigue siendo plazo ajustado)
+  await page.locator('#pet-fecha').fill(dx(0))
+  await expect(page.getByTestId('btn-crear-confirmar')).toBeDisabled()
+  await page.getByTestId('nudge-verificado').check()
+
+  // con la confirmación marcada, crear procede normal (no hay bloqueo total)
   await page.locator('#pet-nombre').fill('urgente verificada')
   await page.getByTestId('btn-crear-confirmar').click()
   await expect(page.getByRole('dialog')).toHaveCount(0)

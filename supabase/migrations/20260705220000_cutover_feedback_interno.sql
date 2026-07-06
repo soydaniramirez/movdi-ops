@@ -1,5 +1,5 @@
 -- ============================================================
--- ⚠️⚠️ NO APLICADA — APLICAR EN CUTOVER (ver docs/CUTOVER.md, paso C5c) ⚠️⚠️
+-- ✅ APLICADA en el cutover del 2026-07-06 (histórico: estuvo staged sin aplicar).
 -- Requiere el build con el módulo de feedback; aplicar DESPUÉS de la
 -- migración 6 (usa mi_ve_gamificacion()).
 -- ============================================================
