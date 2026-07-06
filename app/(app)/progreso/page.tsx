@@ -1,5 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { mapPersonaConManagers } from '@/lib/equipo'
+import { mapPeticionRow } from '@/lib/peticiones'
+import { mapEstrellaRow } from '@/lib/estrellas'
+import { calcularGamePersona, mesActualStr } from '@/lib/gamificacion'
 import ProgresoClient from './progreso-client'
 
 export default async function ProgresoPage() {
@@ -18,5 +21,20 @@ export default async function ProgresoPage() {
     )
   }
 
-  return <ProgresoClient yo={mapPersonaConManagers(row)} />
+  // XP inicial calculado EN EL SERVIDOR con la MISMA fuente que el header
+  // (calcularGamePersona sobre las mismas lecturas de la misma request) —
+  // la card pinta este valor desde el primer frame: sin flash de "0 XP" y
+  // sin desincronía con la barra del header ni un instante.
+  const [pets, ests] = await Promise.all([
+    supabase.from('peticiones').select('*'),
+    supabase.from('estrellas_colaboracion').select('*'),
+  ])
+  const gameInicial = calcularGamePersona(
+    row.nombre,
+    mesActualStr(),
+    (pets.data ?? []).map(mapPeticionRow),
+    (ests.data ?? []).map(mapEstrellaRow),
+  )
+
+  return <ProgresoClient yo={mapPersonaConManagers(row)} gameInicial={gameInicial} />
 }

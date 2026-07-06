@@ -15,7 +15,9 @@ import {
 import { type Feedback, mapFeedbackRow } from '@/lib/feedback'
 import { cerrarMes, guardarRecompensa, marcarRecompensaEntregada } from './actions'
 
-export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
+type Game = ReturnType<typeof calcularGamePersona>
+
+export default function ProgresoClient({ yo, gameInicial }: { yo: PersonaConManagers; gameInicial: Game }) {
   const [personas, setPersonas] = useState<Persona[]>([])
   const [peticiones, setPeticiones] = useState<Peticion[]>([])
   const [recurrentes, setRecurrentes] = useState<Recurrente[]>([])
@@ -91,7 +93,10 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
   useEffect(() => { void recargar() }, [recargar])
 
   const mes = new Date().toISOString().slice(0, 7)
-  const game = useMemo(() => calcularGamePersona(yo.nombre, mes, peticiones, estrellas), [yo, mes, peticiones, estrellas])
+  const gameCliente = useMemo(() => calcularGamePersona(yo.nombre, mes, peticiones, estrellas), [yo, mes, peticiones, estrellas])
+  // durante la carga, la card muestra el valor calculado EN EL SERVIDOR
+  // (misma fuente y misma request que la barra del header): nunca "0 XP"
+  const game = cargando ? gameInicial : gameCliente
   const logros = useMemo(() => calcularLogros({
     nombre: yo.nombre, peticiones, estrellas, historial,
     podios, recurrentes,
@@ -163,13 +168,16 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
         {aviso && <p role="alert" className="border border-movdi-naranja/40 bg-movdi-naranja/10 px-3 py-2 font-mono text-xs text-movdi-naranja">{aviso}</p>}
         {okMsg && <p role="status" data-testid="cierre-ok" className="border border-movdi-verde/40 bg-movdi-verde/10 px-3 py-2 font-mono text-xs text-movdi-verde">{okMsg}</p>}
 
-        {/* 🤖 coach MOVDI (6 mensajes aprobados, prioridad fija) */}
-        <CoachMovdi
-          vencidas={coachDatos.vencidas}
-          semana={coachDatos.semana}
-          game={game}
-          ritmoPromedio={coachDatos.ritmoPromedio}
-        />
+        {/* 🤖 coach MOVDI (6 mensajes aprobados, prioridad fija) —
+            oculto durante la carga: sus insumos necesitan los datos completos */}
+        {cargando
+          ? <div data-testid="coach-skeleton" className="h-12 animate-pulse rounded-2xl border border-neutral-800 bg-neutral-900" />
+          : <CoachMovdi
+              vencidas={coachDatos.vencidas}
+              semana={coachDatos.semana}
+              game={game}
+              ritmoPromedio={coachDatos.ritmoPromedio}
+            />}
 
         {/* Mi progreso del mes */}
         <section data-testid="mi-progreso" className="bg-blueprint rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
@@ -197,6 +205,21 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
           </div>
         </section>
 
+        {/* skeleton de secciones mientras cargan los datos (nada de ceros) */}
+        {cargando && (
+          <div data-testid="progreso-skeleton" className="space-y-8">
+            {[3, 4, 2].map((filas, i) => (
+              <div key={i} className="space-y-2">
+                <div className="h-3 w-44 animate-pulse rounded-full bg-neutral-800" />
+                {Array.from({ length: filas }, (_, j) => (
+                  <div key={j} className="h-10 animate-pulse rounded-xl border border-neutral-800 bg-neutral-900" />
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!cargando && (<>
         {/* Mi ritmo (cumplimiento de mis recurrentes) */}
         <section data-testid="mi-ritmo">
           <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">↻ mi ritmo · últimos 3 meses</h2>
@@ -438,6 +461,7 @@ export default function ProgresoClient({ yo }: { yo: PersonaConManagers }) {
             )}
           </section>
         )}
+        </>)}
       </div>
     </main>
   )
