@@ -1,0 +1,28 @@
+import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+import { mapPersonaConManagers } from '@/lib/equipo'
+import EquipoClient from './equipo-client'
+
+export default async function EquipoPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: row } = await supabase
+    .from('personas').select('*').eq('email', user!.email!).maybeSingle()
+
+  if (!row) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-neutral-950">
+        <p className="text-sm text-neutral-400">
+          tu cuenta no está ligada a una persona del equipo. avisa a dirección.
+        </p>
+      </main>
+    )
+  }
+
+  // 4.14: la pestaña equipo es de heads y dirección; el resto va a home
+  const yo = mapPersonaConManagers(row)
+  const esDir = yo.esDireccion || yo.nivel === 'ceo'
+  if (yo.nivel !== 'head' && !esDir) redirect('/')
+
+  return <EquipoClient yo={yo} />
+}
