@@ -26,10 +26,24 @@ export type NotifRow = {
   peticion_id: string | null
 }
 
+// Las notificaciones son best-effort: si este helper no puede operar (p. ej.
+// SUPABASE_SERVICE_ROLE_KEY ausente en el hosting), avisa en logs y regresa —
+// JAMÁS debe tumbar la operación principal (hallazgo cutover 2026-07-06: una
+// creación de petición exitosa se reportaba como fallida por esto).
+function adminSeguro(): ReturnType<typeof createAdminClient> | null {
+  try {
+    return createAdminClient()
+  } catch (e) {
+    console.warn('[notificar] admin client no disponible:', e instanceof Error ? e.message : e)
+    return null
+  }
+}
+
 // Reglas (paridad crearNotificacion/crearNotificacionesBatch del SPA):
 // nunca a uno mismo, nunca a personas inexistentes o inactivas.
 export async function notificarServidor(opts: { de: string; rows: NotifRow[] }): Promise<void> {
-  const admin = createAdminClient()
+  const admin = adminSeguro()
+  if (!admin) return
   const { data: personasRows, error: eP } = await admin.from('personas').select('*')
   if (eP) {
     console.warn('[notificar] no se pudieron leer personas:', eP.message)
@@ -61,7 +75,8 @@ export async function notificarToque(opts: {
   para: string
   mensaje: string
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  const admin = createAdminClient()
+  const admin = adminSeguro()
+  if (!admin) return { ok: false, error: 'las notificaciones no están configuradas en el servidor' }
 
   const { data: personasRows, error: eP } = await admin.from('personas').select('*')
   if (eP) return { ok: false, error: 'no se pudieron validar personas' }

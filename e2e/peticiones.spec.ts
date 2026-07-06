@@ -278,6 +278,9 @@ test('⚠ plazo ajustado (paridad margenPeticion): margen 1 → naranja, 2 → a
     await page.locator('#pet-area').selectOption('imkt')
     await page.locator('#pet-para').selectOption('Brenda')
     await page.locator('#pet-fecha').fill(fecha)
+    // plazo ajustado: confirmar el checkbox de verificación (fricción, no bloqueo)
+    const verificado = page.getByTestId('nudge-verificado')
+    if (await verificado.count()) await verificado.check()
     await page.getByTestId('btn-crear-confirmar').click()
     await expect(page.getByRole('dialog')).toHaveCount(0)
   }
