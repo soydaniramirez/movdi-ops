@@ -1,5 +1,5 @@
 -- ============================================================
--- ⚠️⚠️ NO APLICADA — APLICAR EN CUTOVER, AL FINAL (ver docs/CUTOVER.md) ⚠️⚠️
+-- ✅ APLICADA en el cutover del 2026-07-06 (histórico: estuvo staged sin aplicar).
 -- Requiere 20260703230000 y 20260703230500. Este es el "interruptor":
 -- hasta aquí nada corre solo; al aplicarla, el recordatorio queda vivo.
 -- ============================================================

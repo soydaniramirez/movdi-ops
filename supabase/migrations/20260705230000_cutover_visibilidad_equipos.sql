@@ -1,5 +1,5 @@
 -- ============================================================
--- ⚠️⚠️ NO APLICADA — APLICAR EN CUTOVER (ver docs/CUTOVER.md, paso C5d) ⚠️⚠️
+-- ✅ APLICADA en el cutover del 2026-07-06 (histórico: estuvo staged sin aplicar).
 -- Cambia comportamiento del SPA vivo (heads dejan de ver todo; ejecutivos
 -- dejan de ver patrones ajenos): aplicar DESPUÉS del switch de hosting.
 -- ============================================================

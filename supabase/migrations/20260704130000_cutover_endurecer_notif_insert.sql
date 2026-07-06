@@ -1,5 +1,5 @@
 -- ============================================================
--- ⚠️⚠️ NO APLICADA — APLICAR EN CUTOVER, DESPUÉS del switch a Next ⚠️⚠️
+-- ✅ APLICADA en el cutover del 2026-07-06 (histórico: estuvo staged sin aplicar).
 -- Rompe los INSERT de notificaciones del index.html vivo: aplicar solo
 -- cuando la SPA ya no sea la app servida. Requiere además que el build
 -- de Next inserte notificaciones con el admin client (cambio de código

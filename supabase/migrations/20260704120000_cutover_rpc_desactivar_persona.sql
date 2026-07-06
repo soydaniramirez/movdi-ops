@@ -1,5 +1,5 @@
 -- ============================================================
--- ⚠️⚠️ NO APLICADA — APLICAR EN CUTOVER (ver docs/CUTOVER.md) ⚠️⚠️
+-- ✅ APLICADA en el cutover del 2026-07-06 (histórico: estuvo staged sin aplicar).
 -- Requerida por el módulo equipo del Next.js (la Server Action la invoca).
 -- ============================================================
 -- CUTOVER 4 — RPC transaccional: desactivar persona con reasignación

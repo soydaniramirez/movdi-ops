@@ -1,5 +1,5 @@
 -- ============================================================
--- ⚠️⚠️ NO APLICADA — APLICAR EN CUTOVER (ver docs/CUTOVER.md) ⚠️⚠️
+-- ✅ APLICADA en el cutover del 2026-07-06 (histórico: estuvo staged sin aplicar).
 -- El check constraint rompería la creación de quincenales desde el
 -- index.html vivo (no envía fecha_inicio). Aplicar solo cuando la SPA
 -- vieja deje de ser la app de producción.
