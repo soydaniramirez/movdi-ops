@@ -128,26 +128,31 @@ test('meses cerrados: navegación ← → por mes y toggle de entradas', async (
     })
     return ((await r.json()) as { access_token: string }).access_token
   })()
+  // estados de entrega MEZCLADOS a propósito: el archivo de meses cerrados
+  // no debe atarse al estado de entrega (regresión del reporte 2026-07-06)
   await fetch(`${MOCK}/rest/v1/historial_mensual`, {
     method: 'POST', headers: { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json' },
     body: JSON.stringify([
-      { persona: 'Antonio', mes: '2026-04', xp_total: 40, cumplimiento: 80 },
-      { persona: 'Antonio', mes: '2026-05', xp_total: 55, cumplimiento: 90 },
+      { persona: 'Antonio', mes: '2026-04', xp_total: 40, cumplimiento: 80, recompensa: 'tarde de cine', recompensa_entregada: true },
+      { persona: 'Antonio', mes: '2026-05', xp_total: 55, cumplimiento: 90, recompensa: 'día de spa', recompensa_entregada: false },
     ]),
   })
 
   await login(page, 'antonio@movdi.mx')
   await page.goto('/progreso')
 
-  // por default: el mes más reciente, con sus filas
+  // por default: el mes más reciente, con sus filas — la entrada aparece
+  // aunque su recompensa NO esté entregada (el archivo no filtra por eso)
   await expect(page.getByTestId('hist-mes-actual')).toHaveText('2026-05')
   await expect(page.getByTestId('historial-item')).toHaveCount(1)
   await expect(page.getByTestId('historial-item')).toContainText('55 XP')
+  await expect(page.getByTestId('historial-item')).toContainText('🎁 día de spa')
 
-  // ← un mes atrás
+  // ← un mes atrás: la entregada también se ve, con su ✓
   await page.getByTestId('hist-mes-anterior').click()
   await expect(page.getByTestId('hist-mes-actual')).toHaveText('2026-04')
   await expect(page.getByTestId('historial-item')).toContainText('40 XP')
+  await expect(page.getByTestId('historial-item')).toContainText('🎁 tarde de cine ✓')
   await expect(page.getByTestId('hist-mes-anterior')).toBeDisabled()
 
   // → de regreso

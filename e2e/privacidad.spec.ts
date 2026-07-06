@@ -137,15 +137,20 @@ test('RH: ve las recompensas ganadas y las marca como entregadas', async ({ page
   await expect(pDani.getByTestId('cierre-ok')).toBeVisible()
   await ctx.close()
 
-  // RH entra y entrega
+  // RH entra y entrega — la lista activa muestra SOLO pendientes
   await login(page, 'sarai@movdi.mx')
   await page.goto('/progreso')
   const entrega = page.getByTestId('entrega-item').filter({ hasText: 'Antonio' })
   await expect(entrega).toContainText('tarde libre')
   await entrega.getByTestId('btn-marcar-entregada').click()
-  // el botón desaparece cuando la action + recarga terminan (evita la carrera)
-  await expect(entrega.getByTestId('btn-marcar-entregada')).toHaveCount(0)
+  // al marcar ✓ la fila SALE de la lista activa (ya no crece infinita)
+  await expect(entrega).toHaveCount(0)
+  await expect(page.getByTestId('entregas-vacio')).toBeVisible()
+  // el toggle recupera el historial de entregadas
+  await page.getByTestId('entregas-toggle').click()
   await expect(entrega).toContainText('entregada ✓')
+  await page.getByTestId('entregas-toggle').click()
+  await expect(entrega).toHaveCount(0)
 
   // estado persistido en la "BD"
   await expect.poll(async () => {

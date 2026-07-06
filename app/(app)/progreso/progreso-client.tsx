@@ -151,6 +151,24 @@ export default function ProgresoClient({ yo, gameInicial }: { yo: PersonaConMana
     [historialVisible, mesHistActivo],
   )
 
+  // entrega de recompensas (RH/dirección): por defecto SOLO pendientes; las
+  // entregadas viven detrás del toggle, limitadas a las más recientes para
+  // que la lista no crezca sin tope con los meses. Independiente del bloque
+  // de meses cerrados: el archivo de XP/nivel nunca se ata al estado de
+  // entrega.
+  const [mostrarEntregadas, setMostrarEntregadas] = useState(false)
+  const ENTREGADAS_MAX = 20
+  const ordenEntrega = (a: HistorialMes, b: HistorialMes) =>
+    a.mes === b.mes ? a.persona.localeCompare(b.persona) : (a.mes < b.mes ? 1 : -1)
+  const pendientesEntrega = useMemo(
+    () => historial.filter((h) => h.recompensa && !h.recompensaEntregada).sort(ordenEntrega),
+    [historial],
+  )
+  const entregadasLista = useMemo(
+    () => historial.filter((h) => h.recompensa && h.recompensaEntregada).sort(ordenEntrega),
+    [historial],
+  )
+
   const mesAnt = mesAnteriorStr()
   const cerrado = mesCerrado(historial, mesAnt)
   const preview = useMemo(() => calcularReporteCierre({
@@ -312,32 +330,56 @@ export default function ProgresoClient({ yo, gameInicial }: { yo: PersonaConMana
           </div>
         </section>
 
-        {/* RH / dirección: entregar recompensas ganadas */}
+        {/* RH / dirección: entregar recompensas ganadas. Lista activa = solo
+            PENDIENTES; al marcar ✓ la fila pasa al historial del toggle
+            (limitado a las más recientes — la lista no crece infinita). */}
         {(soyRH || veTodo) && historial.some((h) => h.recompensa) && (
           <section data-testid="entregas-rh" className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-            <h2 className="font-mono text-[11px] uppercase tracking-widest text-neutral-400">🎁 entrega de recompensas</h2>
-            <p className="mt-1 font-mono text-[10px] text-neutral-500">recompensas ganadas en meses cerrados · márcalas al entregarlas físicamente</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-mono text-[11px] uppercase tracking-widest text-neutral-400">🎁 entrega de recompensas</h2>
+              {entregadasLista.length > 0 && (
+                <button data-testid="entregas-toggle" onClick={() => setMostrarEntregadas((v) => !v)}
+                  className="rounded-full border border-neutral-700 px-2.5 py-1 font-mono text-[11px] text-neutral-400 transition-colors hover:border-neutral-500 hover:text-neutral-200">
+                  {mostrarEntregadas ? '🙈 ocultar entregadas' : `👁 mostrar entregadas (${entregadasLista.length})`}
+                </button>
+              )}
+            </div>
+            <p className="mt-1 font-mono text-[10px] text-neutral-500">pendientes de entregar físicamente · al marcar ✓ pasan al historial del toggle</p>
             <div className="mt-3 space-y-1.5">
-              {historial.filter((h) => h.recompensa).map((h) => (
+              {pendientesEntrega.length === 0 && (
+                <p data-testid="entregas-vacio" className="font-mono text-xs text-neutral-500">
+                  🎉 sin entregas pendientes
+                </p>
+              )}
+              {pendientesEntrega.map((h) => (
                 <div key={h.id} data-testid="entrega-item" className="flex flex-wrap items-center gap-3 border border-neutral-800 bg-neutral-950 px-3.5 py-2">
                   <span className="font-mono text-[11px] text-neutral-400">{h.mes}</span>
                   <span className="text-sm text-neutral-200">{h.persona}</span>
                   <span className="flex-1 text-sm text-movdi-verde">🎁 {h.recompensa}</span>
-                  {h.recompensaEntregada ? (
-                    <span className="font-mono text-[10px] uppercase text-movdi-verde">entregada ✓</span>
-                  ) : (
-                    <button data-testid="btn-marcar-entregada"
-                      onClick={async () => {
-                        const r = await marcarRecompensaEntregada({ id: h.id })
-                        if (!r.ok) setAviso(r.error)
-                        await recargar()
-                      }}
-                      className="border border-movdi-verde/50 px-2.5 py-1 font-mono text-[10px] uppercase text-movdi-verde transition-colors hover:bg-movdi-verde/10">
-                      marcar entregada ✓
-                    </button>
-                  )}
+                  <button data-testid="btn-marcar-entregada"
+                    onClick={async () => {
+                      const r = await marcarRecompensaEntregada({ id: h.id })
+                      if (!r.ok) setAviso(r.error)
+                      await recargar()
+                    }}
+                    className="border border-movdi-verde/50 px-2.5 py-1 font-mono text-[10px] uppercase text-movdi-verde transition-colors hover:bg-movdi-verde/10">
+                    marcar entregada ✓
+                  </button>
                 </div>
               ))}
+              {mostrarEntregadas && entregadasLista.slice(0, ENTREGADAS_MAX).map((h) => (
+                <div key={h.id} data-testid="entrega-item" className="flex flex-wrap items-center gap-3 border border-neutral-800 bg-neutral-950 px-3.5 py-2 opacity-70">
+                  <span className="font-mono text-[11px] text-neutral-400">{h.mes}</span>
+                  <span className="text-sm text-neutral-200">{h.persona}</span>
+                  <span className="flex-1 text-sm text-movdi-verde">🎁 {h.recompensa}</span>
+                  <span className="font-mono text-[10px] uppercase text-movdi-verde">entregada ✓</span>
+                </div>
+              ))}
+              {mostrarEntregadas && entregadasLista.length > ENTREGADAS_MAX && (
+                <p className="font-mono text-[10px] text-neutral-500">
+                  mostrando las {ENTREGADAS_MAX} más recientes de {entregadasLista.length} entregadas
+                </p>
+              )}
             </div>
           </section>
         )}
@@ -454,7 +496,14 @@ export default function ProgresoClient({ yo, gameInicial }: { yo: PersonaConMana
                     <span className="flex-1">{h.persona}</span>
                     <span>{h.xpTotal} XP · nivel {h.nivelAlcanzado}</span>
                     <span>{h.entregadas} entregas · {h.cumplimiento}%</span>
-                    {h.recompensa && <span className="text-movdi-verde">🎁 {h.recompensa}</span>}
+                    {/* el archivo muestra TODAS las filas del mes, con o sin
+                        recompensa, entregada o no — nunca se filtra por
+                        estado de entrega */}
+                    {h.recompensa && (
+                      <span className="text-movdi-verde">
+                        🎁 {h.recompensa}{h.recompensaEntregada ? ' ✓' : ''}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
