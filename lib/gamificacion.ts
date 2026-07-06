@@ -9,15 +9,17 @@ import { type Estrella } from './estrellas'
 
 // ---------- niveles ----------
 // Umbrales 4.13 calibrados contra el histórico real de junio con la fórmula
-// nueva (aprobados 2026-07-05): nivel 3 = tercio superior del equipo (hueco
-// natural 257→272); nivel 4 = muy buen mes, por encima del mejor de junio
-// (325); nivel 5 = techo realista mensual (~413-420) + margen — excepcional.
+// nueva (escalera final fijada por dirección 2026-07-05): nivel 3 = tercio
+// superior del equipo (hueco natural 257→272); nivel 4 = muy buen mes, por
+// encima del mejor de junio (325); nivel 5 = 480, por encima del techo
+// realista mensual (~413) — reservado para un mes verdaderamente fuera de
+// serie.
 export const NIVELES = [
   { nivel: 1, xpMin: 0, nombre: 'en arranque' },
   { nivel: 2, xpMin: 100, nombre: 'constante' },
   { nivel: 3, xpMin: 265, nombre: 'confiable' },
   { nivel: 4, xpMin: 370, nombre: 'referente' },
-  { nivel: 5, xpMin: 430, nombre: 'élite MOVDI' },
+  { nivel: 5, xpMin: 480, nombre: 'élite MOVDI' },
 ] as const
 
 export function nivelDesdeXP(xp: number) {

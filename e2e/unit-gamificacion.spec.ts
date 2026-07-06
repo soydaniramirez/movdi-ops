@@ -28,7 +28,7 @@ const est = (o: Partial<Estrella>): Estrella => ({
   semana: '2026-W24', creadaEn: '2026-06-10T12:00:00Z', ...o,
 })
 
-test('niveles 4.13: umbrales exactos 0/100/265/370/430 (calibrados contra junio)', () => {
+test('niveles 4.13: umbrales exactos 0/100/265/370/480 (escalera final)', () => {
   expect(nivelDesdeXP(0).nivel).toBe(1)
   expect(nivelDesdeXP(99).nivel).toBe(1)
   expect(nivelDesdeXP(100)).toMatchObject({ nivel: 2, nombre: 'constante' })
@@ -36,8 +36,8 @@ test('niveles 4.13: umbrales exactos 0/100/265/370/430 (calibrados contra junio)
   expect(nivelDesdeXP(265)).toMatchObject({ nivel: 3, nombre: 'confiable' })
   expect(nivelDesdeXP(369).nivel).toBe(3)
   expect(nivelDesdeXP(370)).toMatchObject({ nivel: 4, nombre: 'referente' })
-  expect(nivelDesdeXP(429).nivel).toBe(4)
-  expect(nivelDesdeXP(430)).toMatchObject({ nivel: 5, nombre: 'élite MOVDI' })
+  expect(nivelDesdeXP(479).nivel).toBe(4)
+  expect(nivelDesdeXP(480)).toMatchObject({ nivel: 5, nombre: 'élite MOVDI' })
 })
 
 test('XP 4.13: a tiempo +10, tarde +3, anticipación +3, estrella +15, bono por cumplimiento', () => {
