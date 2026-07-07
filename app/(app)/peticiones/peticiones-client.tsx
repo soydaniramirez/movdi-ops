@@ -165,8 +165,35 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
     }
   }, [peticiones, yo])
 
+  // Deployment skew: si se despliega una versión nueva con esta pestaña
+  // abierta, el POST de una Server Action del bundle viejo ya no existe en
+  // el server y el runtime de Next LANZA (nuestras actions nunca lanzan:
+  // siempre regresan {ok}). Sin esto, el click "no hace nada" en silencio
+  // (bug reportado 2026-07-06 tras los redeploys del cutover). Se recarga
+  // UNA vez para tomar el bundle vigente; si aun así falla, se pide el
+  // reload manual en el aviso.
+  const RELOAD_FLAG = 'movdi-recarga-version'
+  function manejarSkew() {
+    try {
+      if (!sessionStorage.getItem(RELOAD_FLAG)) {
+        sessionStorage.setItem(RELOAD_FLAG, '1')
+        setAviso('la app se actualizó — recargando para tomar la versión nueva…')
+        location.reload()
+        return
+      }
+    } catch { /* sessionStorage no disponible (modo privado) */ }
+    setAviso('la app se actualizó y esta pestaña quedó con una versión vieja — recarga la página (⌘R / Ctrl+R) para continuar')
+  }
+
   async function accion(fn: () => Promise<{ ok: boolean; error?: string }>) {
-    const r = await fn()
+    let r: { ok: boolean; error?: string }
+    try {
+      r = await fn()
+    } catch {
+      manejarSkew()
+      return false
+    }
+    try { sessionStorage.removeItem(RELOAD_FLAG) } catch { /* idem */ }
     if (!r.ok) setAviso(r.error ?? 'error')
     else setAviso(null)
     await recargar()
@@ -381,7 +408,13 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
           admin={admin}
           onCerrar={() => setModalCrear(false)}
           onCrear={async (input) => {
-            const r = await crearPeticion(input)
+            let r: Awaited<ReturnType<typeof crearPeticion>>
+            try {
+              r = await crearPeticion(input)
+            } catch {
+              manejarSkew()
+              return { ok: false, error: 'la app se actualizó — recarga la página e inténtalo de nuevo' }
+            }
             setAviso(r.ok ? null : r.error)
             await recargar()
             if (r.ok) setModalCrear(false)

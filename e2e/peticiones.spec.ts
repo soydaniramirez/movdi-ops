@@ -304,3 +304,34 @@ test('⚠ plazo ajustado (paridad margenPeticion): margen 1 → naranja, 2 → a
   await expect(f1.getByTestId('alerta-plazo')).toHaveClass(/text-movdi-naranja/)
   await expect(f2.getByTestId('alerta-plazo')).toHaveClass(/text-movdi-amarillo/)
 })
+
+// ------------------------------------------------------------
+test('deployment skew: si la Server Action del bundle viejo ya no existe, avisa en vez de morir en silencio', async ({ page }) => {
+  await login(page, 'antonio@movdi.mx')
+  await irAPeticiones(page)
+
+  // con la app al día, crear funciona normal
+  await page.getByTestId('btn-nueva-peticion').click()
+  await page.locator('#pet-nombre').fill('tarea skew')
+  await page.locator('#pet-area').selectOption('imkt')
+  await page.locator('#pet-para').selectOption('Brenda')
+  await page.getByTestId('btn-crear-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  // pestaña "vieja": todo POST de Server Action falla (deploy nuevo con la
+  // app abierta). El flag simula que el auto-reload ya ocurrió, para poder
+  // observar el aviso manual en vez de recargar la página del test.
+  await page.evaluate(() => sessionStorage.setItem('movdi-recarga-version', '1'))
+  await page.route('**/*', (route) => {
+    const req = route.request()
+    if (req.method() === 'POST' && req.headers()['next-action']) return route.abort()
+    return route.continue()
+  })
+
+  await page.getByRole('button', { name: 'lo que pedí' }).click()
+  const card = page.getByTestId('card-peticion').filter({ hasText: 'tarea skew' })
+  await card.getByRole('button', { name: '▶ en proceso' }).click()
+
+  // el click NO muere en silencio: aviso claro pidiendo recargar
+  await expect(page.getByRole('alert').filter({ hasText: 'recarga la página' })).toBeVisible()
+})
