@@ -58,7 +58,7 @@ test('crear compromiso: se auto-asigna, privada=false forzada, origen guardado, 
 
   // origen obligatorio: sin elegirlo no se crea
   await page.getByTestId('btn-compromiso-confirmar').click()
-  await expect(page.getByRole('alert')).toContainText('de dónde nace')
+  await expect(page.getByRole('alert').filter({ hasText: 'de dónde nace' })).toBeVisible()
 
   await page.getByTestId('comp-origen').selectOption('talento')
   await page.getByTestId('btn-compromiso-confirmar').click()
@@ -144,12 +144,14 @@ test('último movimiento: ocultar de mi vista NO resetea el contador; cambiar es
 
   // ocultarla de mi vista (update de oculta_para) → updated_at intacto
   await fila.getByTestId('btn-ocultar').click()
+  await expect(fila).toHaveCount(0) // esperar a que la acción termine y recargue
   let st = await estado()
   expect(st.peticiones.find((p) => p.id === 'p-vieja-mov')!.updated_at).toBe(hace7)
 
   // reabrirla (cambio de estatus = movimiento real) → updated_at avanza
   await page.getByTestId('btn-toggle-ocultas').click()
   await fila.getByRole('button', { name: 'reabrir' }).click()
+  await expect(fila.getByRole('button', { name: 'entregar ✓' })).toBeVisible() // ya quedó pendiente
   st = await estado()
   const upd = st.peticiones.find((p) => p.id === 'p-vieja-mov')!.updated_at as string
   expect(upd > hace7).toBe(true)
