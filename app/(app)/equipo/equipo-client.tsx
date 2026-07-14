@@ -36,6 +36,15 @@ const SEM_COLOR: Record<string, string> = {
   r: 'bg-movdi-naranja', y: 'bg-movdi-amarillo', g: 'bg-movdi-verde', x: 'bg-neutral-600',
 }
 
+// "hace Nd" relativo para la última actividad
+const haceLabel = (iso: string | null) => {
+  if (!iso) return '—'
+  const dias = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
+  if (dias <= 0) return 'hoy'
+  if (dias === 1) return 'ayer'
+  return `hace ${dias}d`
+}
+
 type FiltroEquipo = 'activas' | 'pausadas' | 'inactivas'
 
 export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
@@ -92,6 +101,37 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
         obtenerInstanciasRecur({ recurrentes, peticiones, personas, nombre: p.nombre })).estado,
     ]))
   }, [visibles, peticiones, recurrentes, personas, yo])
+
+  // actividad por persona (Fase compromisos): "última actividad en OPS" =
+  // último movimiento real (updated_at, trigger condicional de BD) de las
+  // peticiones visibles donde participa; "tiempo promedio de respuesta" =
+  // promedio de (fecha_entrega − creada) de sus entregadas con dato. Todo
+  // calculado de tareas — SIN tracking de presencia ni geolocalización.
+  const actividad = useMemo(() => {
+    const out: Record<string, { ultima: string | null; promRespuesta: number | null }> = {}
+    for (const p of visibles) {
+      const participa = peticiones.filter(
+        (t) => matchNombre(t.para, p.nombre) || matchNombre(t.creadoPor, p.nombre),
+      )
+      const ultima = participa
+        .map((t) => t.actualizadaEn ?? t.creadaEn ?? '')
+        .filter(Boolean)
+        .sort()
+        .at(-1) || null
+      const conDato = participa.filter(
+        (t) => matchNombre(t.para, p.nombre) && t.estatus === 'entregado' && t.fechaEntrega && t.creadaEn,
+      )
+      const promRespuesta = conDato.length
+        ? conDato.reduce((s, t) => {
+            const creada = new Date((t.creadaEn || '').slice(0, 10) + 'T00:00:00').getTime()
+            const entregada = new Date(t.fechaEntrega + 'T00:00:00').getTime()
+            return s + Math.max(0, (entregada - creada) / 86400000)
+          }, 0) / conDato.length
+        : null
+      out[p.id] = { ultima, promRespuesta }
+    }
+    return out
+  }, [visibles, peticiones])
 
   // semáforo (paridad renderSide) — instancias del motor por persona
   const bloques = useMemo(() => {
@@ -179,6 +219,13 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
                       {p.rol} · {(p.areas ?? []).map((a) => AREAS_LABEL[a] ?? a).join(', ') || 'sin área'}
                       {p.managerPrincipal && <> · manager: <span className="text-neutral-300">{p.managerPrincipal}</span></>}
                       {p.managers.length > 0 && <> · apoyo: {p.managers.join(', ')}</>}
+                    </p>
+                    <p className="mt-0.5 font-mono text-[10px] text-neutral-500" data-testid="actividad-persona">
+                      última actividad en OPS: <span className="text-neutral-300">{haceLabel(actividad[p.id]?.ultima ?? null)}</span>
+                      <span className="mx-1 text-neutral-700">·</span>
+                      respuesta prom.: <span className="text-neutral-300">
+                        {actividad[p.id]?.promRespuesta != null ? `${actividad[p.id]!.promRespuesta!.toFixed(1)}d` : '—'}
+                      </span>
                     </p>
                     {estaPausada(p) && (
                       <p className="mt-0.5 font-mono text-[10px] text-movdi-amarillo">⏸ pausada hasta {p.pausadaHasta}</p>

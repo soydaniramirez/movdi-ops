@@ -12,7 +12,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notificarServidor } from '@/lib/supabase/notificar'
 import {
-  AREAS_VALIDAS, MODOS_ADMIN, type ModoAsignacion,
+  AREAS_VALIDAS, MODOS_ADMIN, ORIGENES_VALIDOS, type ModoAsignacion,
   destinatariosPorModo, fechaCorta, hoyISO, isAdmin,
   mapPersonaRow, matchNombre, personaDisponible, type Persona,
 } from '@/lib/peticiones'
@@ -117,6 +117,59 @@ export async function crearPeticion(input: {
     )
 
     return { ok: true, data: { creadas: data?.length ?? 0 } }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
+  }
+}
+
+// Fase compromisos: auto-asignación de primera clase ("+ nuevo compromiso").
+// Solicitante = asignado = yo (la RLS de INSERT ya lo permite). SIEMPRE
+// privada = false, forzado en servidor: un compromiso privado sería
+// invisible para el líder (RLS de privadas: solo creador/para, que aquí son
+// la misma persona) y rompería el propósito. origen es OBLIGATORIO y sin
+// default — es el dato que se quiere medir. Sin notificación (es para uno
+// mismo) y sin XP (ver anti-farmeo en lib/gamificacion.ts).
+export async function crearCompromiso(input: {
+  nombre: string
+  descripcion: string
+  fecha: string
+  prioridad: 'alta' | 'media' | 'baja'
+  origen: string
+}): Promise<Resultado> {
+  try {
+    const { supabase, yo } = await getContexto()
+
+    const nombre = (input.nombre || '').trim()
+    if (!nombre) return { ok: false, error: 'el nombre del compromiso es obligatorio' }
+    if (!['alta', 'media', 'baja'].includes(input.prioridad)) return { ok: false, error: 'prioridad inválida' }
+    if (!(ORIGENES_VALIDOS as readonly string[]).includes(input.origen)) {
+      return { ok: false, error: 'indica de dónde nace el compromiso (talento, cliente, interno o propio)' }
+    }
+    if (!input.fecha) return { ok: false, error: 'elige la fecha de compromiso' }
+    if (input.fecha < hoyISO()) return { ok: false, error: 'la fecha de compromiso no puede ser en el pasado' }
+
+    const area = yo.areas?.find((a) => (AREAS_VALIDAS as readonly string[]).includes(a)) || 'imkt'
+    const { error } = await supabase.from('peticiones').insert({
+      zona: 'general',
+      nombre,
+      descripcion: (input.descripcion || '').trim() || null,
+      creado_por: yo.nombre, // derivado de la sesión
+      para: yo.nombre,       // auto-asignación: solicitante = asignado
+      area,
+      fecha: input.fecha,
+      prioridad: input.prioridad,
+      estatus: 'pendiente',
+      privada: false,
+      origen: input.origen,
+    })
+    if (error) {
+      // pre-cutover 9: la columna origen aún no existe en BD
+      if (/origen/i.test(error.message) && (error.code === 'PGRST204' || error.code === '42703')) {
+        return { ok: false, error: 'los compromisos aún no están habilitados — falta aplicar la migración de BD (cutover 9)' }
+      }
+      return { ok: false, error: error.message }
+    }
+    return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
   }

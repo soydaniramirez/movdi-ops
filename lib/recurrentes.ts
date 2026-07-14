@@ -210,6 +210,8 @@ export function obtenerInstanciasRecur(opts: {
         fechaEntrega: null,
         ocultaPara: [],
         creadaEn: null,
+        origen: null,
+        actualizadaEn: null,
         recurOrigen: r.id,
         esVirtual: true,
       })

@@ -476,7 +476,7 @@ const server = http.createServer(async (req, res) => {
           id: uuid(), oculta_para: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
           fecha_original: null, motivo_cambio_fecha: null, cambio_visto_por_creador: true,
           extension_justificada: null, link_entrega: null, nota_entrega: null, fecha_entrega: null,
-          origen_recur: null, grupo_id: null, descripcion: null, ...f,
+          origen_recur: null, grupo_id: null, descripcion: null, origen: null, ...f,
         }))
         db.peticiones.push(...creadas)
         if (prefer.includes('return=representation')) return representar(creadas)
@@ -485,7 +485,18 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'PATCH') {
         const cambios = JSON.parse(body || '{}')
         const objetivo = aplicarFiltros(db.peticiones, url.searchParams).filter((r) => puedeEditarPeticion(r, yo))
-        objetivo.forEach((r) => Object.assign(r, cambios, { updated_at: new Date().toISOString() }))
+        // paridad trigger peticiones_touch_movimiento (cutover 9): solo el
+        // cambio REAL de estatus/descripcion/entrega mueve updated_at;
+        // oculta_para, cambio_visto_por_creador, privada, fecha… no lo tocan
+        // (ni un updated_at enviado a mano por el cliente).
+        const MOVIMIENTO = ['estatus', 'descripcion', 'nota_entrega', 'link_entrega', 'fecha_entrega']
+        objetivo.forEach((r) => {
+          const mueve = MOVIMIENTO.some(
+            (c) => c in cambios && JSON.stringify(cambios[c] ?? null) !== JSON.stringify(r[c] ?? null),
+          )
+          const updated_at = mueve ? new Date().toISOString() : r.updated_at
+          Object.assign(r, cambios, { updated_at })
+        })
         if (prefer.includes('return=representation')) return representar(objetivo)
         return json(204, [])
       }

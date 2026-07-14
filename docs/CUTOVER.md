@@ -298,3 +298,41 @@ lock de C4a); C5/C6 tienen rollback de una línea.
 | 8 | `20260705230000_cutover_visibilidad_equipos.sql` | cambia comportamiento (cierra recurrentes_select=true y acota heads a su equipo en ambas tablas; requiere build 4.12) — se aplica como C5d |
 
 (la numeración de C1–C6 usa este orden de aplicación, no el timestamp del archivo)
+
+---
+
+## F. POST-CUTOVER — Fase compromisos (2026-07-14)
+
+**Migración 9: `20260714120000_cutover_compromisos_origen_movimiento.sql` — ⚠️ SIN APLICAR.**
+Regla del proyecto: el SQL se muestra a Daniela y se espera OK explícito antes de correrlo.
+
+Qué hace (acordado 2026-07-14, con los 4 ajustes de Daniela):
+- `peticiones.origen` (talento|cliente|interno|propio) · nullable · **SIN default**
+  (el histórico queda NULL = sin clasificar; un default falsearía el dato).
+- Trigger `peticiones_touch_movimiento` (BEFORE UPDATE, **condicional**): solo el
+  cambio real de `estatus`/`descripcion`/`nota_entrega`/`link_entrega`/`fecha_entrega`
+  mueve `updated_at`. Ocultar de mi vista, marcar visto, `privada`, `fecha`, etc.
+  NO cuentan como movimiento (y el trigger congela cualquier `updated_at` enviado
+  a mano). Sin backfill: `updated_at` ya es = `created_at` en el histórico.
+- NO toca ninguna policy RLS (la de INSERT ya permite auto-asignación).
+
+Orden de despliegue (evita la ventana en que la UI inserta `origen` sin columna):
+1. Aplicar la migración 9 (tras el OK). Es aditiva e inofensiva para el código vivo.
+2. Merge del PR de la fase compromisos (la Server Action `crearCompromiso` regresa
+   un error claro si la columna aún no existe, por si el orden se invierte).
+
+Verificación post-aplicación:
+- update de estatus → `updated_at` avanza; update de `oculta_para` → NO cambia.
+- insert autenticado con `creado_por = para` y `origen='propio'` → pasa RLS.
+- `origen` fuera del enum → viola `peticiones_origen_check`.
+- Security advisors sin hallazgos nuevos; petición anónima sigue en 0 filas/403.
+
+Nota XP (sin SQL): los compromisos auto-asignados (creador = destinatario u
+`origen='propio'`) quedan FUERA de la gamificación (XP, cumplimiento, rachas,
+leaderboard, logros) — anti-farmeo, filtrado en `lib/gamificacion.ts`.
+Verificado 2026-07-14: 0 filas históricas con `creado_por = para`, ningún mes
+cerrado cambia.
+
+Rollback de la 9: `drop trigger peticiones_touch_movimiento on public.peticiones;
+drop function public.peticiones_touch_movimiento(); alter table public.peticiones
+drop column origen;` (la columna puede quedarse si ya hay datos — la UI la tolera NULL).
