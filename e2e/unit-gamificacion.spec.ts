@@ -16,7 +16,8 @@ const pet = (o: Partial<Peticion>): Peticion => ({
   creadoPor: 'Dani', para: 'Antonio', area: 'pm', fecha: '2026-06-10', prioridad: 'media',
   estatus: 'pendiente', privada: false, origenRecur: null, grupoId: null, fechaOriginal: null,
   motivoCambioFecha: null, cambioVistoPorCreador: true, extensionJustificada: null,
-  linkEntrega: null, notaEntrega: null, fechaEntrega: null, ocultaPara: [], creadaEn: null, ...o,
+  linkEntrega: null, notaEntrega: null, fechaEntrega: null, ocultaPara: [], creadaEn: null,
+  origen: null, actualizadaEn: null, ...o,
 })
 const per = (o: Partial<Persona>): Persona => ({
   id: Math.random().toString(36).slice(2), nombre: 'Antonio', apellido: 'L', rol: 'pm',

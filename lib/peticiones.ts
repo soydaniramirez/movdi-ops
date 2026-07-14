@@ -41,7 +41,17 @@ export type Peticion = {
   fechaEntrega: string | null
   ocultaPara: string[]
   creadaEn: string | null
+  // Fase compromisos (cutover 9): de dónde nace la tarea. NULL = histórico
+  // sin clasificar (sin default a propósito — es el dato que se quiere medir).
+  origen: OrigenPeticion | null
+  // Último movimiento REAL (updated_at con trigger condicional: solo cambios
+  // de estatus/descripcion/entrega). Pre-cutover ≈ creadaEn (columna viva
+  // desde siempre pero sin escrituras).
+  actualizadaEn: string | null
 }
+
+export const ORIGENES_VALIDOS = ['talento', 'cliente', 'interno', 'propio'] as const
+export type OrigenPeticion = (typeof ORIGENES_VALIDOS)[number]
 
 export const AREAS_VALIDAS = ['imkt', 'pm', 'legal', 'admi', 'ventas', 'digital', 'rh'] as const
 export const AREAS_LABEL: Record<string, string> = {
@@ -109,6 +119,8 @@ export function mapPeticionRow(r: any): Peticion {
     fechaEntrega: r.fecha_entrega ?? null,
     ocultaPara: r.oculta_para ?? [],
     creadaEn: r.created_at ?? null,
+    origen: r.origen ?? null,
+    actualizadaEn: r.updated_at ?? null,
   }
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -148,6 +160,65 @@ export function labelFecha(t: Peticion): string {
   if (d === 1) return 'mañana'
   if (d <= 7) return `en ${d}d`
   return fechaCorta(t.fecha)
+}
+
+// ---------- compromisos auto-asignados y regla de los 3 días ----------
+
+// Compromiso propio (Fase compromisos): nace del botón "+ nuevo compromiso"
+// (origen='propio', solicitante = asignado) o cualquier fila donde creador y
+// destinatario son la misma persona. Las instancias recurrentes nunca cuentan
+// (su creado_por hereda del patrón). Los compromisos propios NO otorgan ni
+// restan XP/gamificación — ver lib/gamificacion.ts (anti-farmeo).
+export function esCompromisoPropio(
+  t: Pick<Peticion, 'creadoPor' | 'para' | 'origen' | 'origenRecur'>,
+): boolean {
+  if (t.origenRecur) return false
+  return t.origen === 'propio' || matchNombre(t.creadoPor, t.para)
+}
+
+// Días hábiles (L–V) transcurridos DESPUÉS de `desde`, hasta `hasta`
+// inclusive. viernes → lunes = 1; mismo día = 0.
+export function diasHabilesEntre(desdeISO: string, hastaISO: string): number {
+  const d = fechaObj(desdeISO)
+  const hasta = fechaObj(hastaISO)
+  let n = 0
+  d.setDate(d.getDate() + 1)
+  while (d.getTime() <= hasta.getTime()) {
+    const dow = d.getDay()
+    if (dow !== 0 && dow !== 6) n++
+    d.setDate(d.getDate() + 1)
+  }
+  return n
+}
+
+// Días hábiles sin movimiento real: desde el último movimiento (updated_at
+// mantenido por el trigger condicional de BD; cae a created_at) hasta hoy.
+export function diasSinMovimiento(
+  t: Pick<Peticion, 'actualizadaEn' | 'creadaEn'>,
+  hoy?: string,
+): number | null {
+  const base = (t.actualizadaEn || t.creadaEn || '').slice(0, 10)
+  if (!base) return null
+  return diasHabilesEntre(base, hoy ?? hoyISO())
+}
+
+// Estados calculados (no hay campo en BD). Precedencia: atorada (3+ días
+// hábiles sin movimiento → ROJO) > vencida > por vencer (fecha en ≤2 días) >
+// al día. Entregadas/archivadas no tienen estado.
+export type EstadoMovimiento = 'al_dia' | 'por_vencer' | 'vencida' | 'atorada'
+
+export function estadoMovimiento(
+  t: Pick<Peticion, 'estatus' | 'fecha' | 'actualizadaEn' | 'creadaEn'>,
+  hoy?: string,
+): EstadoMovimiento | null {
+  if (t.estatus === 'entregado' || t.estatus === 'archivada') return null
+  const h = hoy ?? hoyISO()
+  const sinMov = diasSinMovimiento(t, h)
+  if (sinMov !== null && sinMov >= 3) return 'atorada'
+  const d = Math.round((fechaObj(t.fecha).getTime() - fechaObj(h).getTime()) / 86400000)
+  if (d < 0) return 'vencida'
+  if (d <= 2) return 'por_vencer'
+  return 'al_dia'
 }
 
 // ---------- permisos (paridad con la SPA) ----------

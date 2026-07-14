@@ -3,7 +3,7 @@
 // logros). No se inventó ninguna fórmula; los quirks del SPA se conservan y
 // están señalados.
 
-import { type Peticion, type Persona, matchNombre } from './peticiones'
+import { type Peticion, type Persona, esCompromisoPropio, matchNombre } from './peticiones'
 import { type Recurrente, calcularFechasEsperadas } from './recurrentes'
 import { type Estrella } from './estrellas'
 
@@ -51,9 +51,22 @@ export function diasRetraso(t: Peticion): number | null {
   return Math.round((new Date(t.fechaEntrega).getTime() - new Date(limite).getTime()) / 86400000)
 }
 
+// ---------- anti-farmeo (Fase compromisos) ----------
+// Los compromisos auto-asignados (creador = destinatario u origen 'propio')
+// NO entran a gamificación: ni suman XP/entregas/rachas ni restan
+// cumplimiento si se vencen — si no, se farmea creando y cerrando tareas
+// propias (y registrar un compromiso se volvería un riesgo para tu %).
+// Se filtra AQUÍ, en las funciones base, para cubrir a todos los
+// consumidores (XP, bono, leaderboard, cierre, logros, reconocimientos).
+// El semáforo de equipo (lib/equipo.ts) sí los incluye: es carga de
+// trabajo, no gamificación. Histórico verificado 2026-07-14: 0 filas con
+// creado_por = para, ningún número cerrado cambia.
+const sinCompromisosPropios = (peticiones: Peticion[]) =>
+  peticiones.filter((t) => !esCompromisoPropio(t))
+
 // ---------- rachas ----------
 export function calcularRachaActual(nombre: string, peticiones: Peticion[]): number {
-  const lista = peticiones
+  const lista = sinCompromisosPropios(peticiones)
     .filter((t) => matchNombre(t.para, nombre) && t.estatus !== 'archivada')
     .sort((a, b) => b.fecha.localeCompare(a.fecha))
   let racha = 0
@@ -65,7 +78,7 @@ export function calcularRachaActual(nombre: string, peticiones: Peticion[]): num
 }
 
 export function calcularMejorRacha(nombre: string, peticiones: Peticion[]): number {
-  const lista = peticiones
+  const lista = sinCompromisosPropios(peticiones)
     .filter((t) => matchNombre(t.para, nombre) && t.estatus !== 'archivada')
     .sort((a, b) => a.fecha.localeCompare(b.fecha))
   let mejor = 0
@@ -103,7 +116,7 @@ export function calcularXPMes(
 ) {
   const desde = mes + '-01'
   const hasta = finDeMes(mes)
-  const entregadas = peticiones.filter(
+  const entregadas = sinCompromisosPropios(peticiones).filter(
     (t) => matchNombre(t.para, nombre) && t.estatus === 'entregado' && t.fecha >= desde && t.fecha <= hasta,
   )
   let xp = 0
@@ -175,7 +188,8 @@ export function calcularStatsPersona(
   opts: { desde?: string; hasta?: string } = {},
   hoy?: string,
 ) {
-  let entregadas = peticiones.filter(
+  const consideradas = sinCompromisosPropios(peticiones)
+  let entregadas = consideradas.filter(
     (t) => matchNombre(t.para, nombre) && t.estatus === 'entregado',
   )
   if (opts.desde) entregadas = entregadas.filter((t) => t.fecha >= opts.desde!)
@@ -184,7 +198,7 @@ export function calcularStatsPersona(
   const aTiempo = entregadas.length
   const tarde = 0
   const h = hoy ?? new Date(new Date().toDateString()).toISOString().slice(0, 10)
-  const pendientesVencidas = peticiones.filter(
+  const pendientesVencidas = consideradas.filter(
     (t) => matchNombre(t.para, nombre) && t.estatus !== 'entregado' && t.estatus !== 'archivada' && t.fecha < h,
   )
   const total = entregadas.length + pendientesVencidas.length
@@ -444,7 +458,8 @@ export function calcularLogros(opts: {
 }) {
   const { nombre } = opts
   const hoy = opts.hoy ?? new Date()
-  const todasEntregadas = opts.peticiones.filter(
+  const consideradas = sinCompromisosPropios(opts.peticiones)
+  const todasEntregadas = consideradas.filter(
     (t) => matchNombre(t.para, nombre) && t.estatus === 'entregado',
   )
   const areasUnicas = new Set(todasEntregadas.map((t) => t.area)).size
@@ -454,7 +469,7 @@ export function calcularLogros(opts: {
   const inicioMesAnt = mesAnt.toISOString().slice(0, 10)
   const finMesAnt = new Date(hoy.getFullYear(), hoy.getMonth(), 0).toISOString().slice(0, 10)
 
-  const peticionesDelMesAnt = opts.peticiones.filter(
+  const peticionesDelMesAnt = consideradas.filter(
     (t) => matchNombre(t.para, nombre) && t.estatus !== 'archivada' && t.fecha >= inicioMesAnt && t.fecha <= finMesAnt,
   )
   const vencidasDelMesAnt = peticionesDelMesAnt.filter((t) => t.estatus !== 'entregado')

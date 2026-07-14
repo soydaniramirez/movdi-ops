@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  AREAS_LABEL, AREAS_VALIDAS, type ModoAsignacion,
+  AREAS_LABEL, AREAS_VALIDAS, ORIGENES_VALIDOS, type ModoAsignacion,
   type Persona, type Peticion,
-  destinatariosPorModo, diasHasta, dx, fechaCorta, isAdmin, labelFecha,
+  destinatariosPorModo, diasHasta, diasSinMovimiento, dx, esCompromisoPropio,
+  estadoMovimiento, fechaCorta, isAdmin, labelFecha,
   mapPeticionRow, margenPeticion, matchNombre, personaDisponible, puedoVerPeticion,
 } from '@/lib/peticiones'
 import { type Recurrente, mapRecurRow, obtenerInstanciasRecur } from '@/lib/recurrentes'
@@ -17,12 +18,12 @@ import {
   type HistorialMes, competeEnLeaderboard, mapHistorialRow, mesAnteriorStr,
 } from '@/lib/gamificacion'
 import {
-  cambiarEstatus, cambiarFecha, crearPeticion, desocultarPeticion,
-  eliminarPeticion, entregarPeticion, moverInstancia, ocultarEntregadas,
-  ocultarPeticion,
+  agregarNotaAvance, cambiarEstatus, cambiarFecha, crearCompromiso,
+  crearPeticion, desocultarPeticion, eliminarPeticion, entregarPeticion,
+  moverInstancia, ocultarEntregadas, ocultarPeticion,
 } from './actions'
 
-type Tab = 'general' | 'mis' | 'pedi' | 'recur'
+type Tab = 'general' | 'mis' | 'pedi' | 'recur' | 'atorado'
 type Filtro = 'todas' | 'vencidas' | 'semana' | (typeof AREAS_VALIDAS)[number]
 
 const PRIO_COLOR: Record<string, string> = {
@@ -70,11 +71,15 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
 
   // modales
   const [modalCrear, setModalCrear] = useState(false)
+  const [modalCompromiso, setModalCompromiso] = useState(false)
   const [modalEntrega, setModalEntrega] = useState<Peticion | null>(null)
   const [modalFecha, setModalFecha] = useState<Peticion | null>(null)
   const [modalMover, setModalMover] = useState<Peticion | null>(null)
+  const [modalNota, setModalNota] = useState<Peticion | null>(null)
 
   const admin = isAdmin(yo)
+  // panel "qué está atorado": líderes de área y dirección
+  const veAtorados = yo.nivel === 'head' || esDireccion(yo)
 
   // ---------- lecturas client-side (anon key + RLS) ----------
   const recargar = useCallback(async () => {
@@ -98,9 +103,11 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
   useEffect(() => { void recargar() }, [recargar])
 
   // ---------- lista filtrada (paridad renderGeneral/renderMis/renderPedi) ----------
-  const scopeOcultas: 'general' | 'mis' | 'pedi' | null = tab === 'recur' ? null : tab
+  const scopeOcultas: 'general' | 'mis' | 'pedi' | null =
+    tab === 'recur' || tab === 'atorado' ? null : tab
 
   const { lista, ocultasCount } = useMemo(() => {
+    if (tab === 'atorado') return { lista: [], ocultasCount: 0 }
     let l = peticiones.filter((t) => puedoVerPeticion(t, yo))
     if (tab === 'recur') l = l.filter((t) => t.origenRecur)
     else l = l.filter((t) => !t.origenRecur)
@@ -140,6 +147,35 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
         .sort(ordenSemaforo),
     }))
   }, [tab, peticiones, personas, recurrentes, yo])
+
+  // ---------- panel "qué está atorado" (heads/dirección) ----------
+  // Tareas atoradas (3+ días hábiles sin movimiento) o vencidas del equipo,
+  // agrupadas por persona, más días sin movimiento arriba. Misma relación de
+  // equipo del semáforo (manager principal o apoyo); dirección ve a todos.
+  // Solo peticiones ya visibles por RLS — los to-dos privados NUNCA se
+  // cargan aquí.
+  const atorados = useMemo(() => {
+    if (tab !== 'atorado' || !veAtorados) return []
+    const equipo = esDireccion(yo)
+      ? personas.filter((p) => p.activo !== false && p.nombre !== yo.nombre)
+      : personas.filter((p) =>
+          p.activo !== false &&
+          (p.managerPrincipal === yo.nombre || (p.managers || []).includes(yo.nombre)))
+    return equipo
+      .map((p) => {
+        const tareas = peticiones
+          .filter((t) =>
+            matchNombre(t.para, p.nombre) &&
+            puedoVerPeticion(t, yo) &&
+            t.estatus !== 'entregado' && t.estatus !== 'archivada')
+          .map((t) => ({ t, estado: estadoMovimiento(t), dias: diasSinMovimiento(t) ?? 0 }))
+          .filter((x) => x.estado === 'atorada' || x.estado === 'vencida')
+          .sort((a, b) => b.dias - a.dias)
+        return { p, tareas, maxDias: tareas[0]?.dias ?? 0 }
+      })
+      .filter((g) => g.tareas.length > 0)
+      .sort((a, b) => b.maxDias - a.maxDias)
+  }, [tab, veAtorados, personas, peticiones, yo])
 
   // card "peticiones privadas 🔒" (solo dirección, paridad renderSide)
   const rhCount = useMemo(
@@ -208,13 +244,23 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
             <div className="font-mono text-xs uppercase tracking-widest text-neutral-500">movdi · ops</div>
             <h1 className="text-2xl font-bold tracking-tight">peticiones</h1>
           </div>
-          <button
-            onClick={() => setModalCrear(true)}
-            className="rounded-full bg-movdi-naranja px-4 py-2 text-sm font-medium hover:bg-movdi-naranja/85"
-            data-testid="btn-nueva-peticion"
-          >
-            + nueva petición
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setModalCompromiso(true)}
+              className="rounded-full border border-movdi-naranja px-4 py-2 text-sm font-medium text-movdi-naranja hover:bg-movdi-naranja/10"
+              data-testid="btn-nuevo-compromiso"
+              title="trabajo emergente que tomas tú — se asigna a ti"
+            >
+              ✋ nuevo compromiso
+            </button>
+            <button
+              onClick={() => setModalCrear(true)}
+              className="rounded-full bg-movdi-naranja px-4 py-2 text-sm font-medium hover:bg-movdi-naranja/85"
+              data-testid="btn-nueva-peticion"
+            >
+              + nueva petición
+            </button>
+          </div>
         </header>
 
         {/* 🏆 podio del MES CERRADO (primeros 5 días; Fase 4.8: sin cálculo
@@ -255,33 +301,41 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
 
         {/* Tabs + filtros */}
         <nav className="mt-6 flex flex-wrap items-center gap-2">
-          {([['general', 'general'], ['mis', 'mis pendientes'], ['pedi', 'lo que pedí'], ['recur', 'instancias recurrentes']] as const).map(([k, lab]) => (
+          {([
+            ['general', 'general'], ['mis', 'mis pendientes'], ['pedi', 'lo que pedí'],
+            ['recur', 'instancias recurrentes'],
+            ...(veAtorados ? ([['atorado', '⏸ qué está atorado']] as const) : []),
+          ] as readonly (readonly [Tab, string])[]).map(([k, lab]) => (
             <button key={k} onClick={() => setTab(k)}
               className={`rounded-full border px-3 py-1.5 font-mono text-xs ${tab === k ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-400 hover:border-neutral-600'}`}>
               {lab}
             </button>
           ))}
-          <span className="mx-2 h-4 w-px bg-neutral-800" />
-          {(['todas', 'vencidas', 'semana'] as Filtro[]).map((f) => (
-            <button key={f} onClick={() => setFiltro(f)}
-              className={`rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors ${filtro === f ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}>
-              {f === 'semana' ? 'esta semana' : f}
-            </button>
-          ))}
-          {/* áreas como menú desplegable (misma semántica que los chips:
-              un solo filtro activo a la vez) */}
-          <select
-            aria-label="filtrar por área"
-            data-testid="filtro-area"
-            value={(AREAS_VALIDAS as readonly string[]).includes(filtro) ? filtro : ''}
-            onChange={(e) => setFiltro((e.target.value || 'todas') as Filtro)}
-            className={`rounded-full border bg-neutral-950 px-2.5 py-1 font-mono text-[11px] outline-none transition-colors ${(AREAS_VALIDAS as readonly string[]).includes(filtro) ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}
-          >
-            <option value="">área: todas</option>
-            {AREAS_VALIDAS
-              .filter((a) => a !== 'rh' || yo.esDireccion || yo.nivel === 'rh')
-              .map((a) => <option key={a} value={a}>{AREAS_LABEL[a]}</option>)}
-          </select>
+          {tab !== 'atorado' && (
+            <>
+              <span className="mx-2 h-4 w-px bg-neutral-800" />
+              {(['todas', 'vencidas', 'semana'] as Filtro[]).map((f) => (
+                <button key={f} onClick={() => setFiltro(f)}
+                  className={`rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors ${filtro === f ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}>
+                  {f === 'semana' ? 'esta semana' : f}
+                </button>
+              ))}
+              {/* áreas como menú desplegable (misma semántica que los chips:
+                  un solo filtro activo a la vez) */}
+              <select
+                aria-label="filtrar por área"
+                data-testid="filtro-area"
+                value={(AREAS_VALIDAS as readonly string[]).includes(filtro) ? filtro : ''}
+                onChange={(e) => setFiltro((e.target.value || 'todas') as Filtro)}
+                className={`rounded-full border bg-neutral-950 px-2.5 py-1 font-mono text-[11px] outline-none transition-colors ${(AREAS_VALIDAS as readonly string[]).includes(filtro) ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}
+              >
+                <option value="">área: todas</option>
+                {AREAS_VALIDAS
+                  .filter((a) => a !== 'rh' || yo.esDireccion || yo.nivel === 'rh')
+                  .map((a) => <option key={a} value={a}>{AREAS_LABEL[a]}</option>)}
+              </select>
+            </>
+          )}
         </nav>
 
         {/* filtro por persona activo (viene del semáforo) */}
@@ -327,7 +381,78 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
           </p>
         )}
 
+        {/* ⏸ panel "qué está atorado" (heads/dirección): atoradas/vencidas del
+            equipo agrupadas por persona · más días sin movimiento arriba ·
+            SOLO peticiones/compromisos, jamás to-dos privados */}
+        {tab === 'atorado' && veAtorados && (
+          <section className="mt-6" data-testid="panel-atorados">
+            {cargando && <p className="font-mono text-xs text-neutral-500">cargando…</p>}
+            {!cargando && atorados.length === 0 && (
+              <p className="font-mono text-xs text-neutral-500">
+                nada atorado ni vencido en tu equipo ✓
+              </p>
+            )}
+            <div className="space-y-6">
+              {atorados.map((g) => (
+                <div key={g.p.id} data-testid="grupo-atorado">
+                  <h3 className="font-mono text-[11px] uppercase tracking-wider text-neutral-400">
+                    {g.p.nombre} {g.p.apellido}
+                    <span className="ml-2 text-neutral-600">· {g.tareas.length} {g.tareas.length === 1 ? 'tarea' : 'tareas'}</span>
+                  </h3>
+                  <div className="mt-2 overflow-x-auto rounded-2xl border border-neutral-800">
+                    <table className="w-full border-collapse text-left">
+                      <thead>
+                        <tr className="border-b border-neutral-800 bg-neutral-900">
+                          {['tarea', 'dueño', 'días sin movimiento', 'origen', 'fecha compromiso', 'estado'].map((h) => (
+                            <th key={h} className="px-3 py-2 font-mono text-[10px] font-normal uppercase tracking-wider text-neutral-500">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {g.tareas.map(({ t, estado, dias }) => (
+                          <tr key={t.id} data-testid="fila-atorada" className="border-b border-neutral-800/70 hover:bg-neutral-900/60">
+                            <td className="max-w-[24rem] px-3 py-2.5">
+                              <span className="text-sm font-semibold">{t.nombre}</span>
+                              {esCompromisoPropio(t) && (
+                                <span className="ml-2 font-mono text-[10px] text-movdi-amarillo" title="compromiso auto-asignado">✋ propio</span>
+                              )}
+                              {t.origenRecur && (
+                                <span className="ml-2 font-mono text-[10px] text-movdi-amarillo" title="instancia de recurrente">↻</span>
+                              )}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2.5 text-[13px] text-neutral-200">{t.para}</td>
+                            <td className="whitespace-nowrap px-3 py-2.5">
+                              <span className={`font-mono text-[13px] font-semibold ${dias >= 3 ? 'text-movdi-naranja' : 'text-neutral-300'}`}>
+                                {dias}d {dias === 1 ? 'hábil' : 'hábiles'}
+                              </span>
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2.5">
+                              {t.origen
+                                ? <span className="rounded-full border border-neutral-700 px-2 py-0.5 font-mono text-[10px] uppercase text-neutral-400">{t.origen}</span>
+                                : <span className="font-mono text-[10px] text-neutral-600">—</span>}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2.5">
+                              <span className="text-[13px] text-neutral-300">{fechaCorta(t.fecha)}</span>
+                              <span className="ml-2 font-mono text-[10px] text-neutral-500">{labelFecha(t)}</span>
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2.5">
+                              <span className={`font-mono text-[10px] uppercase ${estado === 'atorada' ? 'text-movdi-naranja' : 'text-movdi-amarillo'}`}>
+                                {estado === 'atorada' ? '⏸ atorada' : 'vencida'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Lista (tabla, paridad renderTabla) + semáforo lateral (paridad renderSide) */}
+        {tab !== 'atorado' && (
         <div className="mt-6 flex items-start gap-6">
           <section className="min-w-0 flex-1" data-testid="lista-peticiones">
             {cargando && <p className="font-mono text-xs text-neutral-500">cargando…</p>}
@@ -355,6 +480,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
                         onEntregar={() => setModalEntrega(t)}
                         onCambiarFecha={() => setModalFecha(t)}
                         onMover={() => setModalMover(t)}
+                        onNota={() => setModalNota(t)}
                         onEliminar={async () => {
                           if (!confirm('¿eliminar esta petición?')) return
                           await accion(() => eliminarPeticion({ id: t.id }))
@@ -399,6 +525,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
             </aside>
           )}
         </div>
+        )}
       </div>
 
       {modalCrear && (
@@ -422,6 +549,25 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
           }}
         />
       )}
+      {modalCompromiso && (
+        <ModalCompromiso
+          yo={yo}
+          onCerrar={() => setModalCompromiso(false)}
+          onCrear={async (input) => {
+            let r: Awaited<ReturnType<typeof crearCompromiso>>
+            try {
+              r = await crearCompromiso(input)
+            } catch {
+              manejarSkew()
+              return { ok: false, error: 'la app se actualizó — recarga la página e inténtalo de nuevo' }
+            }
+            setAviso(r.ok ? null : r.error)
+            await recargar()
+            if (r.ok) setModalCompromiso(false)
+            return r
+          }}
+        />
+      )}
       {modalEntrega && (
         <ModalEntrega
           t={modalEntrega}
@@ -441,6 +587,16 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
             const ok = await accion(() =>
               cambiarFecha({ id: modalFecha.id, nuevaFecha, motivo, extensionJustificada: justificada }))
             if (ok) setModalFecha(null)
+          }}
+        />
+      )}
+      {modalNota && (
+        <ModalNotaAvance
+          t={modalNota}
+          onCerrar={() => setModalNota(null)}
+          onConfirmar={async (nota) => {
+            const ok = await accion(() => agregarNotaAvance({ id: modalNota.id, nota }))
+            if (ok) setModalNota(null)
           }}
         />
       )}
@@ -535,7 +691,7 @@ function BannerPodio({ yo, historial }: {
 // ============================================================
 // Fila de la tabla (paridad renderFila del SPA: petición · de → para ·
 // área · fecha · prio · estatus · acciones)
-function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onMover, onEliminar, onOcultar, onDesocultar }: {
+function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onMover, onNota, onEliminar, onOcultar, onDesocultar }: {
   t: Peticion
   yo: Persona
   admin: boolean
@@ -543,6 +699,7 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
   onEntregar: () => void
   onCambiarFecha: () => void
   onMover: () => void
+  onNota: () => void
   onEliminar: () => void
   onOcultar: () => void
   onDesocultar: () => void
@@ -553,6 +710,10 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
   const lf = labelFecha(t)
   const vencida = t.estatus !== 'entregado' && diasHasta(t.fecha) < 0
   const oculta = estaOcultaParaMi(t, yo.nombre)
+  const compromiso = esCompromisoPropio(t)
+  // regla de los 3 días hábiles: atorada = ROJO (calculado, no hay campo)
+  const atorada = estadoMovimiento(t) === 'atorada'
+  const diasSinMov = diasSinMovimiento(t)
 
   const btn = 'rounded-md border px-2 py-0.5 font-mono text-[10px] whitespace-nowrap'
 
@@ -567,6 +728,12 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
           {t.nombre}
           {t.origenRecur && <span className="ml-2 whitespace-nowrap font-mono text-[10px] text-movdi-amarillo" title="instancia de recurrente">↻ recurrente</span>}
           {t.grupoId && <span className="ml-2 font-mono text-[10px] text-neutral-500">grupo</span>}
+          {t.origen && (
+            <span className="ml-2 whitespace-nowrap rounded-full border border-neutral-700 px-1.5 font-mono text-[10px] uppercase text-neutral-400"
+              title={`origen: ${t.origen}`} data-testid="tag-origen">
+              {t.origen}
+            </span>
+          )}
           {t.estatus === 'entregado' && (t.linkEntrega || t.notaEntrega) && (
             <span className="ml-1 text-[11px] text-movdi-verde" title="con evidencia de entrega">📎</span>
           )}
@@ -585,7 +752,8 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
             )
           })()}
         </div>
-        {t.descripcion && <p className="mt-0.5 text-xs text-neutral-400">{t.descripcion}</p>}
+        {/* whitespace-pre-line: las notas de avance se apilan una por línea */}
+        {t.descripcion && <p className="mt-0.5 whitespace-pre-line text-xs text-neutral-400">{t.descripcion}</p>}
         {t.motivoCambioFecha && (
           <p className="mt-1 border-l-2 border-movdi-amarillo/50 pl-2 font-mono text-[11px] text-movdi-amarillo/90">
             fecha movida{t.fechaOriginal ? ` (original: ${t.fechaOriginal})` : ''} · {t.motivoCambioFecha}
@@ -600,11 +768,19 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
           </p>
         )}
       </td>
-      {/* de → para */}
+      {/* de → para (compromiso propio: solicitante = asignado) */}
       <td className="whitespace-nowrap px-3 py-2.5">
-        <span className="font-mono text-[11px] text-neutral-500">{t.creadoPor}</span>
-        <span className="text-neutral-500"> → </span>
-        <strong className="text-[13px] text-neutral-200">{t.para}</strong>
+        {compromiso ? (
+          <span className="font-mono text-[11px] text-movdi-amarillo" title={`compromiso auto-asignado de ${t.para}`} data-testid="tag-compromiso">
+            ✋ compromiso de <strong className="text-[13px] text-neutral-200">{t.para}</strong>
+          </span>
+        ) : (
+          <>
+            <span className="font-mono text-[11px] text-neutral-500">{t.creadoPor}</span>
+            <span className="text-neutral-500"> → </span>
+            <strong className="text-[13px] text-neutral-200">{t.para}</strong>
+          </>
+        )}
       </td>
       {/* área */}
       <td className="whitespace-nowrap px-3 py-2.5">
@@ -625,11 +801,17 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
       <td className="whitespace-nowrap px-3 py-2.5">
         <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase ${PRIO_COLOR[t.prioridad]}`}>{t.prioridad}</span>
       </td>
-      {/* estatus */}
+      {/* estatus (+ alerta de atorada: 3+ días hábiles sin movimiento) */}
       <td className="whitespace-nowrap px-3 py-2.5">
         <span className={`font-mono text-[10px] uppercase ${t.estatus === 'entregado' ? 'text-movdi-verde' : t.estatus === 'proceso' ? 'text-movdi-amarillo' : 'text-neutral-400'}`}>
           {t.estatus === 'entregado' ? 'entregado ✓' : t.estatus === 'proceso' ? 'en proceso' : t.estatus}
         </span>
+        {atorada && (
+          <div className="mt-0.5 font-mono text-[10px] font-medium text-movdi-naranja" data-testid="badge-atorada"
+            title={`sin movimiento real (estatus, notas o entrega) desde hace ${diasSinMov} días hábiles`}>
+            ⏸ atorada · {diasSinMov}d sin mov.
+          </div>
+        )}
       </td>
       {/* acciones */}
       <td className="px-3 py-2.5">
@@ -648,6 +830,11 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
                 <button onClick={onCambiarFecha} data-testid="btn-cambiar-fecha"
                   className={`${btn} border-neutral-700 text-neutral-300 hover:border-neutral-500`}>
                   cambiar fecha
+                </button>
+                <button onClick={onNota} data-testid="btn-nota-avance"
+                  title="deja constancia de avance sin cambiar el estatus · cuenta como movimiento"
+                  className={`${btn} border-neutral-700 text-neutral-300 hover:border-neutral-500`}>
+                  + nota
                 </button>
               </>
             )}
@@ -908,6 +1095,96 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
 }
 
 // ============================================================
+// ✋ Nuevo compromiso (Fase compromisos): trabajo emergente que uno mismo
+// toma — solicitante = asignado. SIN toggle de privada (forzado false en el
+// servidor: un compromiso privado sería invisible para el líder). origen
+// OBLIGATORIO y sin preselección: es el dato que se quiere medir.
+function ModalCompromiso({ yo, onCerrar, onCrear }: {
+  yo: Persona
+  onCerrar: () => void
+  onCrear: (input: Parameters<typeof crearCompromiso>[0]) => Promise<{ ok: boolean; error?: string }>
+}) {
+  const [nombre, setNombre] = useState('')
+  const [desc, setDesc] = useState('')
+  const [fecha, setFecha] = useState(dx(3))
+  const [prio, setPrio] = useState<'alta' | 'media' | 'baja'>('media')
+  const [origen, setOrigen] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+  const [guardando, setGuardando] = useState(false)
+
+  const ORIGEN_DESC: Record<string, string> = {
+    talento: 'talento — lo pidió un talento',
+    cliente: 'cliente — lo pidió un cliente',
+    interno: 'interno — nace del equipo / la agencia',
+    propio: 'propio — iniciativa mía',
+  }
+
+  async function guardar() {
+    setErr(null)
+    if (!nombre.trim()) { setErr('el nombre del compromiso es obligatorio'); return }
+    if (!origen) { setErr('indica de dónde nace el compromiso'); return }
+    setGuardando(true)
+    const r = await onCrear({ nombre, descripcion: desc, fecha, prioridad: prio, origen })
+    setGuardando(false)
+    if (!r.ok) setErr(r.error || 'no se pudo crear el compromiso')
+  }
+
+  return (
+    <ModalShell titulo="✋ nuevo compromiso" onCerrar={onCerrar}>
+      <div className="space-y-4">
+        <p className="border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-neutral-300">
+          se asigna a <strong>ti ({yo.nombre})</strong> — queda en el mismo tablero,
+          visible para tu líder y dirección. no da XP.
+          <span className="block font-mono text-[10px] text-neutral-500">
+            para pendientes 100% personales usa &quot;mis to-dos&quot; (esos sí son privados)
+          </span>
+        </p>
+        <div>
+          <label className={labelCls} htmlFor="comp-nombre">¿qué te comprometes a entregar?</label>
+          <input id="comp-nombre" className={inputCls} value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="comp-desc">descripción</label>
+          <textarea id="comp-desc" rows={3} className={inputCls} value={desc} onChange={(e) => setDesc(e.target.value)} />
+        </div>
+        <div>
+          <label className={labelCls} htmlFor="comp-origen">¿de dónde nace? (obligatorio)</label>
+          <select id="comp-origen" data-testid="comp-origen" className={inputCls} value={origen} onChange={(e) => setOrigen(e.target.value)}>
+            <option value="">— elige el origen —</option>
+            {ORIGENES_VALIDOS.map((o) => <option key={o} value={o}>{ORIGEN_DESC[o]}</option>)}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls} htmlFor="comp-fecha">fecha compromiso</label>
+            <input id="comp-fecha" type="date" min={dx(0)} className={inputCls} value={fecha}
+              onChange={(e) => setFecha(e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls} htmlFor="comp-prio">prioridad</label>
+            <select id="comp-prio" className={inputCls} value={prio} onChange={(e) => setPrio(e.target.value as typeof prio)}>
+              <option value="media">media</option>
+              <option value="alta">alta</option>
+              <option value="baja">baja</option>
+            </select>
+          </div>
+        </div>
+
+        {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+          <button onClick={guardar} disabled={guardando} data-testid="btn-compromiso-confirmar"
+            className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85 disabled:opacity-50">
+            {guardando ? 'creando…' : 'tomar compromiso ✋'}
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  )
+}
+
+// ============================================================
 function ModalEntrega({ t, onCerrar, onConfirmar }: {
   t: Peticion
   onCerrar: () => void
@@ -995,6 +1272,55 @@ function ModalCambioFecha({ t, soyCreador, onCerrar, onConfirmar }: {
             }}
             className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85">
             guardar cambio
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  )
+}
+
+// ============================================================
+// ⏱ Nota de avance: una línea que deja constancia SIN tocar estatus ni
+// entrega. Cuenta como movimiento real (limpia "atorada") — la salida
+// legítima para tareas bloqueadas por terceros. Cambiar la fecha, a
+// propósito, NO limpia el rojo.
+function ModalNotaAvance({ t, onCerrar, onConfirmar }: {
+  t: Peticion
+  onCerrar: () => void
+  onConfirmar: (nota: string) => Promise<void>
+}) {
+  const [nota, setNota] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+  const [guardando, setGuardando] = useState(false)
+
+  async function guardar() {
+    setErr(null)
+    if (nota.trim().length < 3) { setErr('escribe la nota de avance (mínimo 3 caracteres)'); return }
+    setGuardando(true)
+    await onConfirmar(nota)
+    setGuardando(false)
+  }
+
+  return (
+    <ModalShell titulo={`⏱ nota de avance · ${t.nombre}`} onCerrar={onCerrar}>
+      <div className="space-y-4">
+        <p className="font-mono text-[11px] text-neutral-500">
+          no cambia el estatus — solo deja constancia de que la tarea se movió
+          (p. ej. &quot;esperando respuesta del cliente&quot;). resetea el contador de días sin movimiento.
+        </p>
+        <div>
+          <label className={labelCls} htmlFor="nota-avance">¿en qué va?</label>
+          <input id="nota-avance" maxLength={200} className={inputCls} autoFocus
+            placeholder="ej: mandé segundo recordatorio al cliente, sigo en espera"
+            value={nota} onChange={(e) => setNota(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void guardar() }} />
+        </div>
+        {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
+        <div className="flex justify-end gap-2">
+          <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+          <button onClick={guardar} disabled={guardando} data-testid="btn-nota-confirmar"
+            className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85 disabled:opacity-50">
+            {guardando ? 'guardando…' : 'guardar nota'}
           </button>
         </div>
       </div>
