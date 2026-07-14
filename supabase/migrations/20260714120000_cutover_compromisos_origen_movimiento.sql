@@ -1,6 +1,8 @@
 -- ============================================================
--- ⚠️ SIN APLICAR — regla del proyecto: mostrar este SQL y esperar OK
--- explícito de Daniela antes de correrlo en producción.
+-- ✅ APLICADA el 2026-07-14 con OK explícito de Daniela (vía MCP).
+-- Verificado en vivo: estatus mueve updated_at · oculta_para no · updated_at
+-- manual congelado · origen fuera del enum viola el check · advisors sin
+-- hallazgos nuevos. Histórico: 933 filas con origen NULL (sin clasificar).
 -- ============================================================
 -- CUTOVER 9 — Compromisos auto-asignados: `origen` + último movimiento real
 --

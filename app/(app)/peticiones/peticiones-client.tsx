@@ -18,9 +18,9 @@ import {
   type HistorialMes, competeEnLeaderboard, mapHistorialRow, mesAnteriorStr,
 } from '@/lib/gamificacion'
 import {
-  cambiarEstatus, cambiarFecha, crearCompromiso, crearPeticion,
-  desocultarPeticion, eliminarPeticion, entregarPeticion, moverInstancia,
-  ocultarEntregadas, ocultarPeticion,
+  agregarNotaAvance, cambiarEstatus, cambiarFecha, crearCompromiso,
+  crearPeticion, desocultarPeticion, eliminarPeticion, entregarPeticion,
+  moverInstancia, ocultarEntregadas, ocultarPeticion,
 } from './actions'
 
 type Tab = 'general' | 'mis' | 'pedi' | 'recur' | 'atorado'
@@ -75,6 +75,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
   const [modalEntrega, setModalEntrega] = useState<Peticion | null>(null)
   const [modalFecha, setModalFecha] = useState<Peticion | null>(null)
   const [modalMover, setModalMover] = useState<Peticion | null>(null)
+  const [modalNota, setModalNota] = useState<Peticion | null>(null)
 
   const admin = isAdmin(yo)
   // panel "qué está atorado": líderes de área y dirección
@@ -479,6 +480,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
                         onEntregar={() => setModalEntrega(t)}
                         onCambiarFecha={() => setModalFecha(t)}
                         onMover={() => setModalMover(t)}
+                        onNota={() => setModalNota(t)}
                         onEliminar={async () => {
                           if (!confirm('¿eliminar esta petición?')) return
                           await accion(() => eliminarPeticion({ id: t.id }))
@@ -588,6 +590,16 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
           }}
         />
       )}
+      {modalNota && (
+        <ModalNotaAvance
+          t={modalNota}
+          onCerrar={() => setModalNota(null)}
+          onConfirmar={async (nota) => {
+            const ok = await accion(() => agregarNotaAvance({ id: modalNota.id, nota }))
+            if (ok) setModalNota(null)
+          }}
+        />
+      )}
       {modalMover && (
         <ModalMoverInstancia
           t={modalMover}
@@ -679,7 +691,7 @@ function BannerPodio({ yo, historial }: {
 // ============================================================
 // Fila de la tabla (paridad renderFila del SPA: petición · de → para ·
 // área · fecha · prio · estatus · acciones)
-function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onMover, onEliminar, onOcultar, onDesocultar }: {
+function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onMover, onNota, onEliminar, onOcultar, onDesocultar }: {
   t: Peticion
   yo: Persona
   admin: boolean
@@ -687,6 +699,7 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
   onEntregar: () => void
   onCambiarFecha: () => void
   onMover: () => void
+  onNota: () => void
   onEliminar: () => void
   onOcultar: () => void
   onDesocultar: () => void
@@ -739,7 +752,8 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
             )
           })()}
         </div>
-        {t.descripcion && <p className="mt-0.5 text-xs text-neutral-400">{t.descripcion}</p>}
+        {/* whitespace-pre-line: las notas de avance se apilan una por línea */}
+        {t.descripcion && <p className="mt-0.5 whitespace-pre-line text-xs text-neutral-400">{t.descripcion}</p>}
         {t.motivoCambioFecha && (
           <p className="mt-1 border-l-2 border-movdi-amarillo/50 pl-2 font-mono text-[11px] text-movdi-amarillo/90">
             fecha movida{t.fechaOriginal ? ` (original: ${t.fechaOriginal})` : ''} · {t.motivoCambioFecha}
@@ -816,6 +830,11 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
                 <button onClick={onCambiarFecha} data-testid="btn-cambiar-fecha"
                   className={`${btn} border-neutral-700 text-neutral-300 hover:border-neutral-500`}>
                   cambiar fecha
+                </button>
+                <button onClick={onNota} data-testid="btn-nota-avance"
+                  title="deja constancia de avance sin cambiar el estatus · cuenta como movimiento"
+                  className={`${btn} border-neutral-700 text-neutral-300 hover:border-neutral-500`}>
+                  + nota
                 </button>
               </>
             )}
@@ -1253,6 +1272,55 @@ function ModalCambioFecha({ t, soyCreador, onCerrar, onConfirmar }: {
             }}
             className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85">
             guardar cambio
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  )
+}
+
+// ============================================================
+// ⏱ Nota de avance: una línea que deja constancia SIN tocar estatus ni
+// entrega. Cuenta como movimiento real (limpia "atorada") — la salida
+// legítima para tareas bloqueadas por terceros. Cambiar la fecha, a
+// propósito, NO limpia el rojo.
+function ModalNotaAvance({ t, onCerrar, onConfirmar }: {
+  t: Peticion
+  onCerrar: () => void
+  onConfirmar: (nota: string) => Promise<void>
+}) {
+  const [nota, setNota] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+  const [guardando, setGuardando] = useState(false)
+
+  async function guardar() {
+    setErr(null)
+    if (nota.trim().length < 3) { setErr('escribe la nota de avance (mínimo 3 caracteres)'); return }
+    setGuardando(true)
+    await onConfirmar(nota)
+    setGuardando(false)
+  }
+
+  return (
+    <ModalShell titulo={`⏱ nota de avance · ${t.nombre}`} onCerrar={onCerrar}>
+      <div className="space-y-4">
+        <p className="font-mono text-[11px] text-neutral-500">
+          no cambia el estatus — solo deja constancia de que la tarea se movió
+          (p. ej. &quot;esperando respuesta del cliente&quot;). resetea el contador de días sin movimiento.
+        </p>
+        <div>
+          <label className={labelCls} htmlFor="nota-avance">¿en qué va?</label>
+          <input id="nota-avance" maxLength={200} className={inputCls} autoFocus
+            placeholder="ej: mandé segundo recordatorio al cliente, sigo en espera"
+            value={nota} onChange={(e) => setNota(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void guardar() }} />
+        </div>
+        {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
+        <div className="flex justify-end gap-2">
+          <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+          <button onClick={guardar} disabled={guardando} data-testid="btn-nota-confirmar"
+            className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85 disabled:opacity-50">
+            {guardando ? 'guardando…' : 'guardar nota'}
           </button>
         </div>
       </div>

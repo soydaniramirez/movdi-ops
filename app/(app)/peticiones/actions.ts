@@ -175,6 +175,46 @@ export async function crearCompromiso(input: {
   }
 }
 
+// Nota de avance (Fase compromisos, ajuste 2026-07-14): deja constancia de
+// avance SIN tocar estatus ni campos de entrega — para tareas bloqueadas por
+// terceros (cliente que no contesta) que harían rojo injusto. Se agrega como
+// línea al final de descripcion (lo menos invasivo: sin columna nueva), y
+// como descripcion SÍ dispara el trigger de updated_at, cuenta como
+// movimiento real y limpia el estado "atorada". Cambiar `fecha` sigue SIN
+// contar a propósito: patear el deadline no limpia el rojo; esta nota es la
+// salida legítima.
+export async function agregarNotaAvance(input: {
+  id: string
+  nota: string
+}): Promise<Resultado> {
+  try {
+    const { supabase, yo } = await getContexto()
+    const nota = (input.nota || '').replace(/\s+/g, ' ').trim()
+    if (nota.length < 3) return { ok: false, error: 'escribe la nota de avance (mínimo 3 caracteres)' }
+    if (nota.length > 200) return { ok: false, error: 'máximo 200 caracteres — es una nota de una línea' }
+
+    const { data: rows, error: e0 } = await supabase.from('peticiones').select('*').eq('id', input.id)
+    const t = rows?.[0]
+    if (e0 || !t) return { ok: false, error: 'petición no encontrada' }
+    if (t.creado_por !== yo.nombre && !matchNombre(t.para, yo.nombre)) {
+      return { ok: false, error: 'solo el creador o el destinatario pueden dejar notas de avance' }
+    }
+    if (t.estatus === 'entregado' || t.estatus === 'archivada') {
+      return { ok: false, error: 'esta petición ya está cerrada' }
+    }
+
+    const linea = `⏱ avance (${fechaCorta(hoyISO())}, ${yo.nombre}): ${nota}`
+    const descripcion = t.descripcion ? `${t.descripcion}\n${linea}` : linea
+    const { data, error } = await supabase
+      .from('peticiones').update({ descripcion }).eq('id', input.id).select('id')
+    if (error) return { ok: false, error: error.message }
+    if (!data?.length) return { ok: false, error: 'no se pudo guardar la nota' }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
+  }
+}
+
 export async function entregarPeticion(input: {
   id: string
   link?: string

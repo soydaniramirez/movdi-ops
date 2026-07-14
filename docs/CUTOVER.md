@@ -303,8 +303,16 @@ lock de C4a); C5/C6 tienen rollback de una línea.
 
 ## F. POST-CUTOVER — Fase compromisos (2026-07-14)
 
-**Migración 9: `20260714120000_cutover_compromisos_origen_movimiento.sql` — ⚠️ SIN APLICAR.**
-Regla del proyecto: el SQL se muestra a Daniela y se espera OK explícito antes de correrlo.
+**Migración 9: `20260714120000_cutover_compromisos_origen_movimiento.sql` — ✅ APLICADA el 2026-07-14**
+(OK explícito de Daniela; SQL mostrado antes de correr, regla del proyecto).
+Verificación ejecutada el mismo día: estatus mueve `updated_at` / `oculta_para` no /
+`updated_at` manual congelado / origen inválido viola el check / advisors sin
+hallazgos nuevos / 933 filas históricas con `origen` NULL.
+
+**Nota de avance (ajuste 2026-07-14, sin SQL):** botón "+ nota" en peticiones —
+una línea que se agrega al final de `descripcion` (por eso cuenta como movimiento
+vía el trigger) SIN tocar estatus ni entrega. Es la salida legítima para tareas
+bloqueadas por terceros; cambiar `fecha` sigue sin limpiar el rojo, a propósito.
 
 Qué hace (acordado 2026-07-14, con los 4 ajustes de Daniela):
 - `peticiones.origen` (talento|cliente|interno|propio) · nullable · **SIN default**

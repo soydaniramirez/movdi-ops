@@ -123,6 +123,43 @@ test('panel "qué está atorado": head ve la tarea atorada de su equipo; ejecuti
 })
 
 // ------------------------------------------------------------
+test('nota de avance: limpia la atorada sin cambiar estatus (y cuenta como movimiento)', async ({ page }) => {
+  // seed: tarea de Dani para Antonio sin movimiento hace 14 días → atorada
+  const tok = await tokenDe('dani@movdi.mx')
+  const hace14 = new Date(Date.now() - 14 * 86400e3).toISOString()
+  await fetch(`${MOCK}/rest/v1/peticiones`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${tok}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      id: 'p-bloqueada', zona: 'general', nombre: 'contrato bloqueado por cliente',
+      creado_por: 'Dani', para: 'Antonio', area: 'pm', fecha: dx(9), prioridad: 'media',
+      estatus: 'pendiente', privada: false, created_at: hace14, updated_at: hace14,
+    }),
+  })
+
+  await login(page, 'antonio@movdi.mx')
+  await irAPeticiones(page)
+  await page.getByRole('button', { name: 'mis pendientes' }).click()
+  const fila = page.getByTestId('card-peticion').filter({ hasText: 'contrato bloqueado por cliente' })
+  await expect(fila.getByTestId('badge-atorada')).toBeVisible()
+
+  // + nota: no toca estatus, pero es movimiento real → deja de estar atorada
+  await fila.getByTestId('btn-nota-avance').click()
+  await page.locator('#nota-avance').fill('mandé segundo recordatorio al cliente, sigo en espera')
+  await page.getByTestId('btn-nota-confirmar').click()
+
+  await expect(fila.getByTestId('badge-atorada')).toHaveCount(0)
+  await expect(fila).toContainText('⏱ avance')
+  await expect(fila).toContainText('sigo en espera')
+
+  const st = await estado()
+  const row = st.peticiones.find((p) => p.id === 'p-bloqueada')!
+  expect(row.estatus).toBe('pendiente') // el estatus NO cambió
+  expect(String(row.descripcion)).toContain('Antonio): mandé segundo recordatorio')
+  expect((row.updated_at as string) > hace14).toBe(true) // sí contó como movimiento
+})
+
+// ------------------------------------------------------------
 test('último movimiento: ocultar de mi vista NO resetea el contador; cambiar estatus sí lo mueve', async ({ page }) => {
   // seed como Dani: petición vieja para Antonio (7 días sin movimiento)
   const tok = await tokenDe('dani@movdi.mx')
