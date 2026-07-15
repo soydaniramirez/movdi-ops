@@ -19,6 +19,7 @@ export function mapPersonaConManagers(r: any): PersonaConManagers {
     pausadaHasta: r.pausada_hasta ?? null,
     esDireccion: r.es_direccion === true,
     veGamificacionCompleta: r.ve_gamificacion_completa ?? r.es_direccion === true,
+    authUserId: r.auth_user_id ?? null,
     managers: r.managers ?? [],
     managerPrincipal: r.manager_principal ?? null,
   }

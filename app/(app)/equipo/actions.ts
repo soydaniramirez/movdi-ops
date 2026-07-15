@@ -85,11 +85,12 @@ export async function crearPersona(input: DatosPersona): Promise<Resultado> {
     if (err) return { ok: false, error: err }
 
     const payload = payloadPersona(input)
-    const { error } = await supabase.from('personas').insert(payload)
+    const { data: insertadas, error } = await supabase.from('personas').insert(payload).select()
     if (error) {
       if (error.code === '23505') return { ok: false, error: 'ese correo ya está registrado en personas' }
       return { ok: false, error: error.message }
     }
+    const nueva = insertadas?.[0]
 
     // ── INVITE AUTOMÁTICO ──────────────────────────────────────────────
     // ÚNICO uso de service_role en toda la aplicación. Justificación:
@@ -102,16 +103,27 @@ export async function crearPersona(input: DatosPersona): Promise<Resultado> {
     if (payload.email) {
       try {
         const admin = createAdminClient()
-        const { error: eInvite } = await admin.auth.admin.inviteUserByEmail(payload.email)
+        const { data: invitado, error: eInvite } = await admin.auth.admin.inviteUserByEmail(payload.email)
         if (eInvite) {
           const yaExiste =
             eInvite.status === 422 || /already|registered|exists/i.test(eInvite.message ?? '')
           if (yaExiste) {
-            // degradación con gracia: no duplicar; la persona quedará
-            // vinculada por email en su primer login (flujo existente)
+            // degradación con gracia: no duplicar; el vínculo auth_user_id
+            // se autocura en su primer inicio de sesión (layout protegido)
             return { ok: true, aviso: `${payload.email} ya tenía cuenta en Auth — no se envió invitación (se vinculará al iniciar sesión)` }
           }
           return { ok: true, aviso: `persona creada, pero la invitación no se pudo enviar: ${eInvite.message}. reintenta desde editar o avisa a dirección` }
+        }
+        // Vínculo auth_user_id INMEDIATO (bug Valeria 2026-07-15): sin esto,
+        // la persona nueva entra con mi_nombre() = null y la RLS le rechaza
+        // su primera petición. El update va con la SESIÓN de dirección
+        // (policy personas_modify_admin) — service_role sigue solo en el invite.
+        if (invitado?.user?.id && nueva?.id) {
+          const { error: eLink } = await supabase
+            .from('personas').update({ auth_user_id: invitado.user.id }).eq('id', nueva.id)
+          if (eLink) {
+            return { ok: true, aviso: 'persona creada e invitada; el vínculo de su cuenta quedó pendiente y se completará en su primer inicio de sesión' }
+          }
         }
       } catch (e) {
         return { ok: true, aviso: 'persona creada, pero la invitación no se pudo enviar: ' + (e instanceof Error ? e.message : 'error') }

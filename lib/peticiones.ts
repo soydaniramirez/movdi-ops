@@ -16,6 +16,9 @@ export type Persona = {
   // Pre-cutover la columna no existe en BD → cae a es_direccion (mismo
   // grupo: Dani y Emmanuel), así staging se comporta igual antes y después.
   veGamificacionCompleta: boolean
+  // Vínculo con auth.users: alimenta mi_nombre() y por tanto TODA la RLS de
+  // escritura. NULL = cuenta a medio configurar (bug Valeria 2026-07-15).
+  authUserId: string | null
 }
 
 export type Peticion = {
@@ -82,6 +85,7 @@ export function mapPersonaRow(r: any): Persona {
     pausadaHasta: r.pausada_hasta ?? null,
     esDireccion: r.es_direccion === true,
     veGamificacionCompleta: r.ve_gamificacion_completa ?? r.es_direccion === true,
+    authUserId: r.auth_user_id ?? null,
   }
 }
 

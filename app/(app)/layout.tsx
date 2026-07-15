@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { mapPeticionRow, mapPersonaRow } from '@/lib/peticiones'
 import { mapEstrellaRow } from '@/lib/estrellas'
 import { calcularGamePersona, mesActualStr } from '@/lib/gamificacion'
+import { asegurarVinculoAuth } from '@/lib/supabase/vinculo'
 import Campana from './campana'
 
 // Barra superior compartida de las rutas protegidas: navegación + XP global
@@ -13,6 +14,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { data: row } = await supabase
     .from('personas').select('*').eq('email', user?.email ?? '').maybeSingle()
   const persona = row ? mapPersonaRow(row) : null
+
+  // Autocuración del vínculo auth ↔ persona (bug Valeria 2026-07-15): una
+  // persona recién dada de alta puede entrar con auth_user_id vacío →
+  // mi_nombre() = null y toda la RLS de escritura la rechaza con el error
+  // crudo. Se liga sola en su primera página (policy personas_self_link).
+  let vinculoOk = true
+  if (user && persona && !persona.authUserId) {
+    vinculoOk = await asegurarVinculoAuth(supabase, persona.id, user.id)
+  }
+  const cuentaIncompleta = !!user && (!persona || !vinculoOk)
 
   // XP del mes con las MISMAS fórmulas del módulo progreso (lecturas con la
   // sesión del usuario → RLS aplica; sin service_role)
@@ -94,6 +105,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </div>
+      {/* Cuenta a medio configurar: avisar ANTES de que intente crear algo
+          y se estrelle con el error crudo de RLS (UX del bug Valeria). */}
+      {cuentaIncompleta && (
+        <div
+          data-testid="aviso-cuenta-incompleta"
+          role="alert"
+          className="border-b border-movdi-naranja/40 bg-movdi-naranja/10 px-6 py-2 text-center font-mono text-xs text-movdi-naranja"
+        >
+          {persona
+            ? 'tu cuenta no está terminada de configurar — puedes ver la app, pero crear o editar va a fallar. avisa a dirección.'
+            : 'tu cuenta existe pero no está ligada a una persona del equipo. avisa a dirección.'}
+        </div>
+      )}
       {children}
     </div>
   )
