@@ -55,6 +55,10 @@ const PERSONAS_BASE = [
   manager_principal:
     p.nombre === 'Antonio' || p.nombre === 'Arylene' ? 'Dani'
     : p.nombre === 'Brenda' ? 'Karla' : null,
+  // auth_uid = la cuenta de Auth "real" del mock (estable); auth_user_id =
+  // la columna-vínculo de personas, que /__test/desvincular puede vaciar
+  // para probar la autocuración (policy personas_self_link).
+  auth_uid: `uid-${i + 1}`,
   auth_user_id: `uid-${i + 1}`,
   created_at: new Date().toISOString(),
 }))
@@ -260,7 +264,7 @@ function makeJwt(email, sub) {
   ].join('.')
 }
 const userJson = (p) => ({
-  id: p.auth_user_id, aud: 'authenticated', role: 'authenticated', email: p.email,
+  id: p.auth_uid ?? p.auth_user_id, aud: 'authenticated', role: 'authenticated', email: p.email,
   email_confirmed_at: new Date().toISOString(), app_metadata: { provider: 'email', providers: ['email'] },
   user_metadata: {}, identities: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
 })
@@ -290,6 +294,13 @@ const server = http.createServer(async (req, res) => {
     db.fallarUnaVez = JSON.parse(body || 'null') // { tabla, metodo }
     return json(200, { ok: true })
   }
+  if (url.pathname === '/__test/desvincular') {
+    // simula una persona con el alta a medias: cuenta de Auth sí, vínculo no
+    const { email } = JSON.parse(body || '{}')
+    const p = personaDe((email || '').toLowerCase())
+    if (p) p.auth_user_id = null
+    return json(200, { ok: !!p })
+  }
   if (url.pathname === '/__test/state') {
     return json(200, {
       peticiones: db.peticiones, notificaciones: db.notificaciones, recurrentes: db.recurrentes,
@@ -306,7 +317,7 @@ const server = http.createServer(async (req, res) => {
     const { email, password } = JSON.parse(body || '{}')
     const p = personaDe((email || '').toLowerCase())
     if (p && password === PASS) {
-      const access_token = makeJwt(p.email, p.auth_user_id)
+      const access_token = makeJwt(p.email, p.auth_uid ?? p.auth_user_id)
       tokens.set(access_token, p.email)
       return json(200, {
         access_token, token_type: 'bearer', expires_in: 3600, expires_at: now() + 3600,
@@ -368,9 +379,11 @@ const server = http.createServer(async (req, res) => {
       (tabla === 'notificaciones' && req.method === 'GET') // límite diario del ⚡ toque
     )) return denied()
 
-    // fallo inyectable (pruebas de atomicidad)
+    // fallo inyectable (pruebas de atomicidad); veces (default 1) permite
+    // cubrir renders repetidos (p.ej. router.replace + router.refresh)
     if (db.fallarUnaVez && db.fallarUnaVez.tabla === tabla && db.fallarUnaVez.metodo === req.method) {
-      db.fallarUnaVez = null
+      db.fallarUnaVez.veces = (db.fallarUnaVez.veces ?? 1) - 1
+      if (db.fallarUnaVez.veces <= 0) db.fallarUnaVez = null
       return json(500, { code: '57014', message: 'simulated failure (test)' })
     }
 
@@ -446,7 +459,16 @@ const server = http.createServer(async (req, res) => {
       }
       if (req.method === 'PATCH') {
         const cambios = JSON.parse(body || '{}')
-        const objetivo = esAdmin(yo) ? aplicarFiltros(db.personas, url.searchParams) : []
+        // personas_modify_admin (ceo|head) Ó personas_self_link: MI fila
+        // (email del JWT), vínculo aún vacío y SOLO la columna auth_user_id
+        // con MI uid. Filas que no pasan se omiten en silencio (0 updated),
+        // igual que PostgREST con RLS.
+        const esSelfLink = (r) =>
+          r.email === yo.email && r.auth_user_id == null &&
+          Object.keys(cambios).every((k) => k === 'auth_user_id') &&
+          cambios.auth_user_id === (yo.auth_uid ?? yo.auth_user_id)
+        const objetivo = aplicarFiltros(db.personas, url.searchParams)
+          .filter((r) => esAdmin(yo) || esSelfLink(r))
         objetivo.forEach((r) => Object.assign(r, cambios))
         if (prefer.includes('return=representation')) return representar(objetivo)
         return json(204, [])

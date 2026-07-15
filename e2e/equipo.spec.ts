@@ -76,6 +76,9 @@ test('alta completa: payload correcto + INVITE automático con service key', asy
 
   // invite disparado con la SERVICE key (el mock la exige) y el email correcto
   expect(st.invites).toContain('pepe@movdi.mx')
+  // y el vínculo auth ↔ persona queda hecho DESDE el alta (bug Valeria
+  // 2026-07-15): sin esperar el primer login, mi_nombre() ya funciona
+  expect(p.auth_user_id).toBeTruthy()
 })
 
 // ------------------------------------------------------------

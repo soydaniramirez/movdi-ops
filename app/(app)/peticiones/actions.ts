@@ -11,6 +11,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { notificarServidor } from '@/lib/supabase/notificar'
+import { MSG_CUENTA_SIN_VINCULO, asegurarVinculoAuth } from '@/lib/supabase/vinculo'
 import {
   AREAS_VALIDAS, MODOS_ADMIN, ORIGENES_VALIDOS, type ModoAsignacion,
   destinatariosPorModo, fechaCorta, hoyISO, isAdmin,
@@ -33,6 +34,13 @@ async function getContexto() {
   if (error || !row) throw new Error('tu cuenta no está ligada a una persona del equipo')
   const yo = mapPersonaRow(row)
   if (!yo.activo) throw new Error('cuenta archivada')
+  // Sin vínculo auth ↔ persona, mi_nombre() = null y CUALQUIER escritura
+  // muere con el error crudo de RLS (bug Valeria 2026-07-15). Intentar la
+  // autocuración y, si no se puede, avisar claro ANTES de intentar crear.
+  if (!yo.authUserId) {
+    const ok = await asegurarVinculoAuth(supabase, yo.id, user.id)
+    if (!ok) throw new Error(MSG_CUENTA_SIN_VINCULO)
+  }
   return { supabase, yo }
 }
 
