@@ -18,9 +18,15 @@ import {
   type HistorialMes, competeEnLeaderboard, mapHistorialRow, mesAnteriorStr,
 } from '@/lib/gamificacion'
 import {
+  type CampoTipo, type Detalle, type TipoPeticion,
+  aplicarCliente, areaTieneTipos, camposVisibles, etiquetaTipo, fechaPorSLA,
+  tipoDe, tiposDeArea, validarDetalle,
+} from '@/lib/tipos-peticion'
+import { type Cliente, mapClienteRow } from '@/lib/clientes'
+import {
   agregarNotaAvance, cambiarEstatus, cambiarFecha, crearCompromiso,
   crearPeticion, desocultarPeticion, eliminarPeticion, entregarPeticion,
-  moverInstancia, ocultarEntregadas, ocultarPeticion,
+  guardarClienteAlCatalogo, moverInstancia, ocultarEntregadas, ocultarPeticion,
 } from './actions'
 
 type Tab = 'general' | 'mis' | 'pedi' | 'recur' | 'atorado'
@@ -58,6 +64,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
   const [peticiones, setPeticiones] = useState<Peticion[]>([])
   const [recurrentes, setRecurrentes] = useState<Recurrente[]>([])
   const [historial, setHistorial] = useState<HistorialMes[]>([])
+  const [clientes, setClientes] = useState<Cliente[]>([])
   const [cargando, setCargando] = useState(true)
   const [tab, setTab] = useState<Tab>('general')
   const [filtro, setFiltro] = useState<Filtro>('todas')
@@ -80,20 +87,24 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
   const admin = isAdmin(yo)
   // panel "qué está atorado": líderes de área y dirección
   const veAtorados = yo.nivel === 'head' || esDireccion(yo)
+  // "guardar cliente al catálogo": área admi + dirección (RLS respalda)
+  const esAdmi = yo.areas.includes('admi') || esDireccion(yo)
 
   // ---------- lecturas client-side (anon key + RLS) ----------
   const recargar = useCallback(async () => {
     const sb = createClient()
-    const [pers, pets, recs, hist] = await Promise.all([
+    const [pers, pets, recs, hist, clis] = await Promise.all([
       sb.from('personas').select('*').order('nivel'),
       sb.from('peticiones').select('*').order('fecha'),
       sb.from('recurrentes').select('*'),
       sb.from('historial_mensual').select('*'),
+      sb.from('clientes').select('*').order('nombre'),
     ])
     if (!pers.error) setPersonas((pers.data ?? []).map(mapPersonaConManagers))
     if (!pets.error) setPeticiones((pets.data ?? []).map(mapPeticionRow))
     if (!recs.error) setRecurrentes((recs.data ?? []).map(mapRecurRow))
     if (!hist.error) setHistorial((hist.data ?? []).map(mapHistorialRow))
+    if (!clis.error) setClientes((clis.data ?? []).map(mapClienteRow))
     setCargando(false)
   }, [])
 
@@ -476,6 +487,8 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
                         t={t}
                         yo={yo}
                         admin={admin}
+                        esAdmi={esAdmi}
+                        onGuardarCliente={() => accion(() => guardarClienteAlCatalogo({ peticionId: t.id }))}
                         onEstatus={(nuevo) => accion(() => cambiarEstatus({ id: t.id, estatus: nuevo }))}
                         onEntregar={() => setModalEntrega(t)}
                         onCambiarFecha={() => setModalFecha(t)}
@@ -532,6 +545,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
         <ModalCrear
           yo={yo}
           personas={personas}
+          clientes={clientes}
           admin={admin}
           onCerrar={() => setModalCrear(false)}
           onCrear={async (input) => {
@@ -691,10 +705,12 @@ function BannerPodio({ yo, historial }: {
 // ============================================================
 // Fila de la tabla (paridad renderFila del SPA: petición · de → para ·
 // área · fecha · prio · estatus · acciones)
-function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onMover, onNota, onEliminar, onOcultar, onDesocultar }: {
+function FilaPeticion({ t, yo, admin, esAdmi, onGuardarCliente, onEstatus, onEntregar, onCambiarFecha, onMover, onNota, onEliminar, onOcultar, onDesocultar }: {
   t: Peticion
   yo: Persona
   admin: boolean
+  esAdmi: boolean
+  onGuardarCliente: () => void
   onEstatus: (n: 'pendiente' | 'proceso') => void
   onEntregar: () => void
   onCambiarFecha: () => void
@@ -714,6 +730,13 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
   // regla de los 3 días hábiles: atorada = ROJO (calculado, no hay campo)
   const atorada = estadoMovimiento(t) === 'atorada'
   const diasSinMov = diasSinMovimiento(t)
+  // formularios dinámicos (cutover 10): el detalle se lee con la config del
+  // tipo; los recomendados faltantes se calculan EN VIVO (no se almacenan)
+  const tipoForm = tipoDe(t.area, t.tipoPeticion)
+  const detalleForm = (t.detalle ?? {}) as Detalle
+  const validForm = tipoForm
+    ? validarDetalle(tipoForm, detalleForm, { descripcion: t.descripcion })
+    : null
 
   const btn = 'rounded-md border px-2 py-0.5 font-mono text-[10px] whitespace-nowrap'
 
@@ -754,6 +777,50 @@ function FilaPeticion({ t, yo, admin, onEstatus, onEntregar, onCambiarFecha, onM
         </div>
         {/* whitespace-pre-line: las notas de avance se apilan una por línea */}
         {t.descripcion && <p className="mt-0.5 whitespace-pre-line text-xs text-neutral-400">{t.descripcion}</p>}
+        {/* detalle del formulario dinámico (cutover 10) */}
+        {tipoForm && (
+          <div className="mt-1.5 space-y-0.5 border-l-2 border-neutral-800 pl-2" data-testid="detalle-tipo">
+            <div className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">
+              {etiquetaTipo(t.area, t.tipoPeticion)}
+              {tipoForm.slaLabel && <span className="ml-1.5 text-movdi-naranja">· {tipoForm.slaLabel}</span>}
+            </div>
+            {camposVisibles(tipoForm, detalleForm)
+              .filter((c) => detalleForm[c.key] !== undefined && detalleForm[c.key] !== '')
+              .map((c) => {
+                const v = detalleForm[c.key]
+                let texto = typeof v === 'boolean' ? (v ? 'sí' : 'no') : String(v)
+                if (c.catalogo && typeof v === 'string') {
+                  const clave = String(c.normaliza ? c.normaliza(v) : v)
+                  const op = c.catalogo.find((x) => x.v === clave)
+                  if (op) texto = c.catalogoMuestraClave ? `${op.v} · ${op.label}` : op.label
+                }
+                return (
+                  <div key={c.key} className="font-mono text-[11px] text-neutral-400">
+                    <span className="text-neutral-600">{c.label}:</span>{' '}
+                    {c.input === 'url'
+                      ? <a className="underline hover:text-movdi-naranja" href={texto} target="_blank" rel="noreferrer">{texto}</a>
+                      : <span className="text-neutral-300">{texto}</span>}
+                  </div>
+                )
+              })}
+            {validForm && validForm.recomendadosFaltantes.length > 0 && (
+              <div className="font-mono text-[10px] text-movdi-amarillo" data-testid="chip-faltantes"
+                title="campos recomendados sin llenar — no bloquean, pero el área los va a pedir">
+                ⚠ faltan: {validForm.recomendadosFaltantes.join(', ')}
+              </div>
+            )}
+            {validForm?.avisos.map((a) => (
+              <div key={a} className="font-mono text-[10px] text-movdi-naranja">{a}</div>
+            ))}
+            {esAdmi && !t.clienteId && typeof detalleForm.cliente_nombre === 'string' && detalleForm.cliente_nombre && (
+              <button onClick={onGuardarCliente} data-testid="btn-guardar-cliente-catalogo"
+                title="pasa los datos capturados a mano al catálogo — la próxima vez se autocompletan"
+                className="mt-1 rounded-md border border-neutral-700 px-2 py-0.5 font-mono text-[10px] text-neutral-300 hover:border-movdi-naranja/60 hover:text-movdi-naranja">
+                💾 guardar cliente al catálogo
+              </button>
+            )}
+          </div>
+        )}
         {t.motivoCambioFecha && (
           <p className="mt-1 border-l-2 border-movdi-amarillo/50 pl-2 font-mono text-[11px] text-movdi-amarillo/90">
             fecha movida{t.fechaOriginal ? ` (original: ${t.fechaOriginal})` : ''} · {t.motivoCambioFecha}
@@ -895,9 +962,10 @@ const inputCls = 'w-full rounded-lg border border-neutral-700 bg-neutral-950 px-
 const labelCls = 'mb-1 block font-mono text-[11px] uppercase tracking-wider text-neutral-400'
 
 // ============================================================
-function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
+function ModalCrear({ yo, personas, clientes, admin, onCerrar, onCrear }: {
   yo: Persona
   personas: Persona[]
+  clientes: Cliente[]
   admin: boolean
   onCerrar: () => void
   onCrear: (input: Parameters<typeof crearPeticion>[0]) => Promise<{ ok: boolean; error?: string }>
@@ -922,8 +990,40 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
   // botón se habilita solo tras confirmar que ya se verificó con quien entrega
   const [verificado, setVerificado] = useState(false)
 
+  // ---- formulario dinámico por área (cutover 10) ----
+  const [tipoKey, setTipoKey] = useState('')
+  const [detalle, setDetalle] = useState<Detalle>({})
+  const [clienteId, setClienteId] = useState('')
+  // el candado aplica al dirigir a un área con tipos, en modos con área explícita
+  const areaActiva = modo === 'una' ? areaUna : modo === 'area' ? areaGrupo : null
+  const candadoActivo = areaTieneTipos(areaActiva)
+  const tipo: TipoPeticion | null = candadoActivo ? tipoDe(areaActiva, tipoKey || null) : null
+  const slaActiva = !!tipo?.slaDiasHabiles
+  const validacion = tipo ? validarDetalle(tipo, detalle, { descripcion: desc }) : null
+
+  function resetTipo() {
+    setTipoKey('')
+    setDetalle({})
+    setClienteId('')
+  }
+  function cambiarTipo(key: string) {
+    setTipoKey(key)
+    setDetalle({})
+    setClienteId('')
+    const t = tipoDe(areaActiva, key || null)
+    const fSLA = t ? fechaPorSLA(t) : null
+    if (fSLA) setFecha(fSLA)
+  }
+  function elegirCliente(id: string) {
+    setClienteId(id)
+    if (!tipo) return
+    const cli = clientes.find((c) => c.id === id)
+    if (cli) setDetalle((d) => aplicarCliente(tipo, d, cli))
+  }
+
   const margenNudge = diasHasta(fecha)
-  const nudgeActivo = !isNaN(margenNudge) && margenNudge <= 2
+  // con SLA la fecha es la pactada del proceso — el nudge de plazo no aplica
+  const nudgeActivo = !slaActiva && !isNaN(margenNudge) && margenNudge <= 2
 
   const elegibles = personas
     .filter((p) => p.nombre !== yo.nombre && personaDisponible(p))
@@ -942,6 +1042,11 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
   async function guardar() {
     setErr(null)
     if (!nombre.trim()) { setErr('el nombre de la petición es obligatorio'); return }
+    if (candadoActivo && !tipo) { setErr('elige el tipo de petición — esta área lo requiere'); return }
+    if (tipo && validacion && !validacion.ok) {
+      setErr(`faltan campos obligatorios: ${validacion.bloqueantesFaltantes.join(', ')}`)
+      return
+    }
     const { destinatarios } = destinatariosPorModo(modo, {
       personas, yo, para, seleccion, area: modo === 'una' ? areaUna : areaGrupo,
     })
@@ -955,6 +1060,9 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
       para: modo === 'una' ? para : undefined,
       seleccion: modo === 'varias' ? seleccion : undefined,
       area: modo === 'una' ? areaUna : modo === 'area' ? areaGrupo : undefined,
+      tipoPeticion: tipo ? tipo.key : undefined,
+      detalle: tipo ? detalle : undefined,
+      clienteId: tipo && clienteId ? clienteId : undefined,
     })
     setGuardando(false)
     if (!r.ok) setErr(r.error || 'no se pudo crear la petición')
@@ -978,7 +1086,7 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
             {modos.filter((m) => !m.adminOnly || admin).map((m) => (
               <label key={m.v} className="flex cursor-pointer items-center gap-2 px-2 py-1 text-xs hover:bg-neutral-900">
                 <input type="radio" name="pet-modo" value={m.v} checked={modo === m.v}
-                  onChange={() => setModo(m.v)} />
+                  onChange={() => { setModo(m.v); resetTipo() }} />
                 <span>{m.lab}</span>
               </label>
             ))}
@@ -989,7 +1097,7 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={labelCls} htmlFor="pet-area">área</label>
-              <select id="pet-area" className={inputCls} value={areaUna} onChange={(e) => { setAreaUna(e.target.value); setPara('') }}>
+              <select id="pet-area" className={inputCls} value={areaUna} onChange={(e) => { setAreaUna(e.target.value); setPara(''); resetTipo() }}>
                 {AREAS_VALIDAS.map((a) => <option key={a} value={a}>{AREAS_LABEL[a]}</option>)}
               </select>
             </div>
@@ -1023,7 +1131,7 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
         {modo === 'area' && (
           <div>
             <label className={labelCls} htmlFor="pet-area-grupo">área destino</label>
-            <select id="pet-area-grupo" className={inputCls} value={areaGrupo} onChange={(e) => setAreaGrupo(e.target.value)}>
+            <select id="pet-area-grupo" className={inputCls} value={areaGrupo} onChange={(e) => { setAreaGrupo(e.target.value); resetTipo() }}>
               {AREAS_VALIDAS.map((a) => <option key={a} value={a}>{AREAS_LABEL[a]}</option>)}
             </select>
             <p className="mt-1 font-mono text-[11px] text-neutral-500">
@@ -1032,10 +1140,76 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
           </div>
         )}
 
+        {/* ---- formulario dinámico por área (cutover 10) ---- */}
+        {candadoActivo && (
+          <div className="space-y-4 rounded-xl border border-neutral-800 bg-neutral-950 p-3" data-testid="form-dinamico">
+            <div>
+              <label className={labelCls} htmlFor="pet-tipo">
+                tipo de petición <span className="text-movdi-naranja">*</span>
+              </label>
+              <select id="pet-tipo" data-testid="pet-tipo" className={inputCls} value={tipoKey}
+                onChange={(e) => cambiarTipo(e.target.value)}>
+                <option value="">— elige el tipo —</option>
+                {(() => {
+                  const tipos = tiposDeArea(areaActiva!)
+                  const grupos = [...new Set(tipos.map((t) => t.grupo).filter(Boolean))] as string[]
+                  if (!grupos.length) return tipos.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)
+                  return [
+                    ...grupos.map((g) => (
+                      <optgroup key={g} label={g}>
+                        {tipos.filter((t) => t.grupo === g).map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                      </optgroup>
+                    )),
+                    ...tipos.filter((t) => !t.grupo).map((t) => <option key={t.key} value={t.key}>{t.label}</option>),
+                  ]
+                })()}
+              </select>
+            </div>
+
+            {tipo?.usaCliente && (
+              <div>
+                <label className={labelCls} htmlFor="pet-cliente">cliente (autocompleta del catálogo)</label>
+                <select id="pet-cliente" data-testid="pet-cliente" className={inputCls} value={clienteId}
+                  onChange={(e) => elegirCliente(e.target.value)}>
+                  <option value="">— nuevo cliente / capturar manualmente —</option>
+                  {clientes.filter((c) => c.activo).map((c) => (
+                    <option key={c.id} value={c.id}>{c.nombre}{c.rfc ? ` · ${c.rfc}` : ''}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {tipo && camposVisibles(tipo, detalle).map((c) => (
+              <CampoDinamico key={c.key} campo={c} detalle={detalle}
+                onChange={(v) => setDetalle((d) => ({ ...d, [c.key]: v }))} />
+            ))}
+
+            {tipo?.requiereDescripcion && (
+              <p className="font-mono text-[10px] text-neutral-500">
+                este tipo se explica en la <strong>descripción</strong> de arriba — es obligatoria
+              </p>
+            )}
+            {validacion && validacion.avisos.map((a) => (
+              <p key={a} role="status" className="border border-movdi-amarillo/40 bg-movdi-amarillo/10 px-2.5 py-1.5 font-mono text-[11px] text-movdi-amarillo" data-testid="aviso-detalle">
+                {a}
+              </p>
+            ))}
+            {validacion && validacion.ok && validacion.recomendadosFaltantes.length > 0 && (
+              <p className="font-mono text-[10px] text-neutral-500" data-testid="nota-recomendados">
+                se puede crear, pero quedará marcada con faltantes recomendados: {validacion.recomendadosFaltantes.join(', ')}
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={labelCls} htmlFor="pet-fecha">fecha límite</label>
-            <input id="pet-fecha" type="date" className={inputCls} value={fecha}
+            <label className={labelCls} htmlFor="pet-fecha">
+              {slaActiva ? <>fecha compromiso · <span className="text-movdi-naranja">{tipo!.slaLabel}</span> (automática)</> : 'fecha límite'}
+            </label>
+            <input id="pet-fecha" type="date" className={`${inputCls} ${slaActiva ? 'opacity-60' : ''}`} value={fecha}
+              disabled={slaActiva}
+              title={slaActiva ? `la fecha la fija el SLA del tipo (${tipo!.slaLabel}, días hábiles)` : undefined}
               onChange={(e) => { setFecha(e.target.value); setVerificado(false) }} />
           </div>
           <div>
@@ -1081,9 +1255,19 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
 
         {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
 
+        {/* candado (cutover 10): sin tipo o sin bloqueantes, crear ni se habilita */}
+        {candadoActivo && (!tipo || (validacion && !validacion.ok)) && (
+          <p className="font-mono text-[11px] text-movdi-naranja" data-testid="hint-bloqueantes">
+            {!tipo
+              ? '🔒 elige el tipo de petición — esta área lo requiere'
+              : `🔒 faltan obligatorios: ${validacion!.bloqueantesFaltantes.join(', ')}`}
+          </p>
+        )}
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
-          <button onClick={guardar} disabled={guardando || (nudgeActivo && !verificado)} data-testid="btn-crear-confirmar"
+          <button onClick={guardar}
+            disabled={guardando || (nudgeActivo && !verificado) || (candadoActivo && (!tipo || !validacion?.ok))}
+            data-testid="btn-crear-confirmar"
             title={nudgeActivo && !verificado ? 'confirma que ya verificaste la entrega con el plazo ajustado' : undefined}
             className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85 disabled:opacity-50">
             {guardando ? 'creando…' : 'crear petición'}
@@ -1091,6 +1275,96 @@ function ModalCrear({ yo, personas, admin, onCerrar, onCrear }: {
         </div>
       </div>
     </ModalShell>
+  )
+}
+
+// ============================================================
+// Campo del formulario dinámico (cutover 10) — un input por CampoTipo de la
+// config. El asterisco naranja marca bloqueantes; los recomendados dicen
+// "(recomendado)".
+function CampoDinamico({ campo, detalle, onChange }: {
+  campo: CampoTipo
+  detalle: Detalle
+  onChange: (v: string | boolean) => void
+}) {
+  const id = `det-${campo.key}`
+  const v = detalle[campo.key]
+  const etiqueta = (
+    <label className={labelCls} htmlFor={id}>
+      {campo.label}{' '}
+      {campo.clase === 'bloqueante'
+        ? <span className="text-movdi-naranja">*</span>
+        : <span className="normal-case text-neutral-600">(recomendado)</span>}
+    </label>
+  )
+  if (campo.input === 'textarea') {
+    return (
+      <div>{etiqueta}
+        <textarea id={id} rows={2} className={inputCls} placeholder={campo.placeholder}
+          value={typeof v === 'string' ? v : ''} onChange={(e) => onChange(e.target.value)} />
+      </div>
+    )
+  }
+  if (campo.input === 'select') {
+    // valor normalizado: capturas legadas del catálogo caen a la clave
+    const val = typeof v === 'string' ? String(campo.normaliza ? campo.normaliza(v) : v) : ''
+    const opTexto = (o: { v: string; label: string }) =>
+      campo.catalogoMuestraClave ? `${o.v} · ${o.label}` : o.label
+    const frecuentes = (campo.catalogo ?? []).filter((o) => o.frecuente)
+    const resto = (campo.catalogo ?? []).filter((o) => !o.frecuente)
+    return (
+      <div>{etiqueta}
+        <select id={id} className={inputCls} value={val}
+          onChange={(e) => onChange(e.target.value)}>
+          <option value="">— elige —</option>
+          {campo.catalogo ? (
+            frecuentes.length ? (
+              <>
+                <optgroup label="frecuentes">
+                  {frecuentes.map((o) => <option key={o.v} value={o.v}>{opTexto(o)}</option>)}
+                </optgroup>
+                <optgroup label="todo el catálogo">
+                  {resto.map((o) => <option key={o.v} value={o.v}>{opTexto(o)}</option>)}
+                </optgroup>
+              </>
+            ) : (campo.catalogo.map((o) => <option key={o.v} value={o.v}>{opTexto(o)}</option>))
+          ) : (
+            (campo.opciones ?? []).map((o) => <option key={o} value={o}>{o}</option>)
+          )}
+        </select>
+      </div>
+    )
+  }
+  if (campo.input === 'si_no') {
+    return (
+      <div>
+        <span className={labelCls}>{campo.label}{' '}
+          {campo.clase === 'bloqueante'
+            ? <span className="text-movdi-naranja">*</span>
+            : <span className="normal-case text-neutral-600">(recomendado)</span>}
+        </span>
+        <div className="flex gap-4 text-xs" data-testid={id}>
+          {[['sí', true], ['no', false]].map(([lab, val]) => (
+            <label key={String(lab)} className="flex cursor-pointer items-center gap-1.5">
+              <input type="radio" name={id} checked={v === val} onChange={() => onChange(val as boolean)} />
+              {lab}
+            </label>
+          ))}
+        </div>
+      </div>
+    )
+  }
+  const tipoInput =
+    campo.input === 'fecha' ? 'date'
+    : campo.input === 'monto' ? 'number'
+    : campo.input === 'correo' ? 'email'
+    : campo.input === 'url' ? 'url' : 'text'
+  return (
+    <div>{etiqueta}
+      <input id={id} type={tipoInput} step={campo.input === 'monto' ? '0.01' : undefined}
+        className={inputCls} placeholder={campo.placeholder}
+        value={typeof v === 'string' ? v : ''} onChange={(e) => onChange(e.target.value)} />
+    </div>
   )
 }
 

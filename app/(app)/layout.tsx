@@ -35,6 +35,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const esDir = !!persona && (persona.esDireccion || persona.nivel === 'ceo')
   const veRH = !!persona && (persona.nivel === 'rh' || esDir)
   const veEquipo = !!persona && (persona.nivel === 'head' || esDir)
+  // catálogo de clientes: lo edita área admi + dirección (RLS); el resto
+  // puede leerlo pero no necesita la pestaña — la usa desde el form
+  const veClientes = !!persona && (persona.areas.includes('admi') || esDir)
 
   const iniciales = persona
     ? `${persona.nombre.charAt(0)}${(persona.apellido || '').charAt(0)}`.toUpperCase()
@@ -54,6 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               ['/peticiones', 'peticiones'], ['/recurrentes', 'recurrentes'], ['/anuncios', 'anuncios'],
               ['/todos', 'to-dos'], ['/estrellas', 'estrellas'], ['/feedback', 'feedback'], ['/progreso', 'progreso'],
               ...(veEquipo ? [['/equipo', 'equipo']] : []),
+              ...(veClientes ? [['/clientes', 'clientes']] : []),
               ...(veRH ? [['/rh', 'rh']] : []),
             ] as [string, string][]).map(([href, lab]) => (
               <Link key={href} href={href}

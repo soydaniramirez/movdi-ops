@@ -114,12 +114,14 @@ test('crear a todo el equipo (ceo): una recurrente independiente por persona', a
   await page.getByText('todo el equipo · admin only').click()
   await page.locator('#rec-frec').selectOption('mensual')
   await page.locator('#rec-dia').selectOption('28')
+  // con 6 destinatarios (>5) aparece el confirm de asignación masiva
+  page.once('dialog', (d) => void d.accept())
   await page.getByTestId('btn-crear-rec-confirmar').click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
 
   const st = await estado()
   const filas = st.recurrentes.filter((x) => x.nombre === 'bitácora mensual')
-  expect(filas.map((f) => f.para).sort()).toEqual(['Antonio', 'Arylene', 'Brenda', 'Karla', 'Sarai'])
+  expect(filas.map((f) => f.para).sort()).toEqual(['Antonio', 'Arylene', 'Brenda', 'Karla', 'Lucia', 'Sarai'])
   expect(filas.every((f) => f.creado_por === 'Dani' && f.dia_mes === 28 && f.frecuencia === 'mensual')).toBe(true)
 })
 

@@ -91,20 +91,22 @@ test('crear a todo el equipo (ceo): una fila por persona, grupo_id compartido, n
 
   await page.locator('#pet-nombre').fill('actualizar firma de correo')
   await page.getByText('todo el equipo · admin only').click()
+  // con 6 destinatarios (>5) aparece el confirm de asignación masiva
+  page.once('dialog', (d) => void d.accept())
   await page.getByTestId('btn-crear-confirmar').click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
 
   const st = await estado()
   const filas = st.peticiones.filter((p) => p.nombre === 'actualizar firma de correo')
-  // disponibles menos ceo (Dani, Emmanuel): Antonio, Arylene, Brenda, Karla, Sarai
-  expect(filas.map((f) => f.para).sort()).toEqual(['Antonio', 'Arylene', 'Brenda', 'Karla', 'Sarai'])
+  // disponibles menos ceo (Dani, Emmanuel): Antonio, Arylene, Brenda, Karla, Lucia, Sarai
+  expect(filas.map((f) => f.para).sort()).toEqual(['Antonio', 'Arylene', 'Brenda', 'Karla', 'Lucia', 'Sarai'])
   const grupos = new Set(filas.map((f) => f.grupo_id))
   expect(grupos.size).toBe(1)
   expect([...grupos][0]).not.toBeNull()
   expect(filas.every((f) => f.creado_por === 'Dani')).toBe(true)
 
   const notifs = st.notificaciones.filter((n) => n.tipo === 'nueva_peticion' && !String(n.id).startsWith('n-seed-'))
-  expect(notifs).toHaveLength(5)
+  expect(notifs).toHaveLength(6)
   expect(notifs.every((n) => n.titulo === 'nueva petición de Dani')).toBe(true)
 })
 

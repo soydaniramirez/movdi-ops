@@ -212,6 +212,9 @@ export function obtenerInstanciasRecur(opts: {
         creadaEn: null,
         origen: null,
         actualizadaEn: null,
+        tipoPeticion: null,
+        detalle: null,
+        clienteId: null,
         recurOrigen: r.id,
         esVirtual: true,
       })
