@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { type Cliente, constanciaVigente, mapClienteRow, CLIENTE_COLUMNAS_CSV } from '@/lib/clientes'
+import {
+  type Cliente, CLIENTE_COLUMNAS_CSV, USO_CFDI, constanciaVigente,
+  mapClienteRow, normalizarUsoCFDI,
+} from '@/lib/clientes'
 import {
   crearCliente, editarCliente, eliminarCliente, importarClientesCSV, setActivoCliente,
 } from './actions'
@@ -264,14 +267,33 @@ function ModalCliente({ editar, onCerrar, onGuardar }: {
             {campo('rfc', 'RFC')}
             {campo('regimen_fiscal', 'régimen fiscal', 'text', 'ej: 601 — General de Ley')}
             {campo('cp_fiscal', 'CP fiscal')}
-            {campo('uso_cfdi', 'uso CFDI', 'text', 'ej: G03 — Gastos en general')}
+            <div>
+              <label className={labelCls} htmlFor="cli-uso_cfdi">uso CFDI (catálogo SAT)</label>
+              <select id="cli-uso_cfdi" className={inputCls}
+                value={normalizarUsoCFDI(f.uso_cfdi)}
+                onChange={(e) => setF((s) => ({ ...s, uso_cfdi: e.target.value }))}>
+                <option value="">— sin dato —</option>
+                <optgroup label="frecuentes">
+                  {USO_CFDI.filter((u) => u.frecuente).map((u) => (
+                    <option key={u.v} value={u.v}>{u.v} · {u.label}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="todo el catálogo">
+                  {USO_CFDI.filter((u) => !u.frecuente).map((u) => (
+                    <option key={u.v} value={u.v}>{u.v} · {u.label}</option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
             {campo('contacto_correo', 'correo de contacto', 'email')}
           </div>
           <div className="border-t border-neutral-800 pt-3 font-mono text-[10px] uppercase tracking-widest text-neutral-500">legales (contratos)</div>
           <div>
-            <span className={labelCls}>¿persona moral?</span>
+            {/* la columna sigue siendo persona_moral (boolean); la UI lo
+                presenta como "tipo de persona" (ajuste 2026-07-15) */}
+            <span className={labelCls}>tipo de persona</span>
             <div className="flex gap-3 text-xs">
-              {[['sí', true], ['no', false], ['sin dato', null]].map(([lab, val]) => (
+              {[['persona física', false], ['persona moral', true], ['sin dato', null]].map(([lab, val]) => (
                 <label key={String(lab)} className="flex cursor-pointer items-center gap-1.5">
                   <input type="radio" name="cli-persona-moral" checked={f.persona_moral === val}
                     onChange={() => setF((s) => ({ ...s, persona_moral: val as boolean | null }))} />

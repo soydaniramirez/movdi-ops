@@ -20,7 +20,7 @@ import {
   type Detalle, areaTieneTipos, fechaPorSLA, sanitizarDetalle, tipoDe,
   validarDetalle,
 } from '@/lib/tipos-peticion'
-import { mapClienteRow } from '@/lib/clientes'
+import { mapClienteRow, normalizarUsoCFDI } from '@/lib/clientes'
 
 type Resultado<T = undefined> = { ok: true; data?: T } | { ok: false; error: string }
 
@@ -205,6 +205,13 @@ export async function guardarClienteAlCatalogo(input: { peticionId: string }): P
       const v = detalle[kDetalle]
       if (v !== undefined && v !== '') datos[kCliente] = v
     }
+    // ajuste 2026-07-15: el form usa tipo_persona ('fisica'/'moral'); la
+    // columna del catálogo sigue siendo persona_moral (boolean)
+    if (typeof detalle.tipo_persona === 'string' && detalle.tipo_persona) {
+      datos.persona_moral = detalle.tipo_persona === 'moral'
+    }
+    // uso CFDI legado ("G03 — …") se normaliza a la clave del catálogo SAT
+    if (typeof datos.uso_cfdi === 'string') datos.uso_cfdi = normalizarUsoCFDI(datos.uso_cfdi)
 
     // ¿ya existe? (equality case-insensitive; el índice único de BD es la red final)
     const { data: existentes } = await supabase.from('clientes').select('*').ilike('nombre', nombre)

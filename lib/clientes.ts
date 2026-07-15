@@ -65,6 +65,48 @@ export const CLIENTE_COLUMNAS_CSV = [
   'correo_notificaciones', 'contacto_correo',
 ] as const
 
+// Catálogo oficial SAT c_UsoCFDI (verificado contra satcfdi 4.6.0, ajuste
+// 2026-07-15). Se guarda la CLAVE; la UI muestra "clave · descripción".
+// Los frecuentes van primero en el dropdown.
+export const USO_CFDI: readonly { v: string; label: string; frecuente?: boolean }[] = [
+  { v: 'G03', label: 'Gastos en general', frecuente: true },
+  { v: 'G01', label: 'Adquisición de mercancías', frecuente: true },
+  { v: 'S01', label: 'Sin efectos fiscales', frecuente: true },
+  { v: 'CP01', label: 'Pagos', frecuente: true },
+  { v: 'G02', label: 'Devoluciones, descuentos o bonificaciones' },
+  { v: 'I01', label: 'Construcciones' },
+  { v: 'I02', label: 'Mobiliario y equipo de oficina por inversiones' },
+  { v: 'I03', label: 'Equipo de transporte' },
+  { v: 'I04', label: 'Equipo de cómputo y accesorios' },
+  { v: 'I05', label: 'Dados, troqueles, moldes, matrices y herramental' },
+  { v: 'I06', label: 'Comunicaciones telefónicas' },
+  { v: 'I07', label: 'Comunicaciones satelitales' },
+  { v: 'I08', label: 'Otra maquinaria y equipo' },
+  { v: 'D01', label: 'Honorarios médicos, dentales y gastos hospitalarios' },
+  { v: 'D02', label: 'Gastos médicos por incapacidad o discapacidad' },
+  { v: 'D03', label: 'Gastos funerales' },
+  { v: 'D04', label: 'Donativos' },
+  { v: 'D05', label: 'Intereses reales por créditos hipotecarios (casa habitación)' },
+  { v: 'D06', label: 'Aportaciones voluntarias al SAR' },
+  { v: 'D07', label: 'Primas por seguros de gastos médicos' },
+  { v: 'D08', label: 'Gastos de transportación escolar obligatoria' },
+  { v: 'D09', label: 'Depósitos en cuentas para el ahorro / planes de pensiones' },
+  { v: 'D10', label: 'Pagos por servicios educativos (colegiaturas)' },
+  { v: 'CN01', label: 'Nómina' },
+]
+
+export const usoCfdiLabel = (clave: string): string => {
+  const it = USO_CFDI.find((u) => u.v === (clave || '').toUpperCase())
+  return it ? `${it.v} · ${it.label}` : clave
+}
+
+// Normaliza capturas legadas ("G03 — Gastos en general", "g03") a la clave.
+// Si no matchea el catálogo, regresa el valor tal cual (no inventa datos).
+export function normalizarUsoCFDI(valor: string): string {
+  const token = (valor || '').trim().split(/[\s·—–]/)[0].toUpperCase()
+  return USO_CFDI.some((u) => u.v === token) ? token : (valor || '').trim()
+}
+
 // ¿La constancia de situación fiscal sigue vigente? (≤ 3 meses). Devuelve
 // null si no hay fecha. Es AVISO, nunca bloqueo (decisión 2026-07-15).
 export function constanciaVigente(fechaISO: string | null, hoyISO?: string): boolean | null {

@@ -788,7 +788,12 @@ function FilaPeticion({ t, yo, admin, esAdmi, onGuardarCliente, onEstatus, onEnt
               .filter((c) => detalleForm[c.key] !== undefined && detalleForm[c.key] !== '')
               .map((c) => {
                 const v = detalleForm[c.key]
-                const texto = typeof v === 'boolean' ? (v ? 'sí' : 'no') : String(v)
+                let texto = typeof v === 'boolean' ? (v ? 'sí' : 'no') : String(v)
+                if (c.catalogo && typeof v === 'string') {
+                  const clave = String(c.normaliza ? c.normaliza(v) : v)
+                  const op = c.catalogo.find((x) => x.v === clave)
+                  if (op) texto = c.catalogoMuestraClave ? `${op.v} · ${op.label}` : op.label
+                }
                 return (
                   <div key={c.key} className="font-mono text-[11px] text-neutral-400">
                     <span className="text-neutral-600">{c.label}:</span>{' '}
@@ -1301,12 +1306,31 @@ function CampoDinamico({ campo, detalle, onChange }: {
     )
   }
   if (campo.input === 'select') {
+    // valor normalizado: capturas legadas del catálogo caen a la clave
+    const val = typeof v === 'string' ? String(campo.normaliza ? campo.normaliza(v) : v) : ''
+    const opTexto = (o: { v: string; label: string }) =>
+      campo.catalogoMuestraClave ? `${o.v} · ${o.label}` : o.label
+    const frecuentes = (campo.catalogo ?? []).filter((o) => o.frecuente)
+    const resto = (campo.catalogo ?? []).filter((o) => !o.frecuente)
     return (
       <div>{etiqueta}
-        <select id={id} className={inputCls} value={typeof v === 'string' ? v : ''}
+        <select id={id} className={inputCls} value={val}
           onChange={(e) => onChange(e.target.value)}>
           <option value="">— elige —</option>
-          {(campo.opciones ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+          {campo.catalogo ? (
+            frecuentes.length ? (
+              <>
+                <optgroup label="frecuentes">
+                  {frecuentes.map((o) => <option key={o.v} value={o.v}>{opTexto(o)}</option>)}
+                </optgroup>
+                <optgroup label="todo el catálogo">
+                  {resto.map((o) => <option key={o.v} value={o.v}>{opTexto(o)}</option>)}
+                </optgroup>
+              </>
+            ) : (campo.catalogo.map((o) => <option key={o.v} value={o.v}>{opTexto(o)}</option>))
+          ) : (
+            (campo.opciones ?? []).map((o) => <option key={o} value={o}>{o}</option>)
+          )}
         </select>
       </div>
     )

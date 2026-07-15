@@ -10,7 +10,7 @@
 // almacena): al ajustar clases tras validar con las áreas, el histórico se
 // corrige solo.
 
-import { type Cliente, constanciaVigente } from './clientes'
+import { type Cliente, USO_CFDI, constanciaVigente, normalizarUsoCFDI } from './clientes'
 import { hoyISO, sumaDiasHabiles } from './peticiones'
 
 export type ValorDetalle = string | boolean
@@ -19,12 +19,21 @@ export type ClaseCampo = 'bloqueante' | 'recomendado'
 export type InputCampo =
   | 'text' | 'textarea' | 'url' | 'correo' | 'monto' | 'fecha' | 'select' | 'si_no'
 
+export type OpcionCatalogo = { readonly v: string; readonly label: string; readonly frecuente?: boolean }
+
 export type CampoTipo = {
   key: string
   label: string
   input: InputCampo
   clase: ClaseCampo
   opciones?: readonly string[]
+  // select con claves estables (se guarda `v`, se muestra el label);
+  // frecuente=true agrupa arriba. catalogoMuestraClave: label = "clave · desc"
+  catalogo?: readonly OpcionCatalogo[]
+  catalogoMuestraClave?: boolean
+  // normalización al guardar/autocompletar (p. ej. "G03 — Gastos…" → "G03",
+  // o el boolean persona_moral del catálogo → 'moral'/'fisica')
+  normaliza?: (v: ValorDetalle) => ValorDetalle
   placeholder?: string
   // condicional: el campo solo aplica (se muestra y se valida) si esto es true
   visible?: (d: Detalle) => boolean
@@ -63,11 +72,23 @@ const INFO_CLIENTE_LEGAL: CampoTipo[] = [
         : null,
   },
   { key: 'constancia_fiscal_url', label: 'constancia de situación fiscal (link)', input: 'url', clase: 'recomendado', autocompleta: 'constanciaFiscalUrl' },
-  { key: 'persona_moral', label: '¿es persona moral?', input: 'si_no', clase: 'recomendado', autocompleta: 'personaMoral' },
+  {
+    // ajuste 2026-07-15: selector en vez de toggle — condiciona los campos
+    // del firmante (física: solo nombre + identificación). En el catálogo la
+    // columna sigue siendo persona_moral (boolean); normaliza convierte.
+    key: 'tipo_persona', label: 'tipo de persona', input: 'select', clase: 'recomendado',
+    autocompleta: 'personaMoral',
+    catalogo: [{ v: 'fisica', label: 'persona física' }, { v: 'moral', label: 'persona moral' }],
+    normaliza: (v) =>
+      v === true || v === 'true' || v === 'moral' ? 'moral'
+      : v === false || v === 'false' || v === 'fisica' ? 'fisica'
+      : typeof v === 'string' ? v : '',
+  },
   {
     key: 'facultades_doc_url', label: 'documento de facultades (link)', input: 'url',
     clase: 'recomendado', autocompleta: 'facultadesDocUrl',
-    visible: (d) => d.persona_moral === true, // condicional: solo persona moral
+    // solo persona moral (d.persona_moral: compat con detalles pre-ajuste)
+    visible: (d) => d.tipo_persona === 'moral' || d.persona_moral === true,
   },
   { key: 'domicilio_difiere', label: '¿el domicilio comercial difiere del fiscal?', input: 'si_no', clase: 'recomendado' },
   {
@@ -76,7 +97,12 @@ const INFO_CLIENTE_LEGAL: CampoTipo[] = [
     visible: (d) => d.domicilio_difiere === true, // condicional: solo si difiere
   },
   { key: 'firmante_nombre', label: 'nombre del firmante', input: 'text', clase: 'bloqueante', autocompleta: 'firmanteNombre' },
-  { key: 'firmante_cargo', label: 'cargo del firmante', input: 'text', clase: 'recomendado', autocompleta: 'firmanteCargo' },
+  {
+    key: 'firmante_cargo', label: 'cargo del firmante', input: 'text',
+    clase: 'recomendado', autocompleta: 'firmanteCargo',
+    // el cargo solo aplica a persona moral (una física firma por sí misma)
+    visible: (d) => d.tipo_persona === 'moral' || d.persona_moral === true,
+  },
   { key: 'identificacion_firmante_url', label: 'identificación del firmante (link)', input: 'url', clase: 'recomendado', autocompleta: 'identificacionFirmanteUrl' },
   { key: 'correo_notificaciones', label: 'correo para oír y recibir notificaciones', input: 'correo', clase: 'recomendado', autocompleta: 'correoNotificaciones' },
 ]
@@ -126,7 +152,13 @@ export const TIPOS_POR_AREA: Partial<Record<string, TipoPeticion[]>> = {
         { key: 'rfc', label: 'RFC', input: 'text', clase: 'bloqueante', autocompleta: 'rfc' },
         { key: 'regimen_fiscal', label: 'régimen fiscal', input: 'text', clase: 'bloqueante', autocompleta: 'regimenFiscal', placeholder: 'ej: 601 — General de Ley' },
         { key: 'cp_fiscal', label: 'CP fiscal', input: 'text', clase: 'bloqueante', autocompleta: 'cpFiscal' },
-        { key: 'uso_cfdi', label: 'uso CFDI', input: 'text', clase: 'bloqueante', autocompleta: 'usoCfdi', placeholder: 'ej: G03 — Gastos en general' },
+        {
+          // ajuste 2026-07-15: dropdown con el catálogo SAT c_UsoCFDI — se
+          // guarda la CLAVE; capturas legadas se normalizan ("G03 — …" → G03)
+          key: 'uso_cfdi', label: 'uso CFDI', input: 'select', clase: 'bloqueante',
+          autocompleta: 'usoCfdi', catalogo: USO_CFDI, catalogoMuestraClave: true,
+          normaliza: (v) => (typeof v === 'string' ? normalizarUsoCFDI(v) : v),
+        },
         { key: 'metodo_pago', label: 'método de pago', input: 'select', clase: 'bloqueante', opciones: ['PUE — pago en una sola exhibición', 'PPD — pago en parcialidades o diferido'] },
         { key: 'forma_pago', label: 'forma de pago', input: 'text', clase: 'bloqueante', placeholder: 'ej: 03 — transferencia electrónica' },
         { key: 'concepto', label: 'concepto a facturar', input: 'textarea', clase: 'bloqueante' },
@@ -200,7 +232,8 @@ export const camposVisibles = (tipo: TipoPeticion, d: Detalle): CampoTipo[] =>
 export function sanitizarDetalle(tipo: TipoPeticion, d: Detalle): Detalle {
   const out: Detalle = {}
   for (const c of camposVisibles(tipo, d)) {
-    const v = d[c.key]
+    let v = d[c.key]
+    if (v !== undefined && c.normaliza) v = c.normaliza(v)
     if (typeof v === 'boolean') out[c.key] = v
     else if (typeof v === 'string' && v.trim()) out[c.key] = v.trim()
   }
@@ -248,7 +281,9 @@ export function aplicarCliente(tipo: TipoPeticion, d: Detalle, cliente: Cliente)
     if (!c.autocompleta) continue
     const v = cliente[c.autocompleta]
     if (v === null || v === undefined || v === '') continue
-    out[c.key] = typeof v === 'boolean' ? v : String(v)
+    let val: ValorDetalle = typeof v === 'boolean' ? v : String(v)
+    if (c.normaliza) val = c.normaliza(val)
+    out[c.key] = val
   }
   // si el catálogo trae domicilio comercial, la pregunta condicional
   // "¿difiere del fiscal?" se responde sola (si no, queda como esté)

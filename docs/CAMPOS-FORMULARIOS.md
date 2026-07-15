@@ -37,7 +37,7 @@ snapshot editable en la petición.
 | RFC | 🔒 bloqueante | ✓ |
 | régimen fiscal | 🔒 bloqueante | ✓ |
 | CP fiscal | 🔒 bloqueante | ✓ |
-| uso CFDI | 🔒 bloqueante | ✓ |
+| uso CFDI — dropdown catálogo SAT c_UsoCFDI (se guarda la CLAVE; frecuentes G03/G01/S01/CP01 arriba) | 🔒 bloqueante | ✓ |
 | método de pago (PUE/PPD) | 🔒 bloqueante | |
 | forma de pago | 🔒 bloqueante | |
 | concepto a facturar | 🔒 bloqueante | |
@@ -93,13 +93,13 @@ Primero se elige la **ruta** (es el tipo): Ruta A — contrato MOVDI · Ruta B �
 | cliente (nombre comercial) | 🔒 bloqueante | ✓ | |
 | fecha de la constancia fiscal | ⚠ recomendado | ✓ | aviso amarillo si > 3 meses (no bloquea) |
 | constancia de situación fiscal (link) | ⚠ recomendado | ✓ | |
-| ¿es persona moral? | ⚠ recomendado | ✓ | |
-| documento de facultades (link) | ⚠ recomendado | ✓ | solo si persona moral = sí |
+| tipo de persona (física \| moral) | ⚠ recomendado | ✓ (de persona_moral) | condiciona los campos del firmante |
+| documento de facultades (link) | ⚠ recomendado | ✓ | solo persona MORAL |
 | ¿el domicilio comercial difiere del fiscal? | ⚠ recomendado | | |
 | domicilio comercial | ⚠ recomendado | ✓ | solo si difiere = sí |
-| nombre del firmante | 🔒 bloqueante | ✓ | |
-| cargo del firmante | ⚠ recomendado | ✓ | |
-| identificación del firmante (link) | ⚠ recomendado | ✓ | |
+| nombre del firmante | 🔒 bloqueante | ✓ | siempre (física y moral) |
+| cargo del firmante | ⚠ recomendado | ✓ | solo persona MORAL (una física firma por sí misma) |
+| identificación del firmante (link) | ⚠ recomendado | ✓ | siempre (física y moral) |
 | correo para oír y recibir notificaciones | ⚠ recomendado | ✓ | |
 
 ## Criterio usado para los defaults

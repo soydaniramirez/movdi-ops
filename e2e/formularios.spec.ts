@@ -100,6 +100,9 @@ test('factura: SLA fija la fecha (+2 hábiles) y el catálogo autocompleta los f
   await expect(page.locator('#det-rfc')).toHaveValue('UDM910101ABC')
   await expect(page.locator('#det-razon_social')).toHaveValue('Urban Decay México S.A. de C.V.')
   await expect(page.locator('#det-cliente_nombre')).toHaveValue('URBAN DECAY')
+  // uso CFDI: dropdown SAT — la captura legada del catálogo ("G03 — Gastos en
+  // general") se normaliza a la CLAVE
+  await expect(page.locator('#det-uso_cfdi')).toHaveValue('G03')
 
   // faltan los no-fiscales → sigue bloqueado
   await expect(page.getByTestId('btn-crear-confirmar')).toBeDisabled()
@@ -123,6 +126,7 @@ test('factura: SLA fija la fecha (+2 hábiles) y el catálogo autocompleta los f
   const det = creada.detalle as Record<string, unknown>
   expect(det.rfc).toBe('UDM910101ABC')
   expect(det.importe_sin_iva).toBe('150000')
+  expect(det.uso_cfdi).toBe('G03') // guardado como CLAVE del catálogo SAT
 })
 
 // ------------------------------------------------------------
@@ -138,8 +142,16 @@ test('legal ruta B: contrato bloqueante, condicionales y aviso de constancia ven
   // LIZZ APP: constancia de hace ~5 meses → AVISO (no bloqueo) + condicionales
   await page.getByTestId('pet-cliente').selectOption('cli-2')
   await expect(page.getByTestId('aviso-detalle')).toContainText('más de 3 meses')
-  // persona moral (del catálogo) → aparece el doc de facultades
+  // persona moral (del catálogo) → tipo de persona resuelto + firmante completo
+  await expect(page.locator('#det-tipo_persona')).toHaveValue('moral')
   await expect(page.locator('#det-facultades_doc_url')).toBeVisible()
+  await expect(page.locator('#det-firmante_cargo')).toBeVisible()
+  // física → cargo y facultades NO aplican (se ocultan); de regreso a moral
+  await page.locator('#det-tipo_persona').selectOption('fisica')
+  await expect(page.locator('#det-facultades_doc_url')).toHaveCount(0)
+  await expect(page.locator('#det-firmante_cargo')).toHaveCount(0)
+  await expect(page.locator('#det-identificacion_firmante_url')).toBeVisible()
+  await page.locator('#det-tipo_persona').selectOption('moral')
   // domicilio comercial del catálogo → la pregunta se respondió sola
   await expect(page.locator('#det-domicilio_comercial')).toHaveValue('Polanco 22, CDMX')
 

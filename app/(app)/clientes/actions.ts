@@ -6,7 +6,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { mapPersonaRow } from '@/lib/peticiones'
-import { CLIENTE_COLUMNAS_CSV } from '@/lib/clientes'
+import { CLIENTE_COLUMNAS_CSV, normalizarUsoCFDI } from '@/lib/clientes'
 
 type Resultado<T = undefined> = { ok: true; data?: T } | { ok: false; error: string }
 
@@ -41,7 +41,9 @@ function limpiarDatos(datos: DatosCliente): Record<string, unknown> {
     if (col === 'persona_moral') {
       out[col] = typeof v === 'boolean' ? v : null
     } else if (typeof v === 'string') {
-      out[col] = v.trim() || null
+      // uso CFDI: siempre la CLAVE del catálogo SAT (capturas legadas caen a ella)
+      const limpio = col === 'uso_cfdi' ? normalizarUsoCFDI(v) : v.trim()
+      out[col] = limpio || null
     } else if (v === null) {
       out[col] = null
     }
@@ -166,7 +168,8 @@ export async function importarClientesCSV(input: { csv: string }): Promise<Resul
         const v = (valores[j] ?? '').trim()
         if (!v) return
         datos[h] = h === 'persona_moral'
-          ? ['true', 'sí', 'si', '1'].includes(v.toLowerCase())
+          ? ['true', 'sí', 'si', '1', 'moral'].includes(v.toLowerCase())
+          : h === 'uso_cfdi' ? normalizarUsoCFDI(v)
           : v
       })
       const nombre = String(datos.nombre ?? '').trim()

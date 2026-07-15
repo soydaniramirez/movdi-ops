@@ -4,7 +4,7 @@ import {
   aplicarCliente, areaTieneTipos, camposVisibles, fechaPorSLA,
   sanitizarDetalle, tipoDe, validarDetalle,
 } from '../lib/tipos-peticion'
-import { type Cliente, constanciaVigente } from '../lib/clientes'
+import { type Cliente, USO_CFDI, constanciaVigente, normalizarUsoCFDI, usoCfdiLabel } from '../lib/clientes'
 import { sumaDiasHabiles } from '../lib/peticiones'
 
 // Unit tests de los formularios dinámicos (cutover 10): validación
@@ -35,6 +35,22 @@ test('fechaPorSLA: factura +2 hábiles, alta_portales +3, sin SLA → null', () 
   expect(fechaPorSLA(factura, '2026-07-10')).toBe('2026-07-14')  // vie → mar
   expect(fechaPorSLA(portales, '2026-07-10')).toBe('2026-07-15') // vie → mié
   expect(fechaPorSLA(cobranza, '2026-07-10')).toBeNull()
+})
+
+// ---------- catálogo SAT c_UsoCFDI ----------
+test('USO_CFDI: 24 claves, frecuentes primero (G03, G01, S01, CP01)', () => {
+  expect(USO_CFDI).toHaveLength(24)
+  expect(USO_CFDI.filter((u) => u.frecuente).map((u) => u.v)).toEqual(['G03', 'G01', 'S01', 'CP01'])
+  expect(usoCfdiLabel('G03')).toBe('G03 · Gastos en general')
+  expect(usoCfdiLabel('CN01')).toBe('CN01 · Nómina')
+})
+
+test('normalizarUsoCFDI: capturas legadas caen a la clave; lo desconocido no se inventa', () => {
+  expect(normalizarUsoCFDI('G03 — Gastos en general')).toBe('G03')
+  expect(normalizarUsoCFDI('g03')).toBe('G03')
+  expect(normalizarUsoCFDI('CP01 · Pagos')).toBe('CP01')
+  expect(normalizarUsoCFDI('X99 lo que sea')).toBe('X99 lo que sea')
+  expect(normalizarUsoCFDI('')).toBe('')
 })
 
 // ---------- vigencia de constancia ----------
@@ -74,15 +90,24 @@ test('factura: los 13 bloqueantes; recomendados no bloquean en cobranza', () => 
 })
 
 // ---------- condicionales de legal ----------
-test('legal: facultades solo si persona moral; domicilio solo si difiere; ruta B exige contrato', () => {
+test('legal: tipo de persona condiciona al firmante; domicilio solo si difiere; ruta B exige contrato', () => {
   const rutaA = tipoDe('legal', 'contrato_movdi')!
   const rutaB = tipoDe('legal', 'contrato_cliente')!
 
-  // condicional persona_moral
-  const sinMoral = camposVisibles(rutaA, { persona_moral: false }).map((c) => c.key)
-  expect(sinMoral).not.toContain('facultades_doc_url')
-  const conMoral = camposVisibles(rutaA, { persona_moral: true }).map((c) => c.key)
-  expect(conMoral).toContain('facultades_doc_url')
+  // física → solo nombre + identificación (cargo y facultades NO aplican)
+  const fisica = camposVisibles(rutaA, { tipo_persona: 'fisica' }).map((c) => c.key)
+  expect(fisica).not.toContain('facultades_doc_url')
+  expect(fisica).not.toContain('firmante_cargo')
+  expect(fisica).toContain('firmante_nombre')
+  expect(fisica).toContain('identificacion_firmante_url')
+  // moral → nombre + cargo + facultades + identificación
+  const moral = camposVisibles(rutaA, { tipo_persona: 'moral' }).map((c) => c.key)
+  expect(moral).toContain('facultades_doc_url')
+  expect(moral).toContain('firmante_cargo')
+  // compat: detalles pre-ajuste con persona_moral boolean siguen mostrando todo
+  const legacy = camposVisibles(rutaA, { persona_moral: true }).map((c) => c.key)
+  expect(legacy).toContain('facultades_doc_url')
+  expect(legacy).toContain('firmante_cargo')
 
   // condicional domicilio
   expect(camposVisibles(rutaA, {}).map((c) => c.key)).not.toContain('domicilio_comercial')
@@ -112,19 +137,24 @@ test('legal: constancia con más de 3 meses genera AVISO, no bloqueo', () => {
 })
 
 // ---------- sanitización del jsonb ----------
-test('sanitizarDetalle: descarta claves desconocidas, vacíos y condicionales ocultos', () => {
+test('sanitizarDetalle: descarta claves desconocidas, vacíos y condicionales ocultos; normaliza claves SAT', () => {
   const rutaA = tipoDe('legal', 'contrato_movdi')!
   const sucio: Detalle = {
     nombre_campana: '  Campaña X  ',
     hackeo: 'esto no es un campo',            // clave desconocida → fuera
     talento_firmar: '',                        // vacío → fuera
-    persona_moral: false,
-    facultades_doc_url: 'https://x/f.pdf',     // condicional OCULTO (no es moral) → fuera
+    tipo_persona: 'fisica',
+    facultades_doc_url: 'https://x/f.pdf',     // condicional OCULTO (es física) → fuera
+    firmante_cargo: 'Gerente',                 // ídem: el cargo no aplica a física
   }
   expect(sanitizarDetalle(rutaA, sucio)).toEqual({
     nombre_campana: 'Campaña X',
-    persona_moral: false,
+    tipo_persona: 'fisica',
   })
+
+  // uso CFDI legado se guarda como CLAVE
+  const factura = tipoDe('admi', 'factura')!
+  expect(sanitizarDetalle(factura, { uso_cfdi: 'G03 — Gastos en general' })).toEqual({ uso_cfdi: 'G03' })
 })
 
 // ---------- autocompletado desde el catálogo ----------
@@ -142,4 +172,15 @@ test('aplicarCliente: llena los campos ligados como snapshot y resuelve el condi
   expect(d2.domicilio_comercial).toBe('Polanco 22')
   const d3 = aplicarCliente(rutaA, {}, cliente())
   expect(d3.domicilio_difiere).toBeUndefined() // sin dato, la pregunta queda abierta
+})
+
+test('aplicarCliente: normaliza — uso CFDI legado a clave y persona_moral boolean a tipo de persona', () => {
+  const factura = tipoDe('admi', 'factura')!
+  const d1 = aplicarCliente(factura, {}, cliente({ usoCfdi: 'G03 — Gastos en general' }))
+  expect(d1.uso_cfdi).toBe('G03')
+
+  const rutaA = tipoDe('legal', 'contrato_movdi')!
+  expect(aplicarCliente(rutaA, {}, cliente({ personaMoral: true })).tipo_persona).toBe('moral')
+  expect(aplicarCliente(rutaA, {}, cliente({ personaMoral: false })).tipo_persona).toBe('fisica')
+  expect(aplicarCliente(rutaA, {}, cliente({ personaMoral: null })).tipo_persona).toBeUndefined()
 })
