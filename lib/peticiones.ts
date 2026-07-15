@@ -48,6 +48,11 @@ export type Peticion = {
   // de estatus/descripcion/entrega). Pre-cutover ≈ creadaEn (columna viva
   // desde siempre pero sin escrituras).
   actualizadaEn: string | null
+  // Formularios dinámicos (cutover 10): tipo por área + campos específicos
+  // (jsonb whitelisteado por lib/tipos-peticion.ts) + liga al catálogo.
+  tipoPeticion: string | null
+  detalle: Record<string, string | boolean> | null
+  clienteId: string | null
 }
 
 export const ORIGENES_VALIDOS = ['talento', 'cliente', 'interno', 'propio'] as const
@@ -121,6 +126,9 @@ export function mapPeticionRow(r: any): Peticion {
     creadaEn: r.created_at ?? null,
     origen: r.origen ?? null,
     actualizadaEn: r.updated_at ?? null,
+    tipoPeticion: r.tipo_peticion ?? null,
+    detalle: r.detalle ?? null,
+    clienteId: r.cliente_id ?? null,
   }
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -189,6 +197,21 @@ export function diasHabilesEntre(desdeISO: string, hastaISO: string): number {
     d.setDate(d.getDate() + 1)
   }
   return n
+}
+
+// Suma n días hábiles (L–V) a una fecha — para las fechas de compromiso
+// automáticas por SLA (cutover 10). Un viernes + 2 hábiles = martes.
+export function sumaDiasHabiles(desdeISO: string, n: number): string {
+  const d = fechaObj(desdeISO)
+  let faltan = n
+  while (faltan > 0) {
+    d.setDate(d.getDate() + 1)
+    const dow = d.getDay()
+    if (dow !== 0 && dow !== 6) faltan--
+  }
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${mm}-${dd}`
 }
 
 // Días hábiles sin movimiento real: desde el último movimiento (updated_at

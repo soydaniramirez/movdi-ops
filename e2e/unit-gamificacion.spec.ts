@@ -17,7 +17,7 @@ const pet = (o: Partial<Peticion>): Peticion => ({
   estatus: 'pendiente', privada: false, origenRecur: null, grupoId: null, fechaOriginal: null,
   motivoCambioFecha: null, cambioVistoPorCreador: true, extensionJustificada: null,
   linkEntrega: null, notaEntrega: null, fechaEntrega: null, ocultaPara: [], creadaEn: null,
-  origen: null, actualizadaEn: null, ...o,
+  origen: null, actualizadaEn: null, tipoPeticion: null, detalle: null, clienteId: null, ...o,
 })
 const per = (o: Partial<Persona>): Persona => ({
   id: Math.random().toString(36).slice(2), nombre: 'Antonio', apellido: 'L', rol: 'pm',

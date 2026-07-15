@@ -35,6 +35,9 @@ const PERSONAS_BASE = [
   { nombre: 'Brenda', apellido: 'Mora', nivel: 'ejecutivo', areas: ['imkt'], es_direccion: false },
   { nombre: 'Karla', apellido: 'Vega', nivel: 'head', areas: ['digital'], es_direccion: false },
   { nombre: 'Sarai', apellido: 'Luna', nivel: 'rh', areas: ['rh'], es_direccion: false },
+  // cutover 10: Lucia es de admi (edita el catálogo) y también recibe legal
+  // (única persona del área legal en el mock, para los forms de contratos)
+  { nombre: 'Lucia', apellido: 'Núñez', nivel: 'ejecutivo', areas: ['admi', 'legal'], es_direccion: false },
   { nombre: 'Dani', apellido: 'Ramírez', nivel: 'ceo', areas: ['pm'], es_direccion: true },
   { nombre: 'Emmanuel', apellido: 'Soto', nivel: 'ceo', areas: [], es_direccion: true },
 ].map((p, i) => ({
@@ -152,6 +155,34 @@ function reset() {
     ],
     historial_mensual: [],
     feedback: [],
+    // cutover 10 — catálogo interno de clientes (cli-2 con constancia vieja
+    // para probar el aviso de vigencia > 3 meses)
+    clientes: [
+      {
+        id: 'cli-1', nombre: 'URBAN DECAY', razon_social: 'Urban Decay México S.A. de C.V.',
+        rfc: 'UDM910101ABC', regimen_fiscal: '601 — General de Ley', cp_fiscal: '11560',
+        uso_cfdi: 'G03 — Gastos en general', persona_moral: true,
+        constancia_fiscal_fecha: dx(-30), constancia_fiscal_url: 'https://docs.example/constancia-ud.pdf',
+        domicilio_fiscal: 'Av. Reforma 100, CDMX', domicilio_comercial: null,
+        firmante_nombre: 'Laura Pérez', firmante_cargo: 'Directora General',
+        facultades_doc_url: 'https://docs.example/facultades-ud.pdf',
+        identificacion_firmante_url: null, correo_notificaciones: 'legal@urbandecay.mx',
+        contacto_correo: 'cuentas@urbandecay.mx', activo: true, creado_por: 'Lucia',
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'cli-2', nombre: 'LIZZ APP', razon_social: 'Lizz Aplicaciones S.A.P.I. de C.V.',
+        rfc: 'LAP150202XYZ', regimen_fiscal: '601 — General de Ley', cp_fiscal: '06600',
+        uso_cfdi: 'G03 — Gastos en general', persona_moral: true,
+        constancia_fiscal_fecha: dx(-150), constancia_fiscal_url: null,
+        domicilio_fiscal: 'Insurgentes Sur 500, CDMX', domicilio_comercial: 'Polanco 22, CDMX',
+        firmante_nombre: 'Alejandra Ríos', firmante_cargo: 'CEO',
+        facultades_doc_url: null, identificacion_firmante_url: null,
+        correo_notificaciones: 'alejandra@lizzapp.com', contacto_correo: 'alejandra@lizzapp.com',
+        activo: true, creado_por: 'Lucia',
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      },
+    ],
     recompensas: [
       { id: 'rw-2', nivel: 2, descripcion: 'tarde libre', activa: true },
       { id: 'rw-3', nivel: 3, descripcion: 'comida con dirección', activa: true },
@@ -211,6 +242,11 @@ function aplicarFiltros(rows, sp) {
     } else if (v.startsWith('in.(')) {
       const vals = v.slice(4, -1).split(',').map((s) => s.replace(/^"|"$/g, ''))
       out = out.filter((r) => vals.includes(String(r[k])))
+    } else if (v.startsWith('ilike.')) {
+      // PostgREST ilike: % = comodín; sin comodines es igualdad case-insensitive
+      const patron = v.slice(6).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*')
+      const re = new RegExp(`^${patron}$`, 'i')
+      out = out.filter((r) => re.test(String(r[k] ?? '')))
     }
   }
   return out
@@ -261,7 +297,7 @@ const server = http.createServer(async (req, res) => {
       todos: db.todos, estrellas: db.estrellas,
       personas: db.personas, invites: db.invites,
       historial_mensual: db.historial_mensual, recompensas: db.recompensas,
-      feedback: db.feedback,
+      feedback: db.feedback, clientes: db.clientes,
     })
   }
 
@@ -476,7 +512,8 @@ const server = http.createServer(async (req, res) => {
           id: uuid(), oculta_para: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
           fecha_original: null, motivo_cambio_fecha: null, cambio_visto_por_creador: true,
           extension_justificada: null, link_entrega: null, nota_entrega: null, fecha_entrega: null,
-          origen_recur: null, grupo_id: null, descripcion: null, origen: null, ...f,
+          origen_recur: null, grupo_id: null, descripcion: null, origen: null,
+          tipo_peticion: null, detalle: null, cliente_id: null, ...f,
         }))
         db.peticiones.push(...creadas)
         if (prefer.includes('return=representation')) return representar(creadas)
@@ -747,6 +784,60 @@ const server = http.createServer(async (req, res) => {
         }
         const objetivo = aplicarFiltros(db.feedback, url.searchParams)
         objetivo.forEach((f) => Object.assign(f, cambios, { updated_at: new Date().toISOString() }))
+        if (prefer.includes('return=representation')) return representar(objetivo)
+        return json(204, [])
+      }
+    }
+
+    if (tabla === 'clientes') {
+      // RLS cutover 10: SELECT autenticados · INSERT/UPDATE solo área admi o
+      // dirección (creado_por = yo en insert) · DELETE solo dirección.
+      // El FK de peticiones.cliente_id protege el histórico (23503).
+      const esAdmiCatalogo = (yo.areas || []).includes('admi') || yo.es_direccion === true || yo.nivel === 'ceo'
+      const esDir = yo.es_direccion === true || yo.nivel === 'ceo'
+      const nombreLower = (s) => String(s ?? '').trim().toLowerCase()
+      if (req.method === 'GET') {
+        return representar(aplicarFiltros(db.clientes, url.searchParams))
+      }
+      if (req.method === 'POST') {
+        const input = JSON.parse(body || '[]')
+        const filas = Array.isArray(input) ? input : [input]
+        for (const f of filas) {
+          if (!esAdmiCatalogo || f.creado_por !== yo.nombre) {
+            return json(403, { code: '42501', message: 'new row violates row-level security policy for table "clientes"' })
+          }
+          if (db.clientes.some((c) => nombreLower(c.nombre) === nombreLower(f.nombre))) {
+            return json(409, { code: '23505', message: 'duplicate key value violates unique constraint "clientes_nombre_unico"' })
+          }
+        }
+        const creadas = filas.map((f) => ({
+          id: uuid(), razon_social: null, rfc: null, regimen_fiscal: null, cp_fiscal: null,
+          uso_cfdi: null, persona_moral: null, constancia_fiscal_fecha: null,
+          constancia_fiscal_url: null, domicilio_fiscal: null, domicilio_comercial: null,
+          firmante_nombre: null, firmante_cargo: null, facultades_doc_url: null,
+          identificacion_firmante_url: null, correo_notificaciones: null, contacto_correo: null,
+          activo: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...f,
+        }))
+        db.clientes.push(...creadas)
+        if (prefer.includes('return=representation')) return representar(creadas)
+        return json(201, [])
+      }
+      if (req.method === 'PATCH') {
+        const cambios = JSON.parse(body || '{}')
+        // RLS de UPDATE: sin permiso, simplemente no matchea filas (0 rows)
+        const objetivo = esAdmiCatalogo ? aplicarFiltros(db.clientes, url.searchParams) : []
+        objetivo.forEach((c) => Object.assign(c, cambios, { updated_at: new Date().toISOString() }))
+        if (prefer.includes('return=representation')) return representar(objetivo)
+        return json(204, [])
+      }
+      if (req.method === 'DELETE') {
+        const objetivo = esDir ? aplicarFiltros(db.clientes, url.searchParams) : []
+        for (const c of objetivo) {
+          if (db.peticiones.some((t) => t.cliente_id === c.id)) {
+            return json(409, { code: '23503', message: 'update or delete on table "clientes" violates foreign key constraint "peticiones_cliente_id_fkey" on table "peticiones"' })
+          }
+        }
+        db.clientes = db.clientes.filter((c) => !objetivo.includes(c))
         if (prefer.includes('return=representation')) return representar(objetivo)
         return json(204, [])
       }

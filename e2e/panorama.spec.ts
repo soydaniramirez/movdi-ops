@@ -75,8 +75,8 @@ test('panorama head: SOLO su equipo, sin gestión, nombres semaforizados, con to
 test('dirección: ve a todos y conserva la gestión completa', async ({ page }) => {
   await login(page, 'dani@movdi.mx')
   await page.goto('/equipo')
-  // roster completo (7 personas activas en el mock)
-  await expect(page.getByTestId('card-persona')).toHaveCount(7)
+  // roster completo (8 personas activas en el mock — Lucia de admi entró en cutover 10)
+  await expect(page.getByTestId('card-persona')).toHaveCount(8)
   await expect(page.getByTestId('btn-agregar-persona')).toBeVisible()
   await expect(page.getByTestId('btn-editar-persona').first()).toBeVisible()
 })

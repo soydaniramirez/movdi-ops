@@ -344,3 +344,40 @@ cerrado cambia.
 Rollback de la 9: `drop trigger peticiones_touch_movimiento on public.peticiones;
 drop function public.peticiones_touch_movimiento(); alter table public.peticiones
 drop column origen;` (la columna puede quedarse si ya hay datos — la UI la tolera NULL).
+
+---
+
+## G. POST-CUTOVER — Formularios dinámicos por área (2026-07-15)
+
+**Migración 10: `20260715120000_cutover_formularios_clientes_tipo_detalle.sql` — ✅ APLICADA el 2026-07-15**
+(OK explícito de Daniela con 3 ajustes: índice unaccent con wrapper INMUTABLE de
+dos argumentos — verificado en el proyecto antes de aplicar —, edición del
+catálogo = área admi + dirección, y baja lógica de clientes como acción normal).
+
+Qué agregó:
+- Tabla `clientes` (catálogo INTERNO de OPS, sin conexión a la herramienta
+  administrativa): fiscales + legales. RLS: SELECT autenticados / INSERT-UPDATE
+  solo `mi_tiene_area('admi')` o dirección / DELETE solo dirección; `revoke`
+  a anon. Índice único de nombre con `unaccent_inmutable` (2 args, IMMUTABLE).
+- `peticiones.tipo_peticion` (text) + `peticiones.detalle` (jsonb whitelisteado
+  por `lib/tipos-peticion.ts`) + `peticiones.cliente_id` (FK — protege el
+  histórico: el DELETE de un cliente usado falla a propósito; la baja normal
+  es `activo=false`).
+- CERO cambios en las policies de peticiones; el trigger de movimiento
+  (cutover 9) quedó intacto.
+
+La config de tipos/campos vive en CÓDIGO (`lib/tipos-peticion.ts`), con clases
+`bloqueante`/`recomendado` por campo — tabla campo-por-campo en
+`docs/CAMPOS-FORMULARIOS.md`, PENDIENTE de validación con cada área (cambiar
+una clase = 1 palabra).
+
+Verificación: suite e2e completa (mock con paridad de RLS del catálogo, FK y
+autocompletado) + advisors sin hallazgos nuevos + anon sin acceso a clientes.
+
+Rollback de la 10: `drop table public.clientes cascade;` (tira el FK y las
+columnas quedan huérfanas pero inofensivas) o granular:
+`alter table public.peticiones drop column cliente_id, drop column detalle,
+drop column tipo_peticion; drop table public.clientes;
+drop function public.mi_tiene_area(text); drop function public.unaccent_inmutable(text);`
+La UI tolera columnas ausentes (los selects de clientes quedan vacíos y el
+candado no aplica si la config se retira del código).

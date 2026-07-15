@@ -16,6 +16,11 @@ import {
   destinatariosPorModo, fechaCorta, hoyISO, isAdmin,
   mapPersonaRow, matchNombre, personaDisponible, type Persona,
 } from '@/lib/peticiones'
+import {
+  type Detalle, areaTieneTipos, fechaPorSLA, sanitizarDetalle, tipoDe,
+  validarDetalle,
+} from '@/lib/tipos-peticion'
+import { mapClienteRow } from '@/lib/clientes'
 
 type Resultado<T = undefined> = { ok: true; data?: T } | { ok: false; error: string }
 
@@ -54,6 +59,10 @@ export async function crearPeticion(input: {
   para?: string
   seleccion?: string[]
   area?: string
+  // formularios dinámicos (cutover 10)
+  tipoPeticion?: string
+  detalle?: Detalle
+  clienteId?: string | null
 }): Promise<Resultado<{ creadas: number }>> {
   try {
     const { supabase, yo } = await getContexto()
@@ -87,6 +96,35 @@ export async function crearPeticion(input: {
       }
     }
 
+    // ---- CANDADO de formularios dinámicos (cutover 10) ----
+    // Aplica al dirigir la petición a un área con tipos definidos (digital/
+    // admi/legal) en los modos con área explícita. La MISMA config valida en
+    // el cliente (botón) y aquí (candado real): sin bloqueantes no se crea.
+    let tipoPeticion: string | null = null
+    let detalle: Detalle | null = null
+    let clienteId: string | null = null
+    let fecha = input.fecha || hoyISO()
+    const candadoAplica = (input.modo === 'una' || input.modo === 'area') && areaTieneTipos(area)
+    if (candadoAplica) {
+      const tipo = tipoDe(area, input.tipoPeticion ?? null)
+      if (!tipo) return { ok: false, error: 'elige el tipo de petición — esta área lo requiere' }
+      detalle = sanitizarDetalle(tipo, input.detalle ?? {})
+      const v = validarDetalle(tipo, detalle, { descripcion: input.descripcion })
+      if (!v.ok) {
+        return { ok: false, error: `faltan campos obligatorios: ${v.bloqueantesFaltantes.join(', ')}` }
+      }
+      tipoPeticion = tipo.key
+      // SLA: el servidor calcula la fecha compromiso — no confía en el cliente
+      const fechaSLA = fechaPorSLA(tipo)
+      if (fechaSLA) fecha = fechaSLA
+      // cliente ligado: validar que exista (lectura con RLS); si no, se ignora
+      if (input.clienteId) {
+        const { data: cli } = await supabase
+          .from('clientes').select('id').eq('id', input.clienteId).maybeSingle()
+        clienteId = cli?.id ?? null
+      }
+    }
+
     const esGrupo = destinatarios.length > 1
     const grupoId = esGrupo ? crypto.randomUUID() : null
     const filas = destinatarios.map((para) => ({
@@ -96,11 +134,14 @@ export async function crearPeticion(input: {
       creado_por: yo.nombre, // derivado de la sesión, no del cliente
       para,
       area,
-      fecha: input.fecha || hoyISO(),
+      fecha,
       prioridad: input.prioridad,
       estatus: 'pendiente',
       privada: input.privada === true,
       grupo_id: grupoId,
+      tipo_peticion: tipoPeticion,
+      detalle: detalle && Object.keys(detalle).length ? detalle : null,
+      cliente_id: clienteId,
     }))
 
     const { data, error } = await supabase.from('peticiones').insert(filas).select()
@@ -117,6 +158,85 @@ export async function crearPeticion(input: {
     )
 
     return { ok: true, data: { creadas: data?.length ?? 0 } }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
+  }
+}
+
+// Mapa detalle(jsonb) → columnas del catálogo de clientes. Cubre los campos
+// autocompletables de factura/cobranza/legal.
+const DETALLE_A_CLIENTE: Record<string, string> = {
+  cliente_nombre: 'nombre',
+  razon_social: 'razon_social',
+  rfc: 'rfc',
+  regimen_fiscal: 'regimen_fiscal',
+  cp_fiscal: 'cp_fiscal',
+  uso_cfdi: 'uso_cfdi',
+  persona_moral: 'persona_moral',
+  constancia_fiscal_fecha: 'constancia_fiscal_fecha',
+  constancia_fiscal_url: 'constancia_fiscal_url',
+  domicilio_comercial: 'domicilio_comercial',
+  firmante_nombre: 'firmante_nombre',
+  firmante_cargo: 'firmante_cargo',
+  facultades_doc_url: 'facultades_doc_url',
+  identificacion_firmante_url: 'identificacion_firmante_url',
+  correo_notificaciones: 'correo_notificaciones',
+  correo_contacto: 'contacto_correo',
+}
+
+// "Guardar cliente al catálogo" (solo admi/dirección — la RLS lo respalda):
+// cuando un PM capturó a mano los datos de un cliente nuevo en una petición,
+// admi los pasa al catálogo con un click. Así "la primera captura queda
+// guardada" sin que cualquiera pueda escribir un RFC al catálogo. Si el
+// cliente ya existe, se completan sus campos con lo capturado (sin borrar
+// nada) y se liga la petición.
+export async function guardarClienteAlCatalogo(input: { peticionId: string }): Promise<Resultado<{ clienteId: string }>> {
+  try {
+    const { supabase, yo } = await getContexto()
+    const { data: rows } = await supabase.from('peticiones').select('*').eq('id', input.peticionId)
+    const t = rows?.[0]
+    if (!t) return { ok: false, error: 'petición no encontrada' }
+    const detalle = (t.detalle ?? {}) as Detalle
+    const nombre = typeof detalle.cliente_nombre === 'string' ? detalle.cliente_nombre.trim() : ''
+    if (!nombre) return { ok: false, error: 'esta petición no tiene nombre de cliente capturado' }
+
+    const datos: Record<string, unknown> = {}
+    for (const [kDetalle, kCliente] of Object.entries(DETALLE_A_CLIENTE)) {
+      const v = detalle[kDetalle]
+      if (v !== undefined && v !== '') datos[kCliente] = v
+    }
+
+    // ¿ya existe? (equality case-insensitive; el índice único de BD es la red final)
+    const { data: existentes } = await supabase.from('clientes').select('*').ilike('nombre', nombre)
+    const existente = existentes?.[0]
+
+    let clienteId: string
+    if (existente) {
+      // completar huecos sin pisar lo ya capturado en el catálogo
+      const cambios: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(datos)) {
+        if (existente[k] === null || existente[k] === undefined || existente[k] === '') cambios[k] = v
+      }
+      if (Object.keys(cambios).length) {
+        const { error } = await supabase.from('clientes').update(cambios).eq('id', existente.id).select('id')
+        if (error) return { ok: false, error: error.message }
+      }
+      clienteId = existente.id
+    } else {
+      const { data: creado, error } = await supabase
+        .from('clientes')
+        .insert({ ...datos, nombre, creado_por: yo.nombre })
+        .select('*')
+      if (error) {
+        if (error.code === '42501') return { ok: false, error: 'solo el área admi (o dirección) puede escribir al catálogo' }
+        return { ok: false, error: error.message }
+      }
+      clienteId = mapClienteRow(creado![0]).id
+    }
+
+    // ligar la petición (best effort: la RLS de update es creador/para)
+    await supabase.from('peticiones').update({ cliente_id: clienteId }).eq('id', t.id)
+    return { ok: true, data: { clienteId } }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
   }
