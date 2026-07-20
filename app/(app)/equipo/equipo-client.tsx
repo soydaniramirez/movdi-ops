@@ -13,7 +13,7 @@ import {
 } from '@/lib/equipo'
 import {
   crearPersona, darToque, desactivarConReasignacion, editarPersona,
-  pausarPersona, reactivarPersona, reanudarPersona,
+  pausarPersona, reactivarPersona, reanudarPersona, reenviarInvitacion,
 } from './actions'
 
 // mensajes de ánimo listos para el ⚡ toque (custom máx. 60)
@@ -158,7 +158,8 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
 
   return (
     <main className="min-h-screen bg-neutral-950 px-6 py-8 text-neutral-100">
-      <div className="mx-auto flex max-w-5xl gap-6">
+      {/* mobile: el semáforo baja debajo de la lista en <lg (auditoría 2026-07-20) */}
+      <div className="mx-auto flex max-w-5xl flex-col gap-6 lg:flex-row">
         <div className="min-w-0 flex-1">
           <header className="flex items-center justify-between border-b border-neutral-800 pb-4">
             <div>
@@ -307,7 +308,7 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
 
         {/* Semáforo (dirección/heads — paridad renderSide) */}
         {bloques.length > 0 && (
-          <aside className="w-64 shrink-0 space-y-5" data-testid="semaforo">
+          <aside className="w-full shrink-0 space-y-5 lg:w-64" data-testid="semaforo">
             {bloques.map((b) => (
               <div key={b.titulo}>
                 <h3 className="font-mono text-[11px] uppercase tracking-wider text-neutral-400">
@@ -346,6 +347,9 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
           editar={modalPersona.editar}
           personas={personas}
           onCerrar={() => setModalPersona(null)}
+          onReenviar={modalPersona.editar
+            ? () => accion(() => reenviarInvitacion({ id: modalPersona.editar!.id }))
+            : undefined}
           onGuardar={async (datos) => {
             const ok = await accion(() =>
               modalPersona.editar
@@ -378,7 +382,7 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
 }
 
 // ============================================================
-function ModalPersona({ editar, personas, onCerrar, onGuardar }: {
+function ModalPersona({ editar, personas, onCerrar, onGuardar, onReenviar }: {
   editar: PersonaConManagers | null
   personas: PersonaConManagers[]
   onCerrar: () => void
@@ -386,6 +390,7 @@ function ModalPersona({ editar, personas, onCerrar, onGuardar }: {
     nombre: string; apellido: string; rol: string; email: string; area: string
     nivel: 'ejecutivo' | 'head' | 'ceo' | 'rh'; managerPrincipal: string | null; managers: string[]
   }) => Promise<boolean>
+  onReenviar?: () => Promise<boolean>
 }) {
   const [nombre, setNombre] = useState(editar?.nombre ?? '')
   const [apellido, setApellido] = useState(editar?.apellido ?? '')
@@ -397,6 +402,7 @@ function ModalPersona({ editar, personas, onCerrar, onGuardar }: {
   const [apoyo, setApoyo] = useState<string[]>(editar?.managers ?? [])
   const [err, setErr] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
+  const [reenviando, setReenviando] = useState(false)
 
   // candidatos a manager: cualquier persona ACTIVA (2026-07-20). Antes solo
   // ceo|head; ahora también ejecutivas/rh para poder nombrar "jefas directas"
@@ -413,7 +419,7 @@ function ModalPersona({ editar, personas, onCerrar, onGuardar }: {
           <button onClick={onCerrar} className="text-neutral-500 hover:text-neutral-200">✕</button>
         </div>
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className={labelCls} htmlFor="per-nombre">nombre</label>
               <input id="per-nombre" className={inputCls} value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus />
@@ -423,17 +429,17 @@ function ModalPersona({ editar, personas, onCerrar, onGuardar }: {
               <input id="per-apellido" className={inputCls} value={apellido} onChange={(e) => setApellido(e.target.value)} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className={labelCls} htmlFor="per-rol">rol</label>
               <input id="per-rol" className={inputCls} value={rol} onChange={(e) => setRol(e.target.value)} placeholder="ej: project manager" />
             </div>
             <div>
-              <label className={labelCls} htmlFor="per-email">correo</label>
-              <input id="per-email" type="email" className={inputCls} value={email ?? ''} onChange={(e) => setEmail(e.target.value)} placeholder="nombre@movdi.mx" />
+              <label className={labelCls} htmlFor="per-email">correo <span className="text-movdi-naranja">*</span></label>
+              <input id="per-email" type="email" required className={inputCls} value={email ?? ''} onChange={(e) => setEmail(e.target.value)} placeholder="nombre@movdi.mx" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className={labelCls} htmlFor="per-area">área principal</label>
               <select id="per-area" className={inputCls} value={area} onChange={(e) => setArea(e.target.value)}>
@@ -470,12 +476,28 @@ function ModalPersona({ editar, personas, onCerrar, onGuardar }: {
             </div>
           </div>
           {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
-          <div className="flex justify-end gap-2 pt-1">
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+            {/* reenvío real de la invitación (auditoría 2026-07-20: el aviso del
+                alta lo prometía pero no existía). Solo en edición. */}
+            {editar && onReenviar && (
+              <button data-testid="btn-reenviar-invitacion" disabled={reenviando}
+                onClick={async () => {
+                  setErr(null); setReenviando(true)
+                  const ok = await onReenviar()
+                  setReenviando(false)
+                  if (!ok) setErr('no se pudo reenviar — revisa el aviso')
+                  else onCerrar() // la nota amarilla de la página muestra el resultado
+                }}
+                className="mr-auto rounded-full border border-movdi-amarillo/50 px-3 py-2 font-mono text-[10px] text-movdi-amarillo hover:bg-movdi-amarillo/10 disabled:opacity-50"
+                title="vuelve a mandar el correo de invitación de Auth; si ya tiene cuenta, solo verifica el vínculo">
+                {reenviando ? 'enviando…' : '✉ reenviar invitación'}
+              </button>
+            )}
             <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
             <button data-testid="btn-guardar-persona" disabled={guardando}
               onClick={async () => {
                 setErr(null)
-                if (!nombre.trim() || !apellido.trim() || !rol.trim()) { setErr('completa nombre, apellido y rol'); return }
+                if (!nombre.trim() || !apellido.trim() || !rol.trim() || !email.trim()) { setErr('completa nombre, apellido, rol y correo'); return }
                 setGuardando(true)
                 const ok = await onGuardar({
                   nombre, apellido, rol, email: email ?? '', area,

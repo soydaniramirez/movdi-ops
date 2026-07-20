@@ -13,8 +13,13 @@ import { enviarFeedback, gestionarFeedback } from './actions'
 const inputCls = 'w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-sm text-neutral-100 outline-none focus:border-movdi-naranja'
 const labelCls = 'mb-1 block font-mono text-[11px] uppercase tracking-wider text-neutral-400'
 
+// item del loop público tal como lo devuelve la RPC loop_publico() (campos
+// anónimos: sin autor, sin destinatario, sin id de fila)
+type LoopItem = { mes: string; categoria: string; mensaje: string; respuesta: string; creada_en: string }
+
 export default function FeedbackClient({ yo }: { yo: Persona }) {
   const [feedback, setFeedback] = useState<Feedback[]>([])
+  const [loopRpc, setLoopRpc] = useState<LoopItem[] | null>(null)
   const [personas, setPersonas] = useState<Persona[]>([])
   const [personaIds, setPersonaIds] = useState<Record<string, string>>({}) // id → nombre
   const [cargando, setCargando] = useState(true)
@@ -26,9 +31,13 @@ export default function FeedbackClient({ yo }: { yo: Persona }) {
 
   const recargar = useCallback(async () => {
     const sb = createClient()
-    const [fb, pers] = await Promise.all([
+    const [fb, pers, lp] = await Promise.all([
       sb.from('feedback').select('*').order('created_at', { ascending: false }),
       sb.from('personas').select('*'),
+      // loop abierto a todo el equipo vía RPC anónima (decisión 2026-07-20);
+      // si la RPC aún no está aplicada, cae al cálculo local (solo dirección
+      // ve completo — comportamiento previo)
+      sb.rpc('loop_publico'),
     ])
     if (fb.error) {
       // pre-cutover la tabla no existe: el módulo avisa sin romper nada
@@ -42,6 +51,7 @@ export default function FeedbackClient({ yo }: { yo: Persona }) {
       setPersonas(rows.map(mapPersonaRow))
       setPersonaIds(Object.fromEntries(rows.map((r) => [r.id, r.nombre])))
     }
+    setLoopRpc(!lp.error && Array.isArray(lp.data) ? (lp.data as LoopItem[]) : null)
     setCargando(false)
   }, [])
 
@@ -60,16 +70,22 @@ export default function FeedbackClient({ yo }: { yo: Persona }) {
     [feedback],
   )
 
-  // "qué nos dijeron / qué hicimos": resueltos compartibles, agrupados por mes
+  // "qué nos dijeron / qué hicimos": resueltos compartibles, agrupados por mes.
+  // Fuente primaria: RPC loop_publico() (visible a TODO el equipo, sin autores).
+  // Fallback pre-aplicación: filas propias visibles por RLS (como antes).
   const loop = useMemo(() => {
-    const items = feedback.filter((f) => f.estado === 'resuelto' && f.compartibleLoop && f.respuesta)
-    const porMes = new Map<string, Feedback[]>()
+    const items: { key: string; mes: string; mensaje: string; respuesta: string }[] =
+      loopRpc !== null
+        ? loopRpc.map((it, i) => ({ key: `rpc-${i}`, mes: it.mes || 'sin fecha', mensaje: it.mensaje, respuesta: it.respuesta }))
+        : feedback
+            .filter((f) => f.estado === 'resuelto' && f.compartibleLoop && f.respuesta)
+            .map((f) => ({ key: f.id, mes: (f.creadaEn || '').slice(0, 7) || 'sin fecha', mensaje: f.mensaje, respuesta: f.respuesta ?? '' }))
+    const porMes = new Map<string, typeof items>()
     for (const f of items) {
-      const mes = (f.creadaEn || '').slice(0, 7) || 'sin fecha'
-      porMes.set(mes, [...(porMes.get(mes) ?? []), f])
+      porMes.set(f.mes, [...(porMes.get(f.mes) ?? []), f])
     }
     return [...porMes.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1))
-  }, [feedback])
+  }, [feedback, loopRpc])
 
   return (
     <main className="min-h-screen bg-neutral-950 px-6 py-8 text-neutral-100">
@@ -147,7 +163,7 @@ export default function FeedbackClient({ yo }: { yo: Persona }) {
                   </h3>
                   <div className="mt-2 space-y-2">
                     {items.map((f) => (
-                      <article key={f.id} data-testid="loop-item"
+                      <article key={f.key} data-testid="loop-item"
                         className="rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3">
                         <p className="font-mono text-[10px] uppercase text-neutral-500">nos dijeron:</p>
                         <p className="mt-0.5 text-sm text-neutral-300">&ldquo;{f.mensaje}&rdquo;</p>

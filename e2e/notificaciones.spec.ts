@@ -36,15 +36,21 @@ test('campana: badge cuenta no vistas; panel lista ordenado con iconos', async (
 })
 
 // ------------------------------------------------------------
-test('marcar leída al click; marcar todas; el badge se actualiza', async ({ page }) => {
+test('marcar leída al click navega a la petición y la resalta; marcar todas; el badge se actualiza', async ({ page }) => {
   await login(page, 'antonio@movdi.mx')
   await page.getByTestId('btn-campana').click()
 
+  // clic en una notif CON petición ligada (decisión 2026-07-20): marca vista
+  // Y navega a /peticiones?pet=<id> con la fila resaltada
   await page.getByTestId('notif-item').first().click()
+  await expect(page).toHaveURL(/\/peticiones\?pet=p-seed-1/)
+  await expect(page.locator('#pet-row-p-seed-1')).toBeVisible()
   await expect(page.getByTestId('badge-notif')).toHaveText('1')
   let st = await estado()
   expect((st.notificaciones.find((n) => n.id === 'n-seed-1'))!.vista).toBe(true)
 
+  // el panel se cerró al navegar — se reabre desde el header (persiste en toda la app)
+  await page.getByTestId('btn-campana').click()
   await page.getByTestId('btn-marcar-todas').click()
   await expect(page.getByTestId('badge-notif')).toHaveCount(0) // sin no-vistas
   st = await estado()

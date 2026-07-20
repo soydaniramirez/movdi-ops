@@ -123,12 +123,14 @@ export default function TodosClient({ yo }: { yo: Persona }) {
                   {t.texto}
                 </span>
               )}
+              {/* touch: siempre visibles en móvil (sin hover); en desktop se
+                  revelan al pasar el mouse, como antes (auditoría 2026-07-20) */}
               <button onClick={() => { setEditando(t.id); setTextoEdit(t.texto) }} data-testid="btn-editar-todo"
-                className="font-mono text-[10px] text-neutral-600 opacity-0 hover:text-neutral-300 group-hover:opacity-100">
+                className="font-mono text-[10px] text-neutral-600 hover:text-neutral-300 sm:opacity-0 sm:group-hover:opacity-100">
                 editar
               </button>
               <button onClick={() => borrar(t.id)} data-testid="btn-borrar-todo"
-                className="text-neutral-600 opacity-0 hover:text-movdi-naranja group-hover:opacity-100">
+                className="text-neutral-600 hover:text-movdi-naranja sm:opacity-0 sm:group-hover:opacity-100">
                 ✕
               </button>
             </div>

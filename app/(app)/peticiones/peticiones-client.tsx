@@ -31,7 +31,7 @@ import {
 } from './actions'
 
 type Tab = 'general' | 'mis' | 'pedi' | 'recur' | 'atorado'
-type Filtro = 'todas' | 'vencidas' | 'semana' | (typeof AREAS_VALIDAS)[number]
+type Filtro = 'todas' | 'vencidas' | 'semana' | 'entregadas' | (typeof AREAS_VALIDAS)[number]
 
 const PRIO_COLOR: Record<string, string> = {
   alta: 'text-movdi-naranja border-movdi-naranja/40',
@@ -65,6 +65,11 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
     general: false, mis: false, pedi: false,
   })
   const [aviso, setAviso] = useState<string | null>(null)
+  // petición resaltada al llegar desde la campana (?pet=<id>)
+  const [resaltada, setResaltada] = useState<string | null>(null)
+  // conteo GLOBAL de privadas activas para dirección (RPC que solo cuenta,
+  // sin exponer contenido — la RLS sigue ocultando las filas ajenas)
+  const [privadasGlobal, setPrivadasGlobal] = useState<number | null>(null)
 
   // modales
   const [modalCrear, setModalCrear] = useState(false)
@@ -104,6 +109,39 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void recargar() }, [recargar])
 
+  // ?pet=<id> desde la campana: guarda el id para resaltar la fila
+  useEffect(() => {
+    try {
+      const id = new URLSearchParams(window.location.search).get('pet')
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (id) setResaltada(id)
+    } catch { /* sin location (SSR) */ }
+  }, [])
+
+  // con datos cargados, acomoda pestaña/filtro para que la resaltada sea
+  // visible y hace scroll hasta ella
+  useEffect(() => {
+    if (!resaltada || peticiones.length === 0) return
+    const t = peticiones.find((x) => x.id === resaltada)
+    if (!t) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTab(t.origenRecur ? 'recur' : matchNombre(t.para, yo.nombre) ? 'mis' : 'general')
+    setFiltro('todas')
+    const timer = setTimeout(() => {
+      document.getElementById(`pet-row-${resaltada}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }, 150)
+    return () => clearTimeout(timer)
+  }, [resaltada, peticiones, yo])
+
+  // conteo global de privadas (solo dirección; si la RPC aún no existe en la
+  // BD, silencio y la card cae al conteo local de siempre)
+  useEffect(() => {
+    if (!esDireccion(yo)) return
+    void createClient().rpc('conteo_privadas_activas').then((r) => {
+      if (!r.error && typeof r.data === 'number') setPrivadasGlobal(r.data)
+    })
+  }, [yo, peticiones])
+
   // ---------- lista filtrada (paridad renderGeneral/renderMis/renderPedi) ----------
   const scopeOcultas: 'general' | 'mis' | 'pedi' | null =
     tab === 'recur' || tab === 'atorado' ? null : tab
@@ -118,6 +156,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
     if (tab === 'general' && personaFiltro) l = l.filter((t) => matchNombre(t.para, personaFiltro))
     if (filtro === 'vencidas') l = l.filter((t) => diasHasta(t.fecha) < 0 && t.estatus !== 'entregado')
     else if (filtro === 'semana') l = l.filter((t) => { const d = diasHasta(t.fecha); return d >= 0 && d <= 7 && t.estatus !== 'entregado' })
+    else if (filtro === 'entregadas') l = l.filter((t) => t.estatus === 'entregado')
     else if ((AREAS_VALIDAS as readonly string[]).includes(filtro)) l = l.filter((t) => t.area === filtro)
     // ocultas (paridad SPA): contarlas antes de filtrarlas; el toggle las re-muestra
     const nOcultas = scopeOcultas ? l.filter((t) => estaOcultaParaMi(t, yo.nombre)).length : 0
@@ -269,18 +308,23 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
             en vivo — solo el snapshot oficial del cierre) */}
         <BannerPodio yo={yo} historial={historial} />
 
-        {/* KPIs (paridad calcKpis) — bloques sólidos de la paleta (zona resumen) */}
-        <section className="mt-6 grid grid-cols-4 gap-3">
+        {/* KPIs (paridad calcKpis) — bloques sólidos de la paleta (zona resumen).
+            CLICABLES (decisión 2026-07-20): cada tarjeta aplica su filtro
+            equivalente. Mobile: 2 columnas en pantallas chicas. */}
+        <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {([
-            ['pendientes', kpis.pendientes, 'bg-movdi-gris text-black'],
-            ['vencidas', kpis.vencidas, kpis.vencidas > 0 ? 'bg-movdi-naranja text-black' : 'border border-neutral-800 bg-neutral-900 text-neutral-500'],
-            ['esta semana', kpis.semana, kpis.semana > 0 ? 'bg-movdi-amarillo text-black' : 'border border-neutral-800 bg-neutral-900 text-neutral-500'],
-            ['entregadas', kpis.entregadas, 'bg-movdi-verde text-black'],
-          ] as const).map(([lab, val, bloque]) => (
-            <div key={lab} className={`card-hover rounded-2xl px-4 py-3.5 ${bloque}`}>
+            ['pendientes', kpis.pendientes, 'bg-movdi-gris text-black', 'todas'],
+            ['vencidas', kpis.vencidas, kpis.vencidas > 0 ? 'bg-movdi-naranja text-black' : 'border border-neutral-800 bg-neutral-900 text-neutral-500', 'vencidas'],
+            ['esta semana', kpis.semana, kpis.semana > 0 ? 'bg-movdi-amarillo text-black' : 'border border-neutral-800 bg-neutral-900 text-neutral-500', 'semana'],
+            ['entregadas', kpis.entregadas, 'bg-movdi-verde text-black', 'entregadas'],
+          ] as const).map(([lab, val, bloque, f]) => (
+            <button key={lab} type="button" data-testid={`kpi-${f}`}
+              onClick={() => { setFiltro(f as Filtro); if (tab === 'atorado') setTab('general') }}
+              title={`filtrar: ${lab}`}
+              className={`card-hover rounded-2xl px-4 py-3.5 text-left ${bloque} ${filtro === f ? 'ring-2 ring-white/60' : ''}`}>
               <div className="font-mono text-[10px] uppercase tracking-wider opacity-70">{lab}</div>
               <div className="text-3xl font-bold tracking-tight">{val}</div>
-            </div>
+            </button>
           ))}
         </section>
 
@@ -316,7 +360,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
           {tab !== 'atorado' && (
             <>
               <span className="mx-2 h-4 w-px bg-neutral-800" />
-              {(['todas', 'vencidas', 'semana'] as Filtro[]).map((f) => (
+              {(['todas', 'vencidas', 'semana', 'entregadas'] as Filtro[]).map((f) => (
                 <button key={f} onClick={() => setFiltro(f)}
                   className={`rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors ${filtro === f ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}>
                   {f === 'semana' ? 'esta semana' : f}
@@ -453,9 +497,11 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
           </section>
         )}
 
-        {/* Lista (tabla, paridad renderTabla) + semáforo lateral (paridad renderSide) */}
+        {/* Lista (tabla, paridad renderTabla) + semáforo lateral (paridad renderSide).
+            Mobile: el semáforo baja debajo de la lista en <lg (antes estaba
+            oculto sin alternativa — auditoría 2026-07-20). */}
         {tab !== 'atorado' && (
-        <div className="mt-6 flex items-start gap-6">
+        <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:items-start">
           <section className="min-w-0 flex-1" data-testid="lista-peticiones">
             {cargando && <p className="font-mono text-xs text-neutral-500">cargando…</p>}
             {!cargando && lista.length === 0 && (
@@ -479,6 +525,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
                         yo={yo}
                         admin={admin}
                         esAdmi={esAdmi}
+                        resaltada={t.id === resaltada}
                         onGuardarCliente={() => accion(() => guardarClienteAlCatalogo({ peticionId: t.id }))}
                         onEstatus={(nuevo) => accion(() => cambiarEstatus({ id: t.id, estatus: nuevo }))}
                         onEntregar={() => setModalEntrega(t)}
@@ -500,7 +547,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
           </section>
 
           {(bloques.length > 0 || (tab === 'general' && esDireccion(yo))) && (
-            <aside className="sticky top-16 hidden max-h-[calc(100vh-5rem)] w-64 shrink-0 space-y-5 overflow-y-auto lg:block" data-testid="semaforo">
+            <aside className="w-full shrink-0 space-y-5 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:w-64 lg:overflow-y-auto" data-testid="semaforo">
               {bloques.map((b) => (
                 <div key={b.titulo}>
                   <h3 className="font-mono text-[11px] uppercase tracking-wider text-neutral-400">
@@ -522,8 +569,15 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
               {tab === 'general' && esDireccion(yo) && (
                 <div className="border border-movdi-naranja/30 bg-movdi-naranja/5 px-3 py-2.5" data-testid="card-privadas">
                   <div className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">peticiones privadas 🔒</div>
-                  <div className="mt-1 text-2xl font-semibold">{rhCount}</div>
-                  <div className="font-mono text-[10px] text-neutral-500">peticiones confidenciales activas</div>
+                  {/* total GLOBAL vía RPC conteo_privadas_activas (solo cuenta,
+                      no expone contenido); si la RPC aún no está aplicada en la
+                      BD, cae al conteo local (solo las que yo puedo ver) */}
+                  <div className="mt-1 text-2xl font-semibold">{privadasGlobal ?? rhCount}</div>
+                  <div className="font-mono text-[10px] text-neutral-500">
+                    {privadasGlobal != null
+                      ? 'confidenciales activas en todo el sistema · su contenido sigue siendo privado'
+                      : 'peticiones confidenciales activas que puedes ver'}
+                  </div>
                 </div>
               )}
             </aside>
@@ -696,11 +750,12 @@ function BannerPodio({ yo, historial }: {
 // ============================================================
 // Fila de la tabla (paridad renderFila del SPA: petición · de → para ·
 // área · fecha · prio · estatus · acciones)
-function FilaPeticion({ t, yo, admin, esAdmi, onGuardarCliente, onEstatus, onEntregar, onCambiarFecha, onMover, onNota, onEliminar, onOcultar, onDesocultar }: {
+function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEstatus, onEntregar, onCambiarFecha, onMover, onNota, onEliminar, onOcultar, onDesocultar }: {
   t: Peticion
   yo: Persona
   admin: boolean
   esAdmi: boolean
+  resaltada?: boolean
   onGuardarCliente: () => void
   onEstatus: (n: 'pendiente' | 'proceso') => void
   onEntregar: () => void
@@ -732,8 +787,8 @@ function FilaPeticion({ t, yo, admin, esAdmi, onGuardarCliente, onEstatus, onEnt
   const btn = 'rounded-md border px-2 py-0.5 font-mono text-[10px] whitespace-nowrap'
 
   return (
-    <tr data-testid="card-peticion"
-      className={`border-b border-neutral-800/70 align-top hover:bg-neutral-900/60 ${oculta ? 'opacity-50' : ''}`}>
+    <tr data-testid="card-peticion" id={`pet-row-${t.id}`}
+      className={`border-b border-neutral-800/70 align-top hover:bg-neutral-900/60 ${oculta ? 'opacity-50' : ''} ${resaltada ? 'bg-movdi-naranja/10 ring-1 ring-inset ring-movdi-naranja/60' : ''}`}>
       {/* petición: nombre + tags + descripción + banners */}
       <td className="max-w-[26rem] px-3 py-2.5">
         <div className="text-sm font-semibold">

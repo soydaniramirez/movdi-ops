@@ -262,7 +262,7 @@ function ModalCliente({ editar, onCerrar, onGuardar }: {
         <div className="space-y-4">
           {campo('nombre', 'nombre comercial / marca (obligatorio)')}
           <div className="border-t border-neutral-800 pt-3 font-mono text-[10px] uppercase tracking-widest text-neutral-500">fiscales (factura)</div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {campo('razon_social', 'razón social')}
             {campo('rfc', 'RFC')}
             {campo('regimen_fiscal', 'régimen fiscal', 'text', 'ej: 601 — General de Ley')}
@@ -302,7 +302,7 @@ function ModalCliente({ editar, onCerrar, onGuardar }: {
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {campo('constancia_fiscal_fecha', 'fecha de constancia fiscal', 'date')}
             {campo('constancia_fiscal_url', 'constancia (link)', 'url')}
             {campo('domicilio_fiscal', 'domicilio fiscal')}

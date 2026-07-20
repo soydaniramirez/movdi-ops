@@ -11,6 +11,7 @@ import {
   type Instancia, type Recurrente, esCreadorRecurrentePrivilegiado, etiquetaFrecuencia, mapRecurRow,
   obtenerInstanciasRecur, proximaFecha, puedeCrearRecurrentes,
 } from '@/lib/recurrentes'
+import { esDireccion } from '@/lib/equipo'
 import { moverInstancia } from '../peticiones/actions'
 import { entregarPeticion } from '../peticiones/actions'
 import { crearRecurrente, eliminarRecurrente, entregarInstanciaVirtual, toggleRecurrente } from './actions'
@@ -29,6 +30,7 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
   const [modalMover, setModalMover] = useState<Instancia | null>(null)
 
   const admin = isAdmin(yo)
+  const dir = esDireccion(yo)
   // reactivo: una jefa directa se reconoce por su relación de managers, que
   // vive en la lista de personas (llega tras el primer fetch).
   const puedeCrear = puedeCrearRecurrentes(yo, personas)
@@ -82,6 +84,19 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
     await recargar()
     return r.ok
   }
+
+  // Espejo de la RLS post-2026-07-20 (es_de_mi_equipo): quién administra un
+  // patrón = creador, dirección o la jefa/head DIRECTA de la persona asignada.
+  // Antes la UI mostraba pausar/eliminar a cualquier head (la RLS se lo negaba
+  // en equipos ajenos) y se los ocultaba a las jefas (la RLS se lo permitía).
+  const nombresSupervisadas = useMemo(
+    () => new Set(supervisadasDe(yo, personas).map((p) => p.nombre)),
+    [yo, personas],
+  )
+  const administraPatron = useCallback(
+    (r: Recurrente) => r.creadoPor === yo.nombre || dir || nombresSupervisadas.has(r.para),
+    [yo, dir, nombresSupervisadas],
+  )
 
   // Próxima instancia de un patrón (para "mover próxima" del creador/admin)
   function proximaInstanciaDe(r: Recurrente): Instancia | null {
@@ -183,7 +198,7 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
               </thead>
               <tbody>
                 {visiblesFiltradas.map((r) => {
-                  const puedeAdministrar = r.creadoPor === yo.nombre || admin
+                  const puedeAdministrar = administraPatron(r)
                   return (
                     <tr key={r.id} data-testid="fila-recurrente" className="border-t border-neutral-800">
                       <td className="px-3 py-2">
@@ -202,7 +217,9 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
                       <td className="px-3 py-2">
                         {puedeAdministrar ? (
                           <div className="flex gap-1.5">
-                            {r.activa && (
+                            {/* mover fechas queda en el creador (o ceo/head, regla del
+                                server en moverInstancia) — decisión 2026-07-20 */}
+                            {r.activa && (r.creadoPor === yo.nombre || admin) && (
                               <button data-testid="btn-mover-proxima" title="mover próxima instancia"
                                 onClick={() => {
                                   const inst = proximaInstanciaDe(r)

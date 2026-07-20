@@ -126,28 +126,30 @@ export async function crearRecurrente(input: {
   }
 }
 
-// Pausar/activar — RLS: creador o ceo|head (recurrentes_update)
+// Pausar/activar — RLS recurrentes_update (2026-07-20): creador, dirección
+// o jefa/head directa de la persona asignada (es_de_mi_equipo).
 export async function toggleRecurrente(input: { id: string; activa: boolean }): Promise<Resultado> {
   try {
     const { supabase } = await getContexto()
     const { data, error } = await supabase
       .from('recurrentes').update({ activa: input.activa }).eq('id', input.id).select()
     if (error) return { ok: false, error: error.message }
-    if (!data?.length) return { ok: false, error: 'solo el creador o dirección pueden pausar/activar' }
+    if (!data?.length) return { ok: false, error: 'solo el creador, dirección o la jefa directa pueden pausar/activar' }
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
   }
 }
 
-// Eliminar — RLS: creador o ceo|head (recurrentes_delete)
+// Eliminar — RLS recurrentes_delete (2026-07-20): creador, dirección
+// o jefa/head directa de la persona asignada (es_de_mi_equipo).
 export async function eliminarRecurrente(input: { id: string }): Promise<Resultado> {
   try {
     const { supabase } = await getContexto()
     const { data, error } = await supabase
       .from('recurrentes').delete().eq('id', input.id).select()
     if (error) return { ok: false, error: error.message }
-    if (!data?.length) return { ok: false, error: 'solo el creador o dirección pueden eliminar' }
+    if (!data?.length) return { ok: false, error: 'solo el creador, dirección o la jefa directa pueden eliminar' }
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
