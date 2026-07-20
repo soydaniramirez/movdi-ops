@@ -1,6 +1,7 @@
 -- ============================================================
--- ⏳ SIN APLICAR — requiere OK explícito (regla CLAUDE.md: mostrar SQL/diff
---    y esperar visto bueno antes de tocar la base).
+-- ✅ APLICADA (2026-07-20) con OK explícito de dirección (PR #11 revisado).
+--    Verificada: grants correctos (authenticated sí, anon no), sin sesión
+--    devuelve NULL/nada, advisors sin hallazgos nuevos (solo 0029 intencionales).
 -- ============================================================
 -- Conteo GLOBAL de peticiones privadas para dirección (decisión 2026-07-20,
 -- hallazgo de la auditoría: la card "peticiones privadas 🔒" solo contaba las
