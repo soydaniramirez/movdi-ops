@@ -5,10 +5,10 @@ import { createClient } from '@/lib/supabase/client'
 import {
   AREAS_LABEL, AREAS_VALIDAS, type ModoAsignacion, type Persona, type Peticion,
   destinatariosPorModo, dx, fechaCorta, isAdmin, labelFecha,
-  mapPeticionRow, mapPersonaRow, personaDisponible,
+  mapPeticionRow, mapPersonaRow, personaDisponible, supervisadasDe,
 } from '@/lib/peticiones'
 import {
-  type Instancia, type Recurrente, etiquetaFrecuencia, mapRecurRow,
+  type Instancia, type Recurrente, esCreadorRecurrentePrivilegiado, etiquetaFrecuencia, mapRecurRow,
   obtenerInstanciasRecur, proximaFecha, puedeCrearRecurrentes,
 } from '@/lib/recurrentes'
 import { moverInstancia } from '../peticiones/actions'
@@ -29,7 +29,9 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
   const [modalMover, setModalMover] = useState<Instancia | null>(null)
 
   const admin = isAdmin(yo)
-  const puedeCrear = puedeCrearRecurrentes(yo)
+  // reactivo: una jefa directa se reconoce por su relación de managers, que
+  // vive en la lista de personas (llega tras el primer fetch).
+  const puedeCrear = puedeCrearRecurrentes(yo, personas)
 
   const recargar = useCallback(async () => {
     const sb = createClient()
@@ -326,14 +328,23 @@ function ModalCrearRecurrente({ yo, personas, admin, onCerrar, onCrear }: {
     .sort((a, b) => a.nombre.localeCompare(b.nombre))
   const delArea = (area: string) => elegibles.filter((p) => p.areas.includes(area))
 
+  // "Jefa directa": ejecutiva con gente a cargo que NO es creadora privilegiada.
+  // La UI la limita a modo 'una' y a sus supervisadas (el servidor lo revalida).
+  const restringida = !esCreadorRecurrentePrivilegiado(yo)
+  const supervisadas = restringida
+    ? supervisadasDe(yo, personas).filter(personaDisponible).sort((a, b) => a.nombre.localeCompare(b.nombre))
+    : []
+  const paraOpciones = restringida ? supervisadas : delArea(areaUna)
+
   // Paridad SPA: recurrentes NO tiene modo 'heads'; ejecutivos/todos admin-only
-  const modos: { v: ModoAsignacion; lab: string; adminOnly?: boolean }[] = [
+  const modosTodos: { v: ModoAsignacion; lab: string; adminOnly?: boolean }[] = [
     { v: 'una', lab: 'una persona' },
     { v: 'varias', lab: 'varias personas · selección manual' },
     { v: 'area', lab: 'un área completa' },
     { v: 'ejecutivos', lab: 'solo ejecutivos · admin only', adminOnly: true },
     { v: 'todos', lab: 'todo el equipo · admin only', adminOnly: true },
   ]
+  const modos = restringida ? modosTodos.filter((m) => m.v === 'una') : modosTodos
   const DIAS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes']
 
   async function guardar() {
@@ -382,7 +393,20 @@ function ModalCrearRecurrente({ yo, personas, admin, onCerrar, onCrear }: {
           </div>
         </div>
 
-        {modo === 'una' && (
+        {modo === 'una' && restringida && (
+          <div>
+            <label className={labelCls} htmlFor="rec-para">para (tu equipo)</label>
+            <select id="rec-para" className={inputCls} value={para} onChange={(e) => setPara(e.target.value)}>
+              <option value="">— elige —</option>
+              {paraOpciones.map((p) => <option key={p.id} value={p.nombre}>{p.nombre} {p.apellido}</option>)}
+            </select>
+            {supervisadas.length === 0 && (
+              <p className="mt-1 font-mono text-[11px] text-neutral-500">— no tienes personas a tu cargo disponibles —</p>
+            )}
+          </div>
+        )}
+
+        {modo === 'una' && !restringida && (
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={labelCls} htmlFor="rec-area">área</label>
@@ -394,7 +418,7 @@ function ModalCrearRecurrente({ yo, personas, admin, onCerrar, onCrear }: {
               <label className={labelCls} htmlFor="rec-para">para</label>
               <select id="rec-para" className={inputCls} value={para} onChange={(e) => setPara(e.target.value)}>
                 <option value="">— elige —</option>
-                {delArea(areaUna).map((p) => <option key={p.id} value={p.nombre}>{p.nombre} {p.apellido}</option>)}
+                {paraOpciones.map((p) => <option key={p.id} value={p.nombre}>{p.nombre} {p.apellido}</option>)}
               </select>
             </div>
           </div>

@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { mapPeticionRow, mapPersonaRow } from '@/lib/peticiones'
+import { mapPeticionRow, mapPersonaRow, tengoSupervisadas } from '@/lib/peticiones'
 import { mapEstrellaRow } from '@/lib/estrellas'
 import { calcularGamePersona, mesActualStr } from '@/lib/gamificacion'
 import { asegurarVinculoAuth } from '@/lib/supabase/vinculo'
@@ -41,11 +41,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     )
   }
 
-  // pestañas por rol (4.14): rh → nivel rh o dirección · equipo → heads o
-  // dirección (los datos ya están protegidos por RLS; esto es UX)
+  // pestañas por rol (4.14): rh → nivel rh o dirección · equipo → heads,
+  // dirección o jefas directas (2026-07-20) — los datos ya están protegidos
+  // por RLS; esto es UX. Para saber si soy jefa necesito ver quién me reporta.
   const esDir = !!persona && (persona.esDireccion || persona.nivel === 'ceo')
   const veRH = !!persona && (persona.nivel === 'rh' || esDir)
-  const veEquipo = !!persona && (persona.nivel === 'head' || esDir)
+  let tengoGente = false
+  if (persona) {
+    const { data: todosRows } = await supabase.from('personas').select('*')
+    tengoGente = tengoSupervisadas(persona, (todosRows ?? []).map(mapPersonaRow))
+  }
+  const veEquipo = !!persona && (persona.nivel === 'head' || esDir || tengoGente)
   // catálogo de clientes: lo edita área admi + dirección (RLS); el resto
   // puede leerlo pero no necesita la pestaña — la usa desde el form
   const veClientes = !!persona && (persona.areas.includes('admi') || esDir)

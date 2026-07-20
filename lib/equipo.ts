@@ -1,6 +1,6 @@
 // Dominio del equipo — semáforo y agrupación por managers (paridad renderSide).
 
-import { type Peticion, type Persona, diasHasta, matchNombre } from './peticiones'
+import { type Peticion, type Persona, diasHasta, matchNombre, tengoSupervisadas } from './peticiones'
 import { type Instancia } from './recurrentes'
 
 export type PersonaConManagers = Persona & { managers: string[]; managerPrincipal: string | null }
@@ -59,7 +59,8 @@ export const ordenSemaforo = (a: ItemSemaforo, b: ItemSemaforo) => {
 
 // Paridad renderSide: bloques según el rol del usuario.
 // dirección → "mi equipo directo" + "resto del equipo" (todos los activos)
-// head → "mi equipo directo" (principal=yo) + "🤝 soy apoyo" (en managers, no principal)
+// head / jefa directa → "mi equipo directo" (principal=yo) + "🤝 soy apoyo"
+//   (en managers, no principal) — misma relación de supervisión para ambos.
 // otros → ninguno
 export function bloquesEquipo(
   yo: PersonaConManagers,
@@ -79,7 +80,9 @@ export function bloquesEquipo(
     if (resto.length) out.push({ titulo: 'resto del equipo', personas: resto })
     return out
   }
-  if (yo.nivel === 'head') {
+  // head o jefa directa (ejecutiva/rh con gente a cargo): misma lógica, ambos
+  // ven SOLO a quienes supervisan (principal o apoyo).
+  if (yo.nivel === 'head' || tengoSupervisadas(yo, personas)) {
     const visibles = elegibles.filter(
       (p) => p.managerPrincipal === yo.nombre || (p.managers || []).includes(yo.nombre),
     )

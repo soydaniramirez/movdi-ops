@@ -398,8 +398,11 @@ function ModalPersona({ editar, personas, onCerrar, onGuardar }: {
   const [err, setErr] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
 
-  // paridad: solo ceo|head activos como managers
-  const candidatos = personas.filter((p) => (p.nivel === 'ceo' || p.nivel === 'head') && p.activo !== false)
+  // candidatos a manager: cualquier persona ACTIVA (2026-07-20). Antes solo
+  // ceo|head; ahora también ejecutivas/rh para poder nombrar "jefas directas"
+  // (p. ej. Zazil, Gloria, Valeria) desde la UI. Los poderes de jefa se derivan
+  // de esta relación en RLS/código, no del nivel.
+  const candidatos = personas.filter((p) => p.activo !== false)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onCerrar}>

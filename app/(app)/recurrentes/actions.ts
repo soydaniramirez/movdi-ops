@@ -9,9 +9,9 @@
 import { createClient } from '@/lib/supabase/server'
 import {
   AREAS_VALIDAS, type ModoAsignacion, destinatariosPorModo, hoyISO, isAdmin,
-  mapPersonaRow, personaDisponible,
+  mapPersonaRow, personaDisponible, supervisadasDe,
 } from '@/lib/peticiones'
-import { mapRecurRow, puedeCrearRecurrentes } from '@/lib/recurrentes'
+import { esCreadorRecurrentePrivilegiado, mapRecurRow, puedeCrearRecurrentes } from '@/lib/recurrentes'
 
 type Resultado<T = undefined> = { ok: true; data?: T } | { ok: false; error: string }
 
@@ -45,7 +45,13 @@ export async function crearRecurrente(input: {
   try {
     const { supabase, yo } = await getContexto()
 
-    if (!puedeCrearRecurrentes(yo)) {
+    // Personas (lectura autenticada) — necesarias para resolver la relación de
+    // supervisión (jefa directa) y para validar destinatarios más abajo.
+    const { data: personasRows, error: eP } = await supabase.from('personas').select('*')
+    if (eP) return { ok: false, error: eP.message }
+    const personas = (personasRows ?? []).map(mapPersonaRow)
+
+    if (!puedeCrearRecurrentes(yo, personas)) {
       return { ok: false, error: 'no tienes permiso para crear recurrentes' }
     }
     const nombre = (input.nombre || '').trim()
@@ -74,9 +80,18 @@ export async function crearRecurrente(input: {
       return { ok: false, error: 'área inválida' }
     }
 
-    const { data: personasRows, error: eP } = await supabase.from('personas').select('*')
-    if (eP) return { ok: false, error: eP.message }
-    const personas = (personasRows ?? []).map(mapPersonaRow)
+    // "Jefa directa": quien NO es creadora privilegiada (ceo|head|rh|hardcode)
+    // solo puede crear en modo 'una' y hacia una de sus supervisadas (relación
+    // de managers). Cierra que use área/grupo o asigne fuera de su gente.
+    if (!esCreadorRecurrentePrivilegiado(yo)) {
+      if (input.modo !== 'una') {
+        return { ok: false, error: 'como jefa directa solo puedes crear recurrentes de una en una, para tu equipo' }
+      }
+      const mias = supervisadasDe(yo, personas).map((p) => p.nombre)
+      if (!input.para || !mias.includes(input.para)) {
+        return { ok: false, error: 'solo puedes crear recurrentes para las personas a tu cargo' }
+      }
+    }
 
     const { destinatarios, area } = destinatariosPorModo(input.modo, {
       personas, yo, para: input.para, seleccion: input.seleccion, area: input.area,
