@@ -270,21 +270,20 @@ export async function darToque(input: { para: string; mensaje: string }): Promis
     const yo = mapPersonaRow(row)
 
     const dir = esDireccion({ esDireccion: yo.esDireccion, nivel: yo.nivel })
-    if (!dir && yo.nivel !== 'head') {
-      return { ok: false, error: 'el toque es para heads y dirección' }
-    }
 
     const mensaje = (input.mensaje || '').trim()
     if (!mensaje) return { ok: false, error: 'elige o escribe un mensaje de ánimo' }
     if (mensaje.length > 60) return { ok: false, error: 'máximo 60 caracteres' }
 
-    // heads: solo a su equipo (manager principal o apoyo — como el semáforo)
+    // dirección: a cualquiera. Heads y jefas directas: SOLO a su gente (relación
+    // de managers — la misma del semáforo). Un ejecutivo sin gente a cargo no
+    // supera este check para nadie, así que el toque le queda vedado.
     if (!dir) {
       const { data: personasRows } = await supabase.from('personas').select('*')
       const dest = (personasRows ?? []).find((r) => matchNombre(r.nombre, input.para))
       const esMio = !!dest &&
         (dest.manager_principal === yo.nombre || (dest.managers ?? []).includes(yo.nombre))
-      if (!esMio) return { ok: false, error: 'solo puedes dar toques a tu equipo' }
+      if (!esMio) return { ok: false, error: 'solo puedes dar toques a las personas a tu cargo' }
     }
 
     return await notificarToque({ de: yo.nombre, para: input.para, mensaje })

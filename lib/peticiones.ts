@@ -19,6 +19,11 @@ export type Persona = {
   // Vínculo con auth.users: alimenta mi_nombre() y por tanto TODA la RLS de
   // escritura. NULL = cuenta a medio configurar (bug Valeria 2026-07-15).
   authUserId: string | null
+  // Relación de supervisión (por NOMBRE, no FK): manager principal (1) y de
+  // apoyo (N). Alimenta el semáforo, la visibilidad por equipos (es_de_mi_equipo
+  // en RLS) y el concepto de "jefa directa" (2026-07-20).
+  managerPrincipal: string | null
+  managers: string[]
 }
 
 export type Peticion = {
@@ -86,6 +91,8 @@ export function mapPersonaRow(r: any): Persona {
     esDireccion: r.es_direccion === true,
     veGamificacionCompleta: r.ve_gamificacion_completa ?? r.es_direccion === true,
     authUserId: r.auth_user_id ?? null,
+    managerPrincipal: r.manager_principal ?? null,
+    managers: r.managers ?? [],
   }
 }
 
@@ -251,6 +258,28 @@ export function estadoMovimiento(
 // ---------- permisos (paridad con la SPA) ----------
 export const isAdmin = (p: Pick<Persona, 'nivel'> | null) =>
   !!p && (p.nivel === 'ceo' || p.nivel === 'head')
+
+// "Jefa directa" (2026-07-20): reutiliza la relación de managers existente.
+// Las supervisadas de `yo` = personas ACTIVAS que la tienen como manager
+// principal o de apoyo — espejo cliente de la función SQL es_de_mi_equipo (la
+// misma relación del semáforo). Comparación por nombre exacto, igual que el
+// resto de los checks de manager del código (los nombres se guardan de pila y
+// consistentes). Helper único: úsese en todos los puntos de enganche de jefa.
+export function supervisadasDe<
+  T extends Pick<Persona, 'nombre' | 'managers' | 'managerPrincipal' | 'activo'>,
+>(yo: Pick<Persona, 'nombre'>, personas: T[]): T[] {
+  return personas.filter(
+    (p) =>
+      p.activo !== false &&
+      p.nombre !== yo.nombre &&
+      (p.managerPrincipal === yo.nombre || (p.managers ?? []).includes(yo.nombre)),
+  )
+}
+
+export const tengoSupervisadas = (
+  yo: Pick<Persona, 'nombre'>,
+  personas: Pick<Persona, 'nombre' | 'managers' | 'managerPrincipal' | 'activo'>[],
+) => supervisadasDe(yo, personas).length > 0
 
 export const estaPausada = (p: Persona) => !!p.pausadaHasta && hoyISO() <= p.pausadaHasta
 export const personaDisponible = (p: Persona) => p.activo !== false && !estaPausada(p)

@@ -2,7 +2,7 @@
 // Las instancias son VIRTUALES (calculadas al vuelo); solo se materializan en
 // una fila de peticiones al entregar o al mover.
 
-import { type Peticion, type Persona, estaPausada, matchNombre } from './peticiones'
+import { type Peticion, type Persona, estaPausada, matchNombre, tengoSupervisadas } from './peticiones'
 
 export type Recurrente = {
   id: string
@@ -38,12 +38,28 @@ export function mapRecurRow(r: any): Recurrente {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-// Quién puede crear/administrar recurrentes (paridad puedeCrearRecurrentes):
-// ceo + heads + rh, más los ejecutivos especiales Salvador y Arylene.
-export function puedeCrearRecurrentes(u: Pick<Persona, 'nivel' | 'nombre'> | null) {
+// Creadores PRIVILEGIADOS de recurrentes (paridad histórica exacta del antiguo
+// puedeCrearRecurrentes): ceo + heads + rh, más los ejecutivos especiales
+// Salvador y Arylene. Pueden asignar por área/grupo (según el gating de modos)
+// y a cualquiera. Los hardcodes se conservan por ahora (no se limpian aquí).
+export function esCreadorRecurrentePrivilegiado(u: Pick<Persona, 'nivel' | 'nombre'> | null) {
   if (!u) return false
   if (u.nivel === 'ceo' || u.nivel === 'head' || u.nivel === 'rh') return true
   if (u.nombre === 'Salvador' || u.nombre === 'Arylene') return true
+  return false
+}
+
+// Quién puede crear/administrar recurrentes: los privilegiados de siempre, o
+// una "jefa directa" (ejecutiva con gente a cargo vía managers). La jefa SOLO
+// puede crear en modo 'una' y para sus supervisadas — eso se valida en el
+// servidor (recurrentes/actions.ts). `personas` es necesaria para resolver la
+// supervisión; sin ella solo se reconoce a los privilegiados.
+export function puedeCrearRecurrentes(
+  u: Pick<Persona, 'nivel' | 'nombre'> | null,
+  personas?: Pick<Persona, 'nombre' | 'managers' | 'managerPrincipal' | 'activo'>[],
+) {
+  if (esCreadorRecurrentePrivilegiado(u)) return true
+  if (u && personas) return tengoSupervisadas(u, personas)
   return false
 }
 

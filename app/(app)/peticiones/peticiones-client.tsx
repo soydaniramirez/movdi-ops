@@ -8,6 +8,7 @@ import {
   destinatariosPorModo, diasHasta, diasSinMovimiento, dx, esCompromisoPropio,
   estadoMovimiento, fechaCorta, isAdmin, labelFecha,
   mapPeticionRow, margenPeticion, matchNombre, personaDisponible, puedoVerPeticion,
+  tengoSupervisadas,
 } from '@/lib/peticiones'
 import { type Recurrente, mapRecurRow, obtenerInstanciasRecur } from '@/lib/recurrentes'
 import {
@@ -85,8 +86,9 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
   const [modalNota, setModalNota] = useState<Peticion | null>(null)
 
   const admin = isAdmin(yo)
-  // panel "qué está atorado": líderes de área y dirección
-  const veAtorados = yo.nivel === 'head' || esDireccion(yo)
+  // panel "qué está atorado": dirección, heads y jefas directas (estas últimas
+  // reconocidas por su relación de managers, que llega con la lista de personas)
+  const veAtorados = esDireccion(yo) || yo.nivel === 'head' || tengoSupervisadas(yo, personas)
   // "guardar cliente al catálogo": área admi + dirección (RLS respalda)
   const esAdmi = yo.areas.includes('admi') || esDireccion(yo)
 

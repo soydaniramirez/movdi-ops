@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { type Peticion, mapPeticionRow, mapPersonaRow, matchNombre, type Persona } from '@/lib/peticiones'
+import { type Peticion, mapPeticionRow, mapPersonaRow, matchNombre, type Persona, tengoSupervisadas } from '@/lib/peticiones'
 import { type Recurrente, mapRecurRow } from '@/lib/recurrentes'
 import { type Estrella, mapEstrellaRow } from '@/lib/estrellas'
 import { type PersonaConManagers, esDireccion } from '@/lib/equipo'
@@ -41,7 +41,11 @@ export default function ProgresoClient({ yo, gameInicial }: { yo: PersonaConMana
   // · ejecutivo → SOLO lo suyo
   // La RLS de la migración cutover_gamificacion_privacidad lo respalda en BD.
   const veTodo = yo.veGamificacionCompleta
-  const soyHead = yo.nivel === 'head' && !veTodo
+  // "ve equipo": head O jefa directa (ejecutiva con gente a cargo, reconocida
+  // por la relación de managers que llega en `personas`). Ve el leaderboard de
+  // SU equipo, sin estrellas ni recompensas (esas dependen de veTodo/RLS).
+  const tengoGente = useMemo(() => tengoSupervisadas(yo, personas), [yo, personas])
+  const veEquipo = (yo.nivel === 'head' || tengoGente) && !veTodo
   const soyRH = yo.nivel === 'rh'
 
   const recargar = useCallback(async () => {
@@ -107,8 +111,8 @@ export default function ProgresoClient({ yo, gameInicial }: { yo: PersonaConMana
   // leaderboard: dirección/todos · head no-dirección: solo su equipo (paridad)
   const lb = useMemo(() => calcularLeaderboardMes({
     mes, personas, peticiones,
-    soloEquipo: yo.nivel === 'head' && !veTodo ? yo.nombre : undefined,
-  }), [mes, personas, peticiones, yo, veTodo])
+    soloEquipo: veEquipo ? yo.nombre : undefined,
+  }), [mes, personas, peticiones, yo, veEquipo])
   const recos = useMemo(() => calcularReconocimientosMes({ mes, personas, peticiones }), [mes, personas, peticiones])
 
   // mi ritmo: cumplimiento de MIS recurrentes activas (paridad renderMiRitmo)
@@ -256,11 +260,11 @@ export default function ProgresoClient({ yo, gameInicial }: { yo: PersonaConMana
           </div>
         </section>
 
-        {/* Leaderboard + reconocimientos — flag: todo · head: SU equipo · ejecutivo/rh: oculto */}
-        {(veTodo || soyHead) && (
+        {/* Leaderboard + reconocimientos — flag: todo · head/jefa: SU equipo · resto: oculto */}
+        {(veTodo || veEquipo) && (
           <section data-testid="leaderboard">
             <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">
-              🏆 leaderboard del equipo {soyHead ? '(mi equipo)' : ''} · {mes}
+              🏆 leaderboard del equipo {veEquipo && !veTodo ? '(mi equipo)' : ''} · {mes}
             </h2>
             <div className="mt-3 space-y-1.5">
               {lb.ranking.length === 0 && !cargando && (
