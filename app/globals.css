@@ -82,3 +82,57 @@ tr:hover .reveal-acciones,
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.15); }
 }
+
+/* ── Organigrama: árbol CSS puro (líneas sólidas = manager principal) ──
+   Técnica clásica de connectors con ::before/::after; profundidad libre.
+   Sin librerías. El apoyo (managers) se pinta como chips punteados en la
+   tarjeta, no como líneas cruzadas (responsive y sin cálculos de layout). */
+.orgchart, .orgchart ul { margin: 0; padding: 0; }
+.orgchart ul {
+  display: flex;
+  justify-content: center;
+  position: relative;
+  padding-top: 20px;
+}
+.orgchart li {
+  list-style: none;
+  position: relative;
+  padding: 20px 10px 0;
+  text-align: center;
+}
+/* conectores hacia el padre */
+.orgchart li::before,
+.orgchart li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 50%;
+  width: 50%;
+  height: 20px;
+  border-top: 1px solid rgb(115 115 115 / 0.55);
+}
+.orgchart li::after {
+  right: auto;
+  left: 50%;
+  border-left: 1px solid rgb(115 115 115 / 0.55);
+}
+/* hijo único: sin curva, solo la vertical */
+.orgchart li:only-child::before,
+.orgchart li:only-child::after { display: none; }
+/* extremos: quitar el tramo horizontal sobrante */
+.orgchart li:first-child::before,
+.orgchart li:last-child::after { border: 0 none; }
+.orgchart li:last-child::before { border-right: 1px solid rgb(115 115 115 / 0.55); }
+/* bajada vertical desde cada nodo hacia sus hijos */
+.orgchart ul ul::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 0;
+  height: 20px;
+  border-left: 1px solid rgb(115 115 115 / 0.55);
+}
+.orgchart > ul { padding-top: 0; }
+.orgchart > ul > li::before,
+.orgchart > ul > li::after { display: none; }

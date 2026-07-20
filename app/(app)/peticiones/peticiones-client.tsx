@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  AREAS_LABEL, AREAS_VALIDAS, ORIGENES_VALIDOS, type ModoAsignacion,
+  AREAS_LABEL, AREAS_VALIDAS, AREA_COLOR, ORIGENES_VALIDOS, type ModoAsignacion,
   type Persona, type Peticion,
   destinatariosPorModo, diasHasta, diasSinMovimiento, dx, esCompromisoPropio,
   estadoMovimiento, fechaCorta, isAdmin, labelFecha,
@@ -40,17 +40,6 @@ const PRIO_COLOR: Record<string, string> = {
 }
 
 // Colores por área (paridad visual .tag.area-* del SPA, adaptado a la paleta)
-const AREA_COLOR: Record<string, string> = {
-  imkt: 'border-pink-400/40 text-pink-300',
-  pm: 'border-sky-400/40 text-sky-300',
-  legal: 'border-violet-400/40 text-violet-300',
-  admi: 'border-teal-400/40 text-teal-300',
-  ventas: 'border-lime-400/40 text-lime-300',
-  digital: 'border-cyan-400/40 text-cyan-300',
-  rh: 'border-rose-400/40 text-rose-300',
-  heads: 'border-movdi-amarillo/40 text-movdi-amarillo',
-}
-
 const SEM_COLOR: Record<'r' | 'y' | 'g' | 'x', string> = {
   r: 'bg-movdi-naranja',
   y: 'bg-movdi-amarillo',

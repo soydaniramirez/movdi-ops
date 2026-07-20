@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { mapPeticionRow, mapPersonaRow, tengoSupervisadas } from '@/lib/peticiones'
+import { veOrganigrama } from '@/lib/equipo'
 import { mapEstrellaRow } from '@/lib/estrellas'
 import { calcularGamePersona, mesActualStr } from '@/lib/gamificacion'
 import { asegurarVinculoAuth } from '@/lib/supabase/vinculo'
@@ -52,6 +53,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     tengoGente = tengoSupervisadas(persona, (todosRows ?? []).map(mapPersonaRow))
   }
   const veEquipo = !!persona && (persona.nivel === 'head' || esDir || tengoGente)
+  // organigrama (solo lectura): dirección, RH o área admi
+  const veOrg = !!persona && veOrganigrama(persona)
   // catálogo de clientes: lo edita área admi + dirección (RLS); el resto
   // puede leerlo pero no necesita la pestaña — la usa desde el form
   const veClientes = !!persona && (persona.areas.includes('admi') || esDir)
@@ -74,6 +77,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               ['/peticiones', 'peticiones'], ['/recurrentes', 'recurrentes'], ['/anuncios', 'anuncios'],
               ['/todos', 'to-dos'], ['/estrellas', 'estrellas'], ['/feedback', 'feedback'], ['/progreso', 'progreso'],
               ...(veEquipo ? [['/equipo', 'equipo']] : []),
+              ...(veOrg ? [['/organigrama', 'organigrama']] : []),
               ...(veClientes ? [['/clientes', 'clientes']] : []),
               ...(veRH ? [['/rh', 'rh']] : []),
             ] as [string, string][]).map(([href, lab]) => (

@@ -1,6 +1,6 @@
 // Dominio del equipo — semáforo y agrupación por managers (paridad renderSide).
 
-import { type Peticion, type Persona, diasHasta, matchNombre, tengoSupervisadas } from './peticiones'
+import { type Peticion, type Persona, diasHasta, matchNombre, normalizarTexto, tengoSupervisadas } from './peticiones'
 import { type Instancia } from './recurrentes'
 
 export type PersonaConManagers = Persona & { managers: string[]; managerPrincipal: string | null }
@@ -96,4 +96,59 @@ export function bloquesEquipo(
     return out
   }
   return []
+}
+
+// ---------- Organigrama (solo lectura, 2026-07-20) ----------
+
+// Quién ve la página /organigrama: dirección, RH o área admi. Mismo criterio
+// para el gate del nav (layout) y el redirect de la página.
+export const veOrganigrama = (
+  u: Pick<PersonaConManagers, 'esDireccion' | 'nivel' | 'areas'> | null,
+) => !!u && (esDireccion(u) || u.nivel === 'rh' || (u.areas ?? []).includes('admi'))
+
+// Nodo del árbol: la persona, sus hijos (por manager_principal = línea sólida)
+// y sus apoyos (managers distintos del principal = líneas punteadas).
+export type NodoOrg = { persona: PersonaConManagers; hijos: NodoOrg[]; apoyos: string[] }
+
+// Construye el árbol EN VIVO desde personas (fuente: manager_principal/managers,
+// matcheo por nombre normalizado como es_de_mi_equipo). Sin profundidad fija.
+// - raices: personas con es_direccion (cada una es su propio árbol).
+// - cada no-dirección cuelga de su manager_principal.
+// - sinAsignar: no-dirección cuyo manager_principal es nulo o no existe entre
+//   las personas activas (detector de datos incompletos).
+export function construirOrganigrama(personas: PersonaConManagers[]): {
+  raices: NodoOrg[]
+  sinAsignar: NodoOrg[]
+} {
+  const activos = personas.filter((p) => p.activo !== false)
+  const norm = (s: string | null | undefined) => normalizarTexto(s ?? '')
+
+  const nodos = new Map<string, NodoOrg>()
+  for (const p of activos) {
+    nodos.set(norm(p.nombre), {
+      persona: p,
+      hijos: [],
+      // apoyos = managers menos el principal (evita duplicar la línea sólida)
+      apoyos: (p.managers ?? []).filter((m) => norm(m) !== norm(p.managerPrincipal) && norm(m) !== ''),
+    })
+  }
+
+  const raices: NodoOrg[] = []
+  const sinAsignar: NodoOrg[] = []
+  for (const p of activos) {
+    const self = nodos.get(norm(p.nombre))!
+    if (p.esDireccion) { raices.push(self); continue }
+    const padre = p.managerPrincipal ? nodos.get(norm(p.managerPrincipal)) : undefined
+    if (padre && padre !== self) padre.hijos.push(self)
+    else sinAsignar.push(self)
+  }
+
+  // orden estable por nombre en cada nivel
+  const ordenar = (ns: NodoOrg[]) => {
+    ns.sort((a, b) => a.persona.nombre.localeCompare(b.persona.nombre))
+    ns.forEach((n) => ordenar(n.hijos))
+  }
+  ordenar(raices)
+  ordenar(sinAsignar)
+  return { raices, sinAsignar }
 }
