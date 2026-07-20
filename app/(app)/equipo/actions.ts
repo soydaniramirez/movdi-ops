@@ -1,7 +1,7 @@
 'use server'
 
 // Server Actions de gestión de personas — el módulo más sensible.
-// TODAS re-validan nivel ceo|head con la SESIÓN (además de la policy
+// TODAS re-validan DIRECCIÓN con la SESIÓN (además de la policy
 // personas_modify_admin). Datos derivados en servidor, nunca del cliente.
 
 import { createClient } from '@/lib/supabase/server'
@@ -48,7 +48,11 @@ function validarDatos(input: DatosPersona): string | null {
   if (!input.nombre.trim() || !input.apellido.trim() || !input.rol.trim()) {
     return 'completa nombre, apellido y rol'
   }
-  if (input.email && !EMAIL_RE.test(input.email)) {
+  // correo OBLIGATORIO (decisión 2026-07-20): sin correo no hay invite de
+  // Auth y quedaría una persona sin cuenta — el hueco que el invite
+  // automático cierra. Todas las personas activas ya tienen email.
+  if (!input.email.trim()) return 'el correo es obligatorio — con él se envía la invitación'
+  if (!EMAIL_RE.test(input.email)) {
     return 'revisa el formato del correo (ej: nombre@movdi.mx)'
   }
   if (!(AREAS_VALIDAS as readonly string[]).includes(input.area)) return 'área inválida'
@@ -93,7 +97,8 @@ export async function crearPersona(input: DatosPersona): Promise<Resultado> {
     const nueva = insertadas?.[0]
 
     // ── INVITE AUTOMÁTICO ──────────────────────────────────────────────
-    // ÚNICO uso de service_role en toda la aplicación. Justificación:
+    // Uso acotado de service_role (este archivo: alta + reenviarInvitacion,
+    // documentado en CLAUDE.md). Justificación:
     // auth.admin.inviteUserByEmail requiere privilegios de administración
     // de Auth que la anon key no tiene ni debe tener. Corre SOLO en este
     // Server Action (lib/supabase/admin.ts lleva `import 'server-only'`:
@@ -112,7 +117,7 @@ export async function crearPersona(input: DatosPersona): Promise<Resultado> {
             // se autocura en su primer inicio de sesión (layout protegido)
             return { ok: true, aviso: `${payload.email} ya tenía cuenta en Auth — no se envió invitación (se vinculará al iniciar sesión)` }
           }
-          return { ok: true, aviso: `persona creada, pero la invitación no se pudo enviar: ${eInvite.message}. reintenta desde editar o avisa a dirección` }
+          return { ok: true, aviso: `persona creada, pero la invitación no se pudo enviar: ${eInvite.message}. usa "reenviar invitación" desde editar` }
         }
         // Vínculo auth_user_id INMEDIATO (bug Valeria 2026-07-15): sin esto,
         // la persona nueva entra con mi_nombre() = null y la RLS le rechaza
@@ -150,6 +155,38 @@ export async function editarPersona(input: DatosPersona & { id: string }): Promi
     if (error) return { ok: false, error: error.message }
     if (!data?.length) return { ok: false, error: 'no se pudo actualizar (RLS)' }
     return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
+  }
+}
+
+// Reenvía la invitación de Auth de una persona ya creada (auditoría 2026-07-20:
+// el aviso de alta prometía "reintenta desde editar" pero el reintento no
+// existía). Mismo uso acotado de service_role que el invite del alta, en este
+// mismo archivo. Si el usuario ya existe en Auth, liga el vínculo si falta.
+export async function reenviarInvitacion(input: { id: string }): Promise<Resultado> {
+  try {
+    const { supabase } = await getAdminContexto()
+    const { data: rows } = await supabase.from('personas').select('*').eq('id', input.id)
+    const row = rows?.[0]
+    if (!row) return { ok: false, error: 'persona no encontrada' }
+    if (!row.email) return { ok: false, error: 'esta persona no tiene correo — captúralo y guarda antes de invitar' }
+
+    const admin = createAdminClient()
+    const { data: invitado, error: eInvite } = await admin.auth.admin.inviteUserByEmail(row.email)
+    if (eInvite) {
+      const yaExiste =
+        eInvite.status === 422 || /already|registered|exists/i.test(eInvite.message ?? '')
+      if (yaExiste) {
+        return { ok: true, aviso: `${row.email} ya tiene cuenta en Auth — no hizo falta invitar (si olvidó su contraseña, que use "¿olvidaste tu contraseña?" en el login)` }
+      }
+      return { ok: false, error: `no se pudo enviar la invitación: ${eInvite.message}` }
+    }
+    // liga el vínculo si estaba vacío (misma lógica del alta; sesión de dirección)
+    if (invitado?.user?.id && !row.auth_user_id) {
+      await supabase.from('personas').update({ auth_user_id: invitado.user.id }).eq('id', input.id)
+    }
+    return { ok: true, aviso: `invitación reenviada a ${row.email}` }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
   }

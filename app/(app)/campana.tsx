@@ -7,15 +7,26 @@
 // - realtime: canal notif-<nombre> filtrado para=eq.<nombre> (paridad SPA).
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   type ClienteRealtime, type Notificacion,
   configurarCanalNotificaciones, iconoNotif, mapNotifRow, tiempoRelativo,
 } from '@/lib/notificaciones'
 
+// Aviso del navegador (paridad SPA mostrarNotifSO): solo si hay permiso y la
+// pestaña NO tiene el foco — con la app enfrente basta la campana.
+function notifSistema(n: Notificacion) {
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+  if (typeof document !== 'undefined' && document.hasFocus()) return
+  try { new Notification(n.titulo, { body: n.detalle ?? '' }) } catch { /* best-effort */ }
+}
+
 export default function Campana({ nombre }: { nombre: string }) {
+  const router = useRouter()
   const [notifs, setNotifs] = useState<Notificacion[]>([])
   const [abierto, setAbierto] = useState(false)
+  const [permisoSO, setPermisoSO] = useState<'default' | 'granted' | 'denied' | 'no'>('no')
   const canalRef = useRef<unknown>(null)
 
   const recargar = useCallback(async () => {
@@ -33,13 +44,20 @@ export default function Campana({ nombre }: { nombre: string }) {
     const sb = createClient()
     // el cliente real satisface la interfaz en runtime; los overloads de TS
     // del SDK no unifican con el subconjunto estructural testeable
-    canalRef.current = configurarCanalNotificaciones(sb as unknown as ClienteRealtime, nombre, (n) =>
-      setNotifs((prev) => [n, ...prev]),
-    )
+    canalRef.current = configurarCanalNotificaciones(sb as unknown as ClienteRealtime, nombre, (n) => {
+      setNotifs((prev) => [n, ...prev])
+      notifSistema(n) // aviso del navegador si la pestaña está en segundo plano
+    })
     return () => {
       if (canalRef.current) sb.removeChannel(canalRef.current as Parameters<typeof sb.removeChannel>[0])
     }
   }, [nombre, recargar])
+
+  // estado del permiso de avisos del navegador (solo en cliente, post-mount)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPermisoSO(typeof Notification === 'undefined' ? 'no' : Notification.permission)
+  }, [])
 
   const sinVer = notifs.filter((n) => !n.vista).length
 
@@ -85,10 +103,18 @@ export default function Campana({ nombre }: { nombre: string }) {
 
       {abierto && (
         <div data-testid="panel-notif"
-          className="absolute right-0 top-10 z-50 w-96 border border-neutral-700 bg-neutral-900 shadow-xl">
+          className="absolute right-0 top-10 z-50 w-[min(24rem,calc(100vw-2rem))] border border-neutral-700 bg-neutral-900 shadow-xl">
           <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-2">
             <strong className="text-xs">notificaciones</strong>
             <div className="flex items-center gap-2">
+              {permisoSO === 'default' && (
+                <button data-testid="btn-avisos-navegador"
+                  onClick={async () => setPermisoSO(await Notification.requestPermission())}
+                  title="recibe un aviso del navegador cuando llegue algo y no tengas la app enfrente"
+                  className="font-mono text-[10px] text-neutral-400 hover:text-movdi-amarillo">
+                  🔔 activar avisos
+                </button>
+              )}
               {sinVer > 0 && (
                 <button onClick={marcarTodas} data-testid="btn-marcar-todas"
                   className="font-mono text-[10px] text-neutral-400 hover:text-neutral-200">
@@ -110,7 +136,15 @@ export default function Campana({ nombre }: { nombre: string }) {
             )}
             {notifs.map((n) => (
               <div key={n.id} data-testid="notif-item"
-                onClick={() => marcarVista(n)}
+                onClick={() => {
+                  void marcarVista(n)
+                  // si la notificación trae petición, lleva directo a ella
+                  // (auditoría 2026-07-20: peticionId se guardaba sin usarse)
+                  if (n.peticionId) {
+                    setAbierto(false)
+                    router.push(`/peticiones?pet=${n.peticionId}`)
+                  }
+                }}
                 className={`group flex cursor-pointer items-start gap-2 border-b border-neutral-800/60 px-3 py-2.5 hover:bg-neutral-800/40 ${n.vista ? 'opacity-60' : ''}`}>
                 <span className="text-sm">{iconoNotif(n.tipo)}</span>
                 <div className="min-w-0 flex-1">
@@ -122,7 +156,7 @@ export default function Campana({ nombre }: { nombre: string }) {
                 <button
                   onClick={(e) => { e.stopPropagation(); void borrar(n.id) }}
                   data-testid="btn-borrar-notif"
-                  className="text-neutral-600 opacity-0 hover:text-movdi-naranja group-hover:opacity-100">
+                  className="text-neutral-600 hover:text-movdi-naranja sm:opacity-0 sm:group-hover:opacity-100">
                   ✕
                 </button>
               </div>

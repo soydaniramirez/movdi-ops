@@ -1,6 +1,7 @@
 -- ============================================================
--- ⏳ SIN APLICAR — requiere OK explícito (regla CLAUDE.md: mostrar SQL/diff
---    y esperar visto bueno antes de un cambio de seguridad/RLS).
+-- ✅ APLICADA (2026-07-20) — verificada contra la BD viva el 2026-07-20:
+--    las 4 policies (peticiones_select, recurrentes_select/update/delete)
+--    coinciden exactamente con esta versión (auditoría).
 -- ============================================================
 -- FASE 2 — RLS de "jefa directa" (2026-07-20)
 --

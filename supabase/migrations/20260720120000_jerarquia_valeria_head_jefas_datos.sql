@@ -1,6 +1,9 @@
 -- ============================================================
--- ⏳ SIN APLICAR — requiere OK explícito (regla CLAUDE.md: mostrar SQL/diff
---    y esperar visto bueno antes de tocar la base).
+-- ✅ APLICADA (2026-07-20) — verificada contra la BD viva el 2026-07-20:
+--    aparece en el registro de migraciones del proyecto y las policies/datos
+--    coinciden (auditoría). Nota: Fátima y Antonio fueron editados DESPUÉS
+--    a mano/por UI (Fátima: principal=Gloria; Antonio: Dani de vuelta en
+--    apoyo) — ver CLAUDE.md.
 -- ============================================================
 -- FASE 1 — DATOS de jerarquía (2026-07-20)
 --
