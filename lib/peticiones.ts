@@ -72,6 +72,19 @@ export const AREAS_LABEL: Record<string, string> = {
   ventas: 'Ventas', digital: 'Digital', rh: 'RH', heads: 'Heads',
 }
 
+// Color por área (clases de borde + texto). Fuente ÚNICA, reutilizada en el
+// tablero de peticiones y en el organigrama.
+export const AREA_COLOR: Record<string, string> = {
+  imkt: 'border-pink-400/40 text-pink-300',
+  pm: 'border-sky-400/40 text-sky-300',
+  legal: 'border-violet-400/40 text-violet-300',
+  admi: 'border-teal-400/40 text-teal-300',
+  ventas: 'border-lime-400/40 text-lime-300',
+  digital: 'border-cyan-400/40 text-cyan-300',
+  rh: 'border-rose-400/40 text-rose-300',
+  heads: 'border-movdi-amarillo/40 text-movdi-amarillo',
+}
+
 export const MODOS_ASIGNACION = ['una', 'varias', 'area', 'heads', 'ejecutivos', 'todos'] as const
 export type ModoAsignacion = (typeof MODOS_ASIGNACION)[number]
 export const MODOS_ADMIN: ModoAsignacion[] = ['heads', 'ejecutivos', 'todos']
