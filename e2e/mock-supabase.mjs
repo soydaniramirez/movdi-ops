@@ -359,12 +359,40 @@ const server = http.createServer(async (req, res) => {
     const yo = requester(req)
     const prefer = req.headers.prefer || ''
     const wantsObject = (req.headers.accept || '').includes('vnd.pgrst.object')
+    // Paridad PostgREST: order=col.asc|desc(,col2...) + offset/limit por query
+    // param, y tope max-rows=1000 POR RESPUESTA (default de Supabase). El tope
+    // se simula para que las pruebas de paginación (lib/supabase/select-todo)
+    // detecten de verdad un select sin paginar contra >1000 filas.
+    const MAX_FILAS = 1000
+    const ordenarYRecortar = (rows) => {
+      let out = [...rows]
+      const orden = url.searchParams.get('order')
+      if (orden) {
+        const claves = orden.split(',').map((o) => {
+          const [col, ...mods] = o.split('.')
+          return { col, asc: !mods.includes('desc') }
+        })
+        out.sort((a, b) => {
+          for (const { col, asc } of claves) {
+            const va = a[col] ?? ''
+            const vb = b[col] ?? ''
+            if (va < vb) return asc ? -1 : 1
+            if (va > vb) return asc ? 1 : -1
+          }
+          return 0
+        })
+      }
+      const offset = Number(url.searchParams.get('offset') ?? 0)
+      const limitParam = url.searchParams.get('limit')
+      const limite = limitParam === null ? MAX_FILAS : Math.min(Number(limitParam), MAX_FILAS)
+      return out.slice(offset, offset + limite)
+    }
     const representar = (rows) => {
       if (wantsObject) {
         if (rows.length === 1) return json(200, rows[0])
         return json(406, { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned', details: `${rows.length} rows`, hint: null })
       }
-      return json(200, rows)
+      return json(200, ordenarYRecortar(rows))
     }
 
     // service_role (helper de notificaciones del servidor): sin RLS, pero el

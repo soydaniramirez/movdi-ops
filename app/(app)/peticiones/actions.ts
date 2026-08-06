@@ -10,6 +10,7 @@
 // - creado_por NUNCA viene del cliente: se deriva de la sesión.
 
 import { createClient } from '@/lib/supabase/server'
+import { selectTodo } from '@/lib/supabase/select-todo'
 import { notificarServidor } from '@/lib/supabase/notificar'
 import { MSG_CUENTA_SIN_VINCULO, asegurarVinculoAuth } from '@/lib/supabase/vinculo'
 import {
@@ -586,12 +587,14 @@ export async function ocultarEntregadas(input: {
 }): Promise<Resultado<{ ocultadas: number }>> {
   try {
     const { supabase, yo } = await getContexto()
-    const { data: rows, error } = await supabase
-      .from('peticiones').select('*').eq('estatus', 'entregado')
+    const { data: rows, error } = await selectTodo(
+      () => supabase.from('peticiones').select('*').eq('estatus', 'entregado'), [{ col: 'fecha' }])
     if (error) return { ok: false, error: error.message }
 
-    let candidatas = (rows ?? []).filter((r) => !(r.oculta_para ?? []).includes(yo.nombre))
-    if (input.scope === 'pedi') candidatas = candidatas.filter((r) => r.creado_por === yo.nombre)
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    let candidatas = ((rows ?? []) as any[]).filter((r) => !(r.oculta_para ?? []).includes(yo.nombre))
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    if (input.scope === 'pedi') candidatas = candidatas.filter((r) => matchNombre(r.creado_por, yo.nombre))
     else if (input.scope === 'general') candidatas = candidatas.filter((r) => r.zona === 'general' && !r.privada)
     else candidatas = candidatas.filter((r) => matchNombre(r.para, yo.nombre))
 

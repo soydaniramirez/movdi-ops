@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { selectTodo } from '@/lib/supabase/select-todo'
 import { mapPersonaConManagers } from '@/lib/equipo'
 import { mapPeticionRow } from '@/lib/peticiones'
 import { mapEstrellaRow } from '@/lib/estrellas'
@@ -26,8 +27,8 @@ export default async function ProgresoPage() {
   // la card pinta este valor desde el primer frame: sin flash de "0 XP" y
   // sin desincronía con la barra del header ni un instante.
   const [pets, ests] = await Promise.all([
-    supabase.from('peticiones').select('*'),
-    supabase.from('estrellas_colaboracion').select('*'),
+    selectTodo(() => supabase.from('peticiones').select('*'), [{ col: 'fecha' }]),
+    selectTodo(() => supabase.from('estrellas_colaboracion').select('*'), [{ col: 'creada_en' }]),
   ])
   const gameInicial = calcularGamePersona(
     row.nombre,

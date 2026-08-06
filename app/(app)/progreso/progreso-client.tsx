@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { selectTodo } from '@/lib/supabase/select-todo'
 import { type Peticion, mapPeticionRow, mapPersonaRow, matchNombre, type Persona, tengoSupervisadas } from '@/lib/peticiones'
 import { type Recurrente, mapRecurRow } from '@/lib/recurrentes'
 import { type Estrella, mapEstrellaRow } from '@/lib/estrellas'
@@ -52,9 +53,10 @@ export default function ProgresoClient({ yo, gameInicial }: { yo: PersonaConMana
     const sb = createClient()
     const [pers, pets, recs, est, rec, hist] = await Promise.all([
       sb.from('personas').select('*'),
-      sb.from('peticiones').select('*'),
+      // paginado: sin esto el XP/leaderboard se calcula con datos truncados
+      selectTodo(() => sb.from('peticiones').select('*'), [{ col: 'fecha' }]),
       sb.from('recurrentes').select('*'),
-      sb.from('estrellas_colaboracion').select('*'),
+      selectTodo(() => sb.from('estrellas_colaboracion').select('*'), [{ col: 'creada_en' }]),
       sb.from('recompensas').select('*').order('nivel'),
       sb.from('historial_mensual').select('*').order('mes', { ascending: false }),
     ])

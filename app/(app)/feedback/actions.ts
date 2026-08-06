@@ -11,6 +11,7 @@
 // - Cero XP por enviar (anti-farmeo): enviar no suma nada.
 
 import { createClient } from '@/lib/supabase/server'
+import { selectTodo } from '@/lib/supabase/select-todo'
 import { mapPersonaRow, matchNombre } from '@/lib/peticiones'
 import { esDireccion } from '@/lib/equipo'
 import { mapEstrellaRow, puedoDarEstrella, semanaActual, MAX_MOTIVO } from '@/lib/estrellas'
@@ -78,9 +79,9 @@ export async function enviarFeedback(input: {
     let estrella = false
     if (input.categoria === 'reconocimiento' && destinatarioNombre && !input.esAnonimo) {
       const sem = semanaActual()
-      const { data: estRows } = await supabase
+      const { data: estRows } = await selectTodo(() => supabase
         .from('estrellas_colaboracion').select('*')
-        .eq('de_persona', yo.nombre).eq('semana', sem)
+        .eq('de_persona', yo.nombre).eq('semana', sem))
       const check = puedoDarEstrella({
         yo: yo.nombre,
         para: destinatarioNombre,
