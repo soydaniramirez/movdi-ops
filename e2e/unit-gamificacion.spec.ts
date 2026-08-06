@@ -6,7 +6,8 @@ import {
   LOGROS, type StatsLogros,
   calcularCumplimiento, calcularGamePersona, calcularLeaderboardMes, calcularLogros,
   calcularMejorRacha, calcularRachaActual, calcularReporteCierre, calcularStatsPersona,
-  calcularXPMes, competeEnLeaderboard, estadoPuntualidad, nivelDesdeXP,
+  calcularXPMes, competeEnLeaderboard, estadoPuntualidad, mesVecino, nivelDesdeXP,
+  nombreMesLargo,
 } from '../lib/gamificacion'
 
 // Tests unitarios puros con fechas fijas — las fórmulas EXACTAS del SPA.
@@ -141,6 +142,25 @@ test('leaderboard: exclusiones (ceo, rh, Salvador, Arylene) y orden % desc → e
   const lb = calcularLeaderboardMes({ mes: '2026-06', personas, peticiones, hoy: '2026-06-20' })
   expect(lb.ranking.map((r) => r.persona.nombre)).toEqual(['Beto', 'Ana', 'Caro'])
   expect(lb.ranking[2].porcentaje).toBe(50)
+})
+
+test('navegación de meses: etiqueta en español y aritmética de vecinos (cruce de año)', () => {
+  expect(nombreMesLargo('2026-07')).toBe('Julio 2026')
+  expect(nombreMesLargo('2026-12')).toBe('Diciembre 2026')
+  expect(mesVecino('2026-08', -1)).toBe('2026-07')
+  expect(mesVecino('2026-01', -1)).toBe('2025-12')
+  expect(mesVecino('2025-12', 1)).toBe('2026-01')
+})
+
+test('leaderboard de mes pasado: con hoy = 1º del mes siguiente, las vencidas posteriores no contaminan', () => {
+  const personas = [per({ nombre: 'Ana' })]
+  const peticiones = [
+    pet({ para: 'Ana', estatus: 'entregado', fecha: '2026-07-10' }),
+    // vencida de AGOSTO: con el corte al fin de julio no pesa en julio
+    pet({ para: 'Ana', estatus: 'pendiente', fecha: '2026-08-03' }),
+  ]
+  const lb = calcularLeaderboardMes({ mes: '2026-07', personas, peticiones, hoy: '2026-08-01' })
+  expect(lb.ranking[0].porcentaje).toBe(100)
 })
 
 test('reporte de cierre: solo con actividad, orden por XP, recompensa del nivel alcanzado', () => {

@@ -101,6 +101,22 @@ export const mesAnteriorStr = () => {
   return new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1).toISOString().slice(0, 7)
 }
 
+// ---------- navegación de meses (leaderboard) ----------
+// Nombres en español fijos (sin depender del locale del navegador): la
+// etiqueta es la que sale en el screenshot del cierre para el equipo.
+const MESES_ES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+export function nombreMesLargo(mes: string) {
+  const [y, m] = mes.split('-').map(Number)
+  return `${MESES_ES[m - 1] ?? mes} ${y}`
+}
+// 'YYYY-MM' ± delta meses, con aritmética local (toISOString correría el
+// mes en UTC negativo).
+export function mesVecino(mes: string, delta: number) {
+  const [y, m] = mes.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 // XP — fórmula 4.13 (rebalanceo aprobado 2026-07-05, pesa CALIDAD; calibrada
 // contra el histórico real de junio). ÚNICA fuente para XP del mes, cierre,
 // barra del header y preview de cierre:
