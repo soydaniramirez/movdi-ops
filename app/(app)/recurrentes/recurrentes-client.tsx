@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { selectTodo } from '@/lib/supabase/select-todo'
 import {
   AREAS_LABEL, AREAS_VALIDAS, type ModoAsignacion, type Persona, type Peticion,
   destinatariosPorModo, dx, fechaCorta, isAdmin, labelFecha,
-  mapPeticionRow, mapPersonaRow, personaDisponible, supervisadasDe,
+  mapPeticionRow, mapPersonaRow, matchNombre, personaDisponible, supervisadasDe,
 } from '@/lib/peticiones'
 import {
   type Instancia, type Recurrente, esCreadorRecurrentePrivilegiado, etiquetaFrecuencia, mapRecurRow,
@@ -40,7 +41,7 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
     const [pers, recs, pets] = await Promise.all([
       sb.from('personas').select('*'),
       sb.from('recurrentes').select('*'),
-      sb.from('peticiones').select('*').order('fecha'),
+      selectTodo(() => sb.from('peticiones').select('*'), [{ col: 'fecha' }]),
     ])
     if (!pers.error) setPersonas((pers.data ?? []).map(mapPersonaRow))
     if (!recs.error) setRecurrentes((recs.data ?? []).map(mapRecurRow))
@@ -94,7 +95,7 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
     [yo, personas],
   )
   const administraPatron = useCallback(
-    (r: Recurrente) => r.creadoPor === yo.nombre || dir || nombresSupervisadas.has(r.para),
+    (r: Recurrente) => matchNombre(r.creadoPor, yo.nombre) || dir || nombresSupervisadas.has(r.para),
     [yo, dir, nombresSupervisadas],
   )
 

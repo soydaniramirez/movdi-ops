@@ -6,6 +6,7 @@
 // el cliente no manda cifras.
 
 import { createClient } from '@/lib/supabase/server'
+import { selectTodo } from '@/lib/supabase/select-todo'
 import { mapPersonaRow, mapPeticionRow } from '@/lib/peticiones'
 import { mapEstrellaRow } from '@/lib/estrellas'
 import { esDireccion } from '@/lib/equipo'
@@ -30,10 +31,12 @@ export async function cerrarMes(): Promise<Resultado<{ mes: string; filas: numbe
 
     const mesAnt = mesAnteriorStr()
 
+    // paginado OBLIGATORIO: el cierre de julio 2026 se corrió con el
+    // select('*') truncado a 1000 filas y archivó números incompletos
     const [pers, pets, est, rec, hist] = await Promise.all([
       supabase.from('personas').select('*'),
-      supabase.from('peticiones').select('*'),
-      supabase.from('estrellas_colaboracion').select('*'),
+      selectTodo(() => supabase.from('peticiones').select('*'), [{ col: 'fecha' }]),
+      selectTodo(() => supabase.from('estrellas_colaboracion').select('*'), [{ col: 'creada_en' }]),
       supabase.from('recompensas').select('*'),
       supabase.from('historial_mensual').select('*'),
     ])

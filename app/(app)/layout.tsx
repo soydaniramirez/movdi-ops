@@ -5,6 +5,7 @@ import { veOrganigrama } from '@/lib/equipo'
 import { mapEstrellaRow } from '@/lib/estrellas'
 import { calcularGamePersona, mesActualStr } from '@/lib/gamificacion'
 import { asegurarVinculoAuth } from '@/lib/supabase/vinculo'
+import { selectTodo } from '@/lib/supabase/select-todo'
 import Campana from './campana'
 
 // Barra superior compartida de las rutas protegidas: navegación + XP global
@@ -31,8 +32,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   let game: ReturnType<typeof calcularGamePersona> | null = null
   if (persona) {
     const [pets, ests] = await Promise.all([
-      supabase.from('peticiones').select('*'),
-      supabase.from('estrellas_colaboracion').select('*'),
+      selectTodo(() => supabase.from('peticiones').select('*'), [{ col: 'fecha' }]),
+      selectTodo(() => supabase.from('estrellas_colaboracion').select('*'), [{ col: 'creada_en' }]),
     ])
     game = calcularGamePersona(
       persona.nombre,

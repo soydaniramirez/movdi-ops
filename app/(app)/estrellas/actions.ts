@@ -6,6 +6,7 @@
 // Notifica al receptor desde el servidor (paridad SPA, anti-spoof).
 
 import { createClient } from '@/lib/supabase/server'
+import { selectTodo } from '@/lib/supabase/select-todo'
 import { notificarServidor } from '@/lib/supabase/notificar'
 import { mapPersonaRow, matchNombre } from '@/lib/peticiones'
 import { MAX_MOTIVO, mapEstrellaRow, puedoDarEstrella, semanaActual } from '@/lib/estrellas'
@@ -35,9 +36,9 @@ export async function darEstrella(input: { para: string; motivo: string }): Prom
 
     // reglas de la semana con datos frescos del servidor
     const sem = semanaActual()
-    const { data: estRows } = await supabase
+    const { data: estRows } = await selectTodo(() => supabase
       .from('estrellas_colaboracion').select('*')
-      .eq('de_persona', yo.nombre).eq('semana', sem)
+      .eq('de_persona', yo.nombre).eq('semana', sem))
     const check = puedoDarEstrella({
       yo: yo.nombre,
       para: destinatario.nombre,

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { selectTodo } from '@/lib/supabase/select-todo'
 import { type Persona, mapPersonaRow, personaDisponible } from '@/lib/peticiones'
 import { tiempoRelativo } from '@/lib/notificaciones'
 import {
@@ -25,7 +26,7 @@ export default function EstrellasClient({ yo }: { yo: Persona }) {
     const [est, pers] = await Promise.all([
       // Fase 4.8: estrellas_select (cutover) devuelve solo aquellas donde
       // participo (di o recibí); el flag ve_gamificacion_completa ve todas.
-      sb.from('estrellas_colaboracion').select('*').order('creada_en', { ascending: false }),
+      selectTodo(() => sb.from('estrellas_colaboracion').select('*'), [{ col: 'creada_en', asc: false }]),
       sb.from('personas').select('*'),
     ])
     if (!est.error) setEstrellas((est.data ?? []).map(mapEstrellaRow))

@@ -29,6 +29,47 @@ test.beforeEach(async () => {
 })
 
 // ------------------------------------------------------------
+// Regresión 2026-08-06: PostgREST corta cada respuesta en 1000 filas y un
+// select('*') sin paginar truncaba EN SILENCIO — peticiones recientes (las
+// de fecha más lejana, al final del orden) desaparecían de "lo que pedí".
+// El mock simula el tope; sin lib/supabase/select-todo este test falla.
+test('paginación >1000 filas: una petición más allá del tope sigue apareciendo en "lo que pedí"', async ({ page }) => {
+  const r = await fetch(`${MOCK}/auth/v1/token?grant_type=password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'dani@movdi.mx', password: PASS }),
+  })
+  const tk = ((await r.json()) as { access_token: string }).access_token
+  // 1009 filas de relleno entregadas y ocultas para Dani (no ensucian el DOM)
+  // + 1 pendiente con la fecha MÁS LEJANA: queda al final del orden por fecha,
+  // más allá de la primera página de 1000.
+  const f = (i: number) => new Date(Date.UTC(2026, 8, 1 + i)).toISOString().slice(0, 10)
+  const lote = Array.from({ length: 1009 }, (_, i) => ({
+    zona: 'general', nombre: `relleno paginación ${i}`, creado_por: 'Dani', para: 'Antonio',
+    area: 'pm', fecha: f(i), prioridad: 'baja', estatus: 'entregado', privada: false,
+    oculta_para: ['Dani'],
+  }))
+  lote.push({
+    zona: 'general', nombre: 'aguja más allá del tope', creado_por: 'Dani', para: 'Antonio',
+    area: 'pm', fecha: f(1200), prioridad: 'alta', estatus: 'pendiente', privada: false,
+    oculta_para: [],
+  })
+  await fetch(`${MOCK}/rest/v1/peticiones`, {
+    method: 'POST', headers: { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(lote),
+  })
+  // sanity del mock: una página del API se corta en 1000 (paridad PostgREST)
+  const pagina = await fetch(`${MOCK}/rest/v1/peticiones?select=*&order=fecha.asc`, {
+    headers: { Authorization: `Bearer ${tk}` },
+  })
+  expect(((await pagina.json()) as unknown[]).length).toBe(1000)
+
+  await login(page, 'dani@movdi.mx')
+  await irAPeticiones(page)
+  await page.getByRole('button', { name: 'lo que pedí' }).click()
+  await expect(page.getByText('aguja más allá del tope')).toBeVisible()
+})
+
+// ------------------------------------------------------------
 test('gating de modos: ejecutivo NO ve los modos admin-only; ceo sí', async ({ page, browser }) => {
   await login(page, 'antonio@movdi.mx')
   await irAPeticiones(page)

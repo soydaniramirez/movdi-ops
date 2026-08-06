@@ -5,6 +5,7 @@
 // personas_modify_admin). Datos derivados en servidor, nunca del cliente.
 
 import { createClient } from '@/lib/supabase/server'
+import { selectTodo } from '@/lib/supabase/select-todo'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AREAS_VALIDAS, mapPersonaRow, matchNombre, personaDisponible } from '@/lib/peticiones'
 import { esDireccion } from '@/lib/equipo'
@@ -251,7 +252,7 @@ export async function desactivarConReasignacion(input: {
     // pre-validaciones de UX (la RPC re-valida todo dentro de la transacción)
     const [{ data: persRows }, { data: petRows }, { data: recRows }] = await Promise.all([
       supabase.from('personas').select('*'),
-      supabase.from('peticiones').select('*'),
+      selectTodo(() => supabase.from('peticiones').select('*'), [{ col: 'fecha' }]),
       supabase.from('recurrentes').select('*'),
     ])
     const personas = (persRows ?? []).map(mapPersonaRow)
@@ -259,7 +260,7 @@ export async function desactivarConReasignacion(input: {
     if (!persona) return { ok: false, error: 'persona no encontrada' }
 
     const nPet = (petRows ?? []).filter(
-      (t) => matchNombre(t.para, persona.nombre) && t.estatus !== 'entregado').length
+      (t) => matchNombre(t.para as string | null, persona.nombre) && t.estatus !== 'entregado').length
     const nRec = (recRows ?? []).filter(
       (r) => matchNombre(r.para, persona.nombre) && r.activa !== false).length
     if (nPet > 0 && !input.reasignPeticionesA) {

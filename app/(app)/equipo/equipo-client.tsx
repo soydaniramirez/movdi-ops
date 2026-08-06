@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { selectTodo } from '@/lib/supabase/select-todo'
 import {
   AREAS_LABEL, AREAS_VALIDAS, type Peticion,
   dx, estaPausada, mapPeticionRow, matchNombre,
@@ -66,7 +67,7 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
     const sb = createClient()
     const [pers, pets, recs] = await Promise.all([
       sb.from('personas').select('*').order('nivel'),
-      sb.from('peticiones').select('*'),
+      selectTodo(() => sb.from('peticiones').select('*'), [{ col: 'fecha' }]),
       sb.from('recurrentes').select('*'),
     ])
     if (!pers.error) setPersonas((pers.data ?? []).map(mapPersonaConManagers))
@@ -94,7 +95,7 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
   // estado de semáforo por persona (para pintar el nombre)
   const estadoSemaforo = useMemo(() => {
     const visiblesParaSem = peticiones.filter(
-      (t) => !t.privada || t.creadoPor === yo.nombre || matchNombre(t.para, yo.nombre))
+      (t) => !t.privada || matchNombre(t.creadoPor, yo.nombre) || matchNombre(t.para, yo.nombre))
     return Object.fromEntries(visibles.map((p) => [
       p.id,
       calcularSemaforo(p, visiblesParaSem,
@@ -141,7 +142,7 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
       items: g.personas
         .map((p) => calcularSemaforo(
           p,
-          peticiones.filter((t) => !t.privada || t.creadoPor === yo.nombre || matchNombre(t.para, yo.nombre)),
+          peticiones.filter((t) => !t.privada || matchNombre(t.creadoPor, yo.nombre) || matchNombre(t.para, yo.nombre)),
           obtenerInstanciasRecur({ recurrentes, peticiones, personas, nombre: p.nombre }),
         ))
         .sort(ordenSemaforo),

@@ -304,7 +304,7 @@ export const matchNombre = (a: string | null, b: string | null) =>
 
 export function puedoVerPeticion(t: Peticion, yo: Persona) {
   if (!t.privada) return true
-  if (t.creadoPor === yo.nombre) return true
+  if (matchNombre(t.creadoPor, yo.nombre)) return true
   if (matchNombre(t.para, yo.nombre)) return true
   return false
 }

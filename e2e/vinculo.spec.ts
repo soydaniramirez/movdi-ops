@@ -83,7 +83,9 @@ test('crear sin vínculo y sin autocuración posible: error claro, no el crudo d
   await fallarUnaVez('personas', 'PATCH')
   await page.getByTestId('btn-crear-confirmar').click()
 
-  await expect(page.getByRole('alert').filter({ hasText: 'no está terminada de configurar' })).toBeVisible()
+  // el mismo error se muestra en el aviso de página Y en el del modal
+  // (ambos role=alert): .first() desambigua el strict mode de Playwright
+  await expect(page.getByRole('alert').filter({ hasText: 'no está terminada de configurar' }).first()).toBeVisible()
   const st = await estado()
   expect(st.peticiones.find((x) => x.nombre === 'petición condenada')).toBeFalsy()
 })

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { selectTodo } from '@/lib/supabase/select-todo'
 import {
   AREAS_LABEL, AREAS_VALIDAS, AREA_COLOR, ORIGENES_VALIDOS, type ModoAsignacion,
   type Persona, type Peticion,
@@ -91,7 +92,8 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
     const sb = createClient()
     const [pers, pets, recs, hist, clis] = await Promise.all([
       sb.from('personas').select('*').order('nivel'),
-      sb.from('peticiones').select('*').order('fecha'),
+      // paginado: peticiones ya rebasa las 1000 filas (tope por respuesta)
+      selectTodo(() => sb.from('peticiones').select('*'), [{ col: 'fecha' }]),
       sb.from('recurrentes').select('*'),
       sb.from('historial_mensual').select('*'),
       sb.from('clientes').select('*').order('nombre'),
@@ -152,7 +154,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
     if (tab === 'recur') l = l.filter((t) => t.origenRecur)
     else l = l.filter((t) => !t.origenRecur)
     if (tab === 'mis') l = l.filter((t) => matchNombre(t.para, yo.nombre))
-    if (tab === 'pedi') l = l.filter((t) => t.creadoPor === yo.nombre)
+    if (tab === 'pedi') l = l.filter((t) => matchNombre(t.creadoPor, yo.nombre))
     if (tab === 'general' && personaFiltro) l = l.filter((t) => matchNombre(t.para, personaFiltro))
     if (filtro === 'vencidas') l = l.filter((t) => diasHasta(t.fecha) < 0 && t.estatus !== 'entregado')
     else if (filtro === 'semana') l = l.filter((t) => { const d = diasHasta(t.fecha); return d >= 0 && d <= 7 && t.estatus !== 'entregado' })
@@ -175,7 +177,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
   const bloques = useMemo(() => {
     if (tab !== 'general') return []
     const visiblesParaSem = peticiones.filter(
-      (t) => !t.privada || t.creadoPor === yo.nombre || matchNombre(t.para, yo.nombre),
+      (t) => !t.privada || matchNombre(t.creadoPor, yo.nombre) || matchNombre(t.para, yo.nombre),
     )
     return bloquesEquipo(yo, personas).map((g) => ({
       titulo: g.titulo,
@@ -640,7 +642,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
       {modalFecha && (
         <ModalCambioFecha
           t={modalFecha}
-          soyCreador={modalFecha.creadoPor === yo.nombre}
+          soyCreador={matchNombre(modalFecha.creadoPor, yo.nombre)}
           onCerrar={() => setModalFecha(null)}
           onConfirmar={async (nuevaFecha, motivo, justificada) => {
             const ok = await accion(() =>
@@ -766,7 +768,7 @@ function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEst
   onOcultar: () => void
   onDesocultar: () => void
 }) {
-  const soyCreador = t.creadoPor === yo.nombre
+  const soyCreador = matchNombre(t.creadoPor, yo.nombre)
   const soyDest = matchNombre(t.para, yo.nombre)
   const puedoActuar = soyCreador || soyDest
   const lf = labelFecha(t)

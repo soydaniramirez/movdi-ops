@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { selectTodo } from '@/lib/supabase/select-todo'
 import { mapPeticionRow, mapPersonaRow } from '@/lib/peticiones'
 import { esDireccion } from '@/lib/equipo'
 import RhLista from './rh-lista'
@@ -21,8 +22,8 @@ export default async function PanelRHPage() {
 
   // Peticiones del área RH (las privadas siguen filtradas por RLS:
   // solo creador/destinatario las reciben, ni siquiera aquí)
-  const { data: petRows } = await supabase
-    .from('peticiones').select('*').eq('area', 'rh').order('fecha')
+  const { data: petRows } = await selectTodo(
+    () => supabase.from('peticiones').select('*').eq('area', 'rh'), [{ col: 'fecha' }])
   const peticiones = (petRows ?? []).map(mapPeticionRow)
 
   return (
