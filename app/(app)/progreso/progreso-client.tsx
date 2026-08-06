@@ -10,7 +10,7 @@ import {
   type HistorialMes, type Recompensa,
   calcularCumplimiento, calcularGamePersona, calcularLeaderboardMes, calcularLogros,
   calcularReconocimientosMes, calcularReporteCierre, mapHistorialRow, mapRecompensaRow,
-  mesAnteriorStr, mesCerrado,
+  mesAnteriorStr, mesCerrado, mesVecino, nombreMesLargo,
 } from '@/lib/gamificacion'
 import { type Feedback, mapFeedbackRow } from '@/lib/feedback'
 import { cerrarMes, guardarRecompensa, marcarRecompensaEntregada } from './actions'
@@ -108,11 +108,44 @@ export default function ProgresoClient({ yo, gameInicial }: { yo: PersonaConMana
     reconocimientosRecibidos: feedbackRows.filter((f) => f.categoria === 'reconocimiento' && f.destinatarioId === yo.id).length,
   }), [yo, peticiones, estrellas, historial, podios, recurrentes, feedbackRows])
 
-  // leaderboard: dirección/todos · head no-dirección: solo su equipo (paridad)
+  // navegación de meses del leaderboard: arranca en el mes actual; ‹ hasta
+  // el mes más antiguo con datos; › nunca a futuro (deshabilitada en el
+  // actual). null = mes actual (sigue el cambio de mes solo).
+  const [mesLbSel, setMesLbSel] = useState<string | null>(null)
+  const mesLb = mesLbSel ?? mes
+  const esMesLbActual = mesLb === mes
+  const mesLbMin = useMemo(() => {
+    // piso: el mes cerrado más antiguo que puedo ver; sin cierres aún, el
+    // mes más antiguo con peticiones (vista preliminar)
+    const deHistorial = historial.map((h) => h.mes)
+    const dePeticiones = peticiones.map((t) => t.fecha.slice(0, 7))
+    const candidatos = (deHistorial.length ? deHistorial : dePeticiones).filter((m) => m <= mes)
+    return candidatos.length ? candidatos.reduce((a, b) => (a < b ? a : b)) : mes
+  }, [historial, peticiones, mes])
+
+  // mes pasado cerrado + archivo completo legible (veTodo — la RLS de
+  // historial_mensual no entrega filas ajenas a heads/jefas) → ranking
+  // CONGELADO tal como cerró, ordenado por XP (el orden oficial del
+  // podio/recompensas). Los valores archivados jamás se recalculan.
+  const lbCerradoOficial = !esMesLbActual && veTodo && mesCerrado(historial, mesLb)
+  const lbCierre = useMemo(() => {
+    if (!lbCerradoOficial) return []
+    return historial
+      .filter((h) => h.mes === mesLb)
+      .sort((a, b) => b.xpTotal - a.xpTotal)
+      .map((h) => ({ ...h, apellido: personas.find((p) => matchNombre(p.nombre, h.persona))?.apellido ?? '' }))
+  }, [lbCerradoOficial, historial, mesLb, personas])
+
+  // leaderboard en vivo: dirección/todos · head no-dirección: solo su equipo
+  // (paridad). En meses pasados sin cierre visible, el corte de vencidas se
+  // hace al fin de ese mes (no hoy) para no mezclar vencidas actuales.
   const lb = useMemo(() => calcularLeaderboardMes({
-    mes, personas, peticiones,
+    mes: mesLb, personas, peticiones,
     soloEquipo: veEquipo ? yo.nombre : undefined,
-  }), [mes, personas, peticiones, yo, veEquipo])
+    hoy: esMesLbActual ? undefined : mesVecino(mesLb, 1) + '-01',
+  }), [mesLb, esMesLbActual, personas, peticiones, yo, veEquipo])
+  // reconocimientos (⚡🎯🔥): solo del mes en vivo — dependen de rachas
+  // actuales que no tienen sentido histórico
   const recos = useMemo(() => calcularReconocimientosMes({ mes, personas, peticiones }), [mes, personas, peticiones])
 
   // mi ritmo: cumplimiento de MIS recurrentes activas (paridad renderMiRitmo)
@@ -264,11 +297,56 @@ export default function ProgresoClient({ yo, gameInicial }: { yo: PersonaConMana
         {(veTodo || veEquipo) && (
           <section data-testid="leaderboard">
             <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">
-              🏆 leaderboard del equipo {veEquipo && !veTodo ? '(mi equipo)' : ''} · {mes}
+              🏆 leaderboard del equipo {veEquipo && !veTodo ? '(mi equipo)' : ''}
             </h2>
+            {/* navegación ‹ mes › — la etiqueta grande es la del screenshot;
+                meses cerrados se pintan del archivo, nunca recalculados */}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button data-testid="lb-mes-anterior" aria-label="mes anterior"
+                disabled={mesLb <= mesLbMin}
+                onClick={() => setMesLbSel(mesVecino(mesLb, -1))}
+                className="rounded-full border border-neutral-700 px-3 py-1 font-mono text-sm text-neutral-300 transition-colors hover:border-neutral-500 disabled:opacity-30">
+                ‹
+              </button>
+              <span data-testid="lb-mes-label" className="min-w-[9.5rem] text-center text-lg font-semibold tracking-tight text-neutral-100">
+                {nombreMesLargo(mesLb)}
+              </span>
+              <button data-testid="lb-mes-siguiente" aria-label="mes siguiente"
+                disabled={esMesLbActual}
+                onClick={() => { const sig = mesVecino(mesLb, 1); setMesLbSel(sig === mes ? null : sig) }}
+                className="rounded-full border border-neutral-700 px-3 py-1 font-mono text-sm text-neutral-300 transition-colors hover:border-neutral-500 disabled:opacity-30">
+                ›
+              </button>
+              {lbCerradoOficial && (
+                <span data-testid="lb-cierre-oficial" className="border border-movdi-verde/40 bg-movdi-verde/10 px-2.5 py-1 font-mono text-[11px] text-movdi-verde">
+                  cierre oficial ✓
+                </span>
+              )}
+              {!esMesLbActual && !lbCerradoOficial && (
+                <span data-testid="lb-preliminar" className="border border-movdi-amarillo/40 bg-movdi-amarillo/10 px-2.5 py-1 font-mono text-[11px] text-movdi-amarillo">
+                  cálculo en vivo — sin cierre oficial
+                </span>
+              )}
+            </div>
+            {lbCerradoOficial ? (
+              <div className="mt-3 space-y-1.5">
+                {lbCierre.map((h, i) => (
+                  <div key={h.id} data-testid="lb-item-cerrado"
+                    className={`flex items-center gap-3 border px-3.5 py-2 transition-colors hover:border-neutral-600 ${matchNombre(h.persona, yo.nombre) ? 'border-movdi-naranja/40 bg-movdi-naranja/5' : 'border-neutral-800 bg-neutral-900'}`}>
+                    <span className="w-7 text-lg">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
+                    <span className="flex-1 text-sm">{h.persona} {h.apellido}</span>
+                    <span className="font-mono text-sm text-movdi-naranja">{h.xpTotal} XP</span>
+                    <span className="font-mono text-[11px] text-neutral-400">nivel {h.nivelAlcanzado} · {h.entregadas} entregas</span>
+                    <span className={`font-mono text-sm ${h.cumplimiento >= 80 ? 'text-movdi-verde' : h.cumplimiento >= 50 ? 'text-movdi-amarillo' : 'text-movdi-naranja'}`}>{h.cumplimiento}%</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
             <div className="mt-3 space-y-1.5">
               {lb.ranking.length === 0 && !cargando && (
-                <p className="font-mono text-xs text-neutral-500">aún no hay entregas suficientes este mes</p>
+                <p className="font-mono text-xs text-neutral-500">
+                  {esMesLbActual ? 'aún no hay entregas suficientes este mes' : 'sin entregas registradas en ese mes'}
+                </p>
               )}
               {lb.ranking.map((r, i) => (
                 <div key={r.persona.id} data-testid="lb-item"
@@ -280,7 +358,8 @@ export default function ProgresoClient({ yo, gameInicial }: { yo: PersonaConMana
                 </div>
               ))}
             </div>
-            {veTodo && recos.length > 0 && (
+            )}
+            {veTodo && esMesLbActual && recos.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2" data-testid="reconocimientos">
                 {recos.map((r) => (
                   <span key={r.tipo} className="border border-neutral-700 px-2.5 py-1 font-mono text-[11px] text-neutral-300">

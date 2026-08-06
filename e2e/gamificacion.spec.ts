@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { mapPeticionRow } from '../lib/peticiones'
 import { mapEstrellaRow } from '../lib/estrellas'
-import { calcularGamePersona, mesAnteriorStr } from '../lib/gamificacion'
+import { calcularGamePersona, mesAnteriorStr, nombreMesLargo } from '../lib/gamificacion'
 
 const MOCK = 'http://127.0.0.1:54321'
 const PASS = 'correcta123'
@@ -63,6 +63,70 @@ test('leaderboard: nunca aparecen ceo, rh ni los excluidos especiales', async ({
   expect(texto).not.toContain('Sarai')    // rh
   expect(texto).not.toContain('Arylene')  // excluida especial
   expect(texto).not.toContain('Emmanuel') // ceo
+})
+
+// ------------------------------------------------------------
+// Navegación de meses del leaderboard: arranca en el actual (› deshabilitada),
+// un mes cerrado se pinta CONGELADO del archivo (orden por XP, "cierre
+// oficial ✓") y un mes pasado sin cierre visible avisa "cálculo en vivo".
+test('leaderboard: navegación de meses — mes cerrado congelado por XP, › deshabilitada en el actual', async ({ page }) => {
+  const mesAnt = mesAnteriorStr()
+  // dirección archiva el mes anterior con un ranking conocido (XP ≠ orden por %)
+  const r = await fetch(`${MOCK}/auth/v1/token?grant_type=password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'dani@movdi.mx', password: PASS }),
+  })
+  const tk = ((await r.json()) as { access_token: string }).access_token
+  await fetch(`${MOCK}/rest/v1/historial_mensual`, {
+    method: 'POST', headers: { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify([
+      { persona: 'Karla', mes: mesAnt, xp_total: 120, nivel_alcanzado: 2, entregadas: 9, cumplimiento: 90 },
+      { persona: 'Antonio', mes: mesAnt, xp_total: 190, nivel_alcanzado: 2, entregadas: 12, cumplimiento: 100 },
+      { persona: 'Brenda', mes: mesAnt, xp_total: 80, nivel_alcanzado: 1, entregadas: 6, cumplimiento: 75 },
+    ]),
+  })
+
+  await login(page, 'dani@movdi.mx')
+  await page.goto('/progreso')
+
+  // arranque: mes actual, › deshabilitada, sin etiqueta de cierre
+  await expect(page.getByTestId('lb-mes-label')).toHaveText(nombreMesLargo(new Date().toISOString().slice(0, 7)))
+  await expect(page.getByTestId('lb-mes-siguiente')).toBeDisabled()
+  await expect(page.getByTestId('lb-cierre-oficial')).toHaveCount(0)
+
+  // ‹ al mes cerrado: ranking congelado ordenado por XP desc con medallas
+  await page.getByTestId('lb-mes-anterior').click()
+  await expect(page.getByTestId('lb-mes-label')).toHaveText(nombreMesLargo(mesAnt))
+  await expect(page.getByTestId('lb-cierre-oficial')).toHaveText('cierre oficial ✓')
+  const filas = page.getByTestId('lb-item-cerrado')
+  await expect(filas).toHaveCount(3)
+  await expect(filas.nth(0)).toContainText('🥇')
+  await expect(filas.nth(0)).toContainText('Antonio')
+  await expect(filas.nth(0)).toContainText('190 XP')
+  await expect(filas.nth(1)).toContainText('Karla')
+  await expect(filas.nth(2)).toContainText('Brenda')
+  // el archivo manda: no aparece la vista en vivo
+  await expect(page.getByTestId('lb-item')).toHaveCount(0)
+  // piso: no hay datos antes del mes archivado → ‹ deshabilitada
+  await expect(page.getByTestId('lb-mes-anterior')).toBeDisabled()
+
+  // › regresa al mes actual (vista en vivo de siempre)
+  await page.getByTestId('lb-mes-siguiente').click()
+  await expect(page.getByTestId('lb-cierre-oficial')).toHaveCount(0)
+  await expect(page.getByTestId('lb-mes-siguiente')).toBeDisabled()
+})
+
+// head: la RLS de historial no le da filas ajenas → mes pasado = cálculo
+// en vivo de SU equipo con el aviso "sin cierre oficial"
+test('leaderboard: head navega a un mes pasado y ve cálculo en vivo (sin archivo ajeno)', async ({ page }) => {
+  await login(page, 'karla@movdi.mx')
+  await page.goto('/progreso')
+  await expect(page.getByTestId('leaderboard')).toBeVisible()
+  // sin cierres visibles, el piso es el mes más antiguo con peticiones (MES_PREV del seed)
+  await page.getByTestId('lb-mes-anterior').click()
+  await expect(page.getByTestId('lb-preliminar')).toContainText('cálculo en vivo')
+  await expect(page.getByTestId('lb-cierre-oficial')).toHaveCount(0)
+  await expect(page.getByTestId('lb-item-cerrado')).toHaveCount(0)
 })
 
 // ------------------------------------------------------------
