@@ -18,6 +18,15 @@ async function irARecurrentes(page: Page) {
   await expect(page.getByRole('heading', { name: /tareas recurrentes/ })).toBeVisible()
 }
 
+// Los patrones se listan como acordeón COLAPSADO por default: para tocar sus
+// acciones (mover próxima / pausar / eliminar) hay que abrir la fila primero.
+async function abrirPatron(page: Page, nombre: string) {
+  const fila = page.getByTestId('fila-recurrente').filter({ hasText: nombre })
+  await fila.getByTestId('btn-detalle-recurrente').click()
+  await expect(fila.getByTestId('btn-detalle-recurrente')).toHaveAttribute('aria-expanded', 'true')
+  return fila
+}
+
 async function estado() {
   const r = await fetch(`${MOCK}/__test/state`)
   return (await r.json()) as {
@@ -165,8 +174,8 @@ test('mover próxima instancia VIRTUAL (rama insert): materializa pendiente movi
   await login(page, 'dani@movdi.mx')
   await irARecurrentes(page)
 
-  // desde la tabla de patrones, mover la próxima de rec-2 (virtual, fecha hoy)
-  const fila = page.getByTestId('fila-recurrente').filter({ hasText: 'standup semanal' })
+  // desde la lista de patrones, mover la próxima de rec-2 (virtual, fecha hoy)
+  const fila = await abrirPatron(page, 'standup semanal')
   await fila.getByTestId('btn-mover-proxima').click()
   await expect(page.getByText('(aún virtual — se materializa al moverla)')).toBeVisible()
 
@@ -251,9 +260,9 @@ test('pausar/activar y eliminar: admin no-creador puede (policy creador o ceo|he
   await login(page, 'dani@movdi.mx') // ceo, NO creó rec-3 (la creó Sarai)
   await irARecurrentes(page)
 
-  const fila = page.getByTestId('fila-recurrente').filter({ hasText: 'reporte rh' })
+  const fila = await abrirPatron(page, 'reporte rh')
   await fila.getByTestId('btn-toggle-recurrente').click()
-  await expect(fila.getByText('pausada')).toBeVisible()
+  await expect(fila.getByTestId('estado-recurrente')).toHaveText('pausada')
   let st = await estado()
   expect((st.recurrentes.find((r) => r.id === 'rec-3'))!.activa).toBe(false)
 
@@ -269,9 +278,9 @@ test('paridad de pausa: una recurrente pausada no genera instancias', async ({ p
   // pausar rec-2 directamente en el estado (simulando patrón pausado)
   await login(page, 'dani@movdi.mx')
   await irARecurrentes(page)
-  const fila = page.getByTestId('fila-recurrente').filter({ hasText: 'standup semanal' })
+  const fila = await abrirPatron(page, 'standup semanal')
   await fila.getByTestId('btn-toggle-recurrente').click()
-  await expect(fila.getByText('pausada')).toBeVisible()
+  await expect(fila.getByTestId('estado-recurrente')).toHaveText('pausada')
 
   const ctx = await page.context().browser()!.newContext()
   const p2 = await ctx.newPage()
@@ -279,4 +288,72 @@ test('paridad de pausa: una recurrente pausada no genera instancias', async ({ p
   await irARecurrentes(p2)
   await expect(p2.getByTestId('card-instancia').filter({ hasText: 'standup semanal' })).toHaveCount(0)
   await ctx.close()
+})
+
+// ------------------------------------------------------------
+test('acordeón de patrones: colapsados por default, abren su detalle al clic', async ({ page }) => {
+  await login(page, 'dani@movdi.mx')
+  await irARecurrentes(page)
+
+  // seeds: 4 patrones, todos con su header visible y NINGÚN detalle abierto
+  await expect(page.getByTestId('fila-recurrente')).toHaveCount(4)
+  await expect(page.getByTestId('btn-detalle-recurrente').first()).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('estado-recurrente')).toHaveCount(0)
+  await expect(page.getByTestId('btn-toggle-recurrente')).toHaveCount(0)
+
+  // abrir uno: solo ese muestra detalle
+  const fila = await abrirPatron(page, 'standup semanal')
+  await expect(fila.getByTestId('estado-recurrente')).toHaveText('activa')
+  await expect(page.getByTestId('estado-recurrente')).toHaveCount(1)
+
+  // volver a colapsar
+  await fila.getByTestId('btn-detalle-recurrente').click()
+  await expect(page.getByTestId('estado-recurrente')).toHaveCount(0)
+
+  // expandir todo / colapsar todo
+  await page.getByTestId('btn-expandir-todo-recur').click()
+  await expect(page.getByTestId('estado-recurrente')).toHaveCount(4)
+  await page.getByTestId('btn-expandir-todo-recur').click()
+  await expect(page.getByTestId('estado-recurrente')).toHaveCount(0)
+})
+
+// ------------------------------------------------------------
+test('agrupación por persona: un bloque por destinataria, colapsado y con conteo', async ({ page }) => {
+  await login(page, 'dani@movdi.mx')
+  await irARecurrentes(page)
+
+  // seeds: 4 patrones, todos de Antonio → un solo grupo, que se abre solo
+  await expect(page.getByTestId('grupo-recurrentes')).toHaveCount(1)
+  await expect(page.getByTestId('grupo-recurrentes')).toContainText('4 recurrentes')
+  await expect(page.getByTestId('fila-recurrente')).toHaveCount(4)
+
+  // repartir una recurrente a todo el equipo → varias personas en la lista
+  await page.getByTestId('btn-nueva-recurrente').click()
+  await page.locator('#rec-nombre').fill('bitácora mensual')
+  await page.getByText('todo el equipo · admin only').click()
+  await page.locator('#rec-frec').selectOption('mensual')
+  await page.locator('#rec-dia').selectOption('28')
+  page.once('dialog', (d) => void d.accept())
+  await page.getByTestId('btn-crear-rec-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  // 6 personas del equipo, ordenadas alfabéticamente y TODAS colapsadas
+  const grupos = page.getByTestId('grupo-recurrentes')
+  await expect(grupos).toHaveCount(6)
+  await expect(grupos.first()).toContainText('Antonio')
+  await expect(grupos.first()).toContainText('5 recurrentes') // 4 suyas + la nueva
+  await expect(grupos.nth(1)).toContainText('Arylene')
+  await expect(grupos.nth(1)).toContainText('1 recurrente')
+  await expect(page.getByTestId('fila-recurrente')).toHaveCount(0)
+
+  // abrir un grupo muestra SOLO sus patrones, todavía colapsados
+  await grupos.nth(1).getByTestId('btn-grupo-recurrentes').click()
+  await expect(page.getByTestId('fila-recurrente')).toHaveCount(1)
+  await expect(page.getByTestId('fila-recurrente')).toContainText('bitácora mensual')
+  await expect(page.getByTestId('estado-recurrente')).toHaveCount(0)
+
+  // el filtro por persona deja un solo grupo, y con uno solo se abre solo
+  await page.getByTestId('filtro-persona-recur').selectOption('Karla')
+  await expect(page.getByTestId('grupo-recurrentes')).toHaveCount(1)
+  await expect(page.getByTestId('fila-recurrente')).toHaveCount(1)
 })
