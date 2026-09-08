@@ -73,6 +73,22 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
     [visibles, filtroPersona],
   )
 
+  // Acordeón de patrones: arrancan TODAS colapsadas (la lista creció y en plano
+  // era ilegible, sobre todo en celular). Solo presentación — nada de esto toca
+  // la lógica de creación/pausa/eliminación.
+  const [abiertas, setAbiertas] = useState<Set<string>>(new Set())
+  const alternarAbierta = useCallback((id: string) => {
+    setAbiertas((prev) => {
+      const s = new Set(prev)
+      if (s.has(id)) s.delete(id)
+      else s.add(id)
+      return s
+    })
+  }, [])
+  const todasAbiertas = visiblesFiltradas.length > 0 && visiblesFiltradas.every((r) => abiertas.has(r.id))
+  const alternarTodas = () =>
+    setAbiertas(todasAbiertas ? new Set() : new Set(visiblesFiltradas.map((r) => r.id)))
+
   // Mis próximas entregas (motor de instancias, paridad obtenerInstanciasRecur)
   const misInstancias = useMemo(
     () => obtenerInstanciasRecur({ recurrentes, peticiones, personas, nombre: yo.nombre }),
@@ -174,50 +190,88 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
               patrones configurados
               {filtroPersona && <span className="ml-2 text-movdi-naranja">· {filtroPersona} ({visiblesFiltradas.length})</span>}
             </h2>
-            <select
-              aria-label="filtrar patrones por persona"
-              data-testid="filtro-persona-recur"
-              value={filtroPersona}
-              onChange={(e) => setFiltroPersona(e.target.value)}
-              className={`rounded-full border bg-neutral-950 px-2.5 py-1 font-mono text-[11px] outline-none transition-colors ${filtroPersona ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}
-            >
-              <option value="">persona: todas ({visibles.length})</option>
-              {personasConPatron.map((n) => (
-                <option key={n} value={n}>{n} ({visibles.filter((r) => r.para === n).length})</option>
-              ))}
-            </select>
+            <div className="flex flex-wrap items-center gap-2">
+              {visiblesFiltradas.length > 0 && (
+                <button
+                  type="button"
+                  data-testid="btn-expandir-todo-recur"
+                  onClick={alternarTodas}
+                  className="rounded-full border border-neutral-800 px-2.5 py-1 font-mono text-[11px] text-neutral-500 transition-colors hover:border-neutral-600 hover:text-neutral-300"
+                >
+                  {todasAbiertas ? 'colapsar todo' : 'expandir todo'}
+                </button>
+              )}
+              <select
+                aria-label="filtrar patrones por persona"
+                data-testid="filtro-persona-recur"
+                value={filtroPersona}
+                onChange={(e) => setFiltroPersona(e.target.value)}
+                className={`rounded-full border bg-neutral-950 px-2.5 py-1 font-mono text-[11px] outline-none transition-colors ${filtroPersona ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}
+              >
+                <option value="">persona: todas ({visibles.length})</option>
+                {personasConPatron.map((n) => (
+                  <option key={n} value={n}>{n} ({visibles.filter((r) => r.para === n).length})</option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div className="mt-3 overflow-x-auto rounded-2xl border border-neutral-800">
-            <table className="w-full text-left text-xs" data-testid="tabla-recurrentes">
-              <thead className="bg-neutral-900 font-mono text-[10px] uppercase tracking-wider text-neutral-500">
-                <tr>
-                  <th className="px-3 py-2">tarea</th><th className="px-3 py-2">para</th>
-                  <th className="px-3 py-2">frecuencia</th><th className="px-3 py-2">próxima</th>
-                  <th className="px-3 py-2">creada por</th><th className="px-3 py-2">estado</th>
-                  <th className="px-3 py-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {visiblesFiltradas.map((r) => {
-                  const puedeAdministrar = administraPatron(r)
-                  return (
-                    <tr key={r.id} data-testid="fila-recurrente" className="border-t border-neutral-800">
-                      <td className="px-3 py-2">
-                        <div className="font-semibold text-neutral-100">{r.nombre}</div>
-                        {r.descripcion && <div className="text-neutral-500">{r.descripcion}</div>}
-                      </td>
-                      <td className="px-3 py-2 font-semibold">{r.para}</td>
-                      <td className="px-3 py-2"><span className="border border-neutral-700 px-1.5 py-0.5 font-mono text-[10px]">{etiquetaFrecuencia(r)}</span></td>
-                      <td className="px-3 py-2 font-mono text-[11px]">{fechaCorta(proximaFecha(r))}</td>
-                      <td className="px-3 py-2 font-mono text-[11px] text-neutral-500">{r.creadoPor}</td>
-                      <td className="px-3 py-2">
-                        <span className={`font-mono text-[10px] ${r.activa ? 'text-movdi-verde' : 'text-neutral-500'}`}>
-                          {r.activa ? 'activa' : 'pausada'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2">
+          <ul className="mt-3 divide-y divide-neutral-800 overflow-hidden rounded-2xl border border-neutral-800" data-testid="tabla-recurrentes">
+            {visiblesFiltradas.map((r) => {
+              const puedeAdministrar = administraPatron(r)
+              const abierta = abiertas.has(r.id)
+              return (
+                <li key={r.id} data-testid="fila-recurrente" className="bg-neutral-900/40">
+                  {/* header colapsable: lo mínimo para reconocer el patrón de un vistazo */}
+                  <button
+                    type="button"
+                    data-testid="btn-detalle-recurrente"
+                    aria-expanded={abierta}
+                    aria-controls={`detalle-recur-${r.id}`}
+                    onClick={() => alternarAbierta(r.id)}
+                    className="flex w-full items-center gap-2.5 px-3 py-3 text-left transition-colors hover:bg-neutral-900 sm:gap-3"
+                  >
+                    <span aria-hidden className={`font-mono text-[11px] text-neutral-500 transition-transform duration-150 ${abierta ? 'rotate-90 text-movdi-naranja' : ''}`}>▶</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-neutral-100">{r.nombre}</span>
+                      <span className="mt-0.5 block truncate font-mono text-[11px] text-neutral-500">
+                        para {r.para}
+                      </span>
+                    </span>
+                    {!r.activa && (
+                      <span className="shrink-0 border border-neutral-700 px-1.5 py-0.5 font-mono text-[10px] text-neutral-500">pausada</span>
+                    )}
+                  </button>
+
+                  {/* detalle: todo lo que antes vivía en las columnas de la tabla */}
+                  {abierta && (
+                    <div id={`detalle-recur-${r.id}`} className="border-t border-neutral-800 px-3 pb-3 pt-3">
+                      {r.descripcion && <p className="mb-3 text-xs text-neutral-400">{r.descripcion}</p>}
+                      {/* a quién está asignada vive en el header (siempre visible);
+                          aquí va el resto de lo que mostraba la tabla */}
+                      <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-4">
+                        <div>
+                          <dt className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">frecuencia</dt>
+                          <dd className="mt-0.5"><span className="inline-block border border-neutral-700 px-1.5 py-0.5 font-mono text-[10px] text-neutral-300">{etiquetaFrecuencia(r)}</span></dd>
+                        </div>
+                        <div>
+                          <dt className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">próxima</dt>
+                          <dd className="mt-0.5 font-mono text-[11px] text-neutral-300">{fechaCorta(proximaFecha(r))}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">estado</dt>
+                          <dd data-testid="estado-recurrente" className={`mt-0.5 font-mono text-[11px] ${r.activa ? 'text-movdi-verde' : 'text-neutral-500'}`}>
+                            {r.activa ? 'activa' : 'pausada'}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">creada por</dt>
+                          <dd className="mt-0.5 font-mono text-[11px] text-neutral-400">{r.creadoPor}</dd>
+                        </div>
+                      </dl>
+
+                      <div className="mt-3 border-t border-neutral-800/70 pt-3">
                         {puedeAdministrar ? (
-                          <div className="flex gap-1.5">
+                          <div className="flex flex-wrap gap-1.5">
                             {/* mover fechas queda en el creador (o ceo/head, regla del
                                 server en moverInstancia) — decisión 2026-07-20 */}
                             {r.activa && (r.creadoPor === yo.nombre || admin) && (
@@ -227,37 +281,37 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
                                   if (!inst) { setAviso(`no hay una entrega pendiente próxima de ${r.para} (¿pausada/inactiva?)`); return }
                                   setModalMover(inst)
                                 }}
-                                className="border border-movdi-amarillo/40 px-2 py-0.5 font-mono text-[10px] text-movdi-amarillo">
+                                className="border border-movdi-amarillo/40 px-2 py-1 font-mono text-[10px] text-movdi-amarillo hover:bg-movdi-amarillo/10">
                                 mover próxima
                               </button>
                             )}
                             <button data-testid="btn-toggle-recurrente" title={r.activa ? 'pausar' : 'activar'}
                               onClick={() => accion(() => toggleRecurrente({ id: r.id, activa: !r.activa }))}
-                              className="border border-neutral-700 px-2 py-0.5 font-mono text-[10px] text-neutral-300">
+                              className="border border-neutral-700 px-2 py-1 font-mono text-[10px] text-neutral-300 hover:bg-neutral-800">
                               {r.activa ? '⏸ pausar' : '▶ activar'}
                             </button>
-                            <button data-testid="btn-eliminar-recurrente"
+                            <button data-testid="btn-eliminar-recurrente" title="eliminar"
                               onClick={async () => {
                                 if (!confirm('¿eliminar esta recurrente?')) return
                                 await accion(() => eliminarRecurrente({ id: r.id }))
                               }}
-                              className="border border-movdi-naranja/40 px-2 py-0.5 font-mono text-[10px] text-movdi-naranja">
-                              ✕
+                              className="border border-movdi-naranja/40 px-2 py-1 font-mono text-[10px] text-movdi-naranja hover:bg-movdi-naranja/10">
+                              ✕ eliminar
                             </button>
                           </div>
                         ) : (
                           <span className="font-mono text-[10px] text-neutral-600">solo {r.creadoPor} edita</span>
                         )}
-                      </td>
-                    </tr>
-                  )
-                })}
-                {!cargando && visibles.length === 0 && (
-                  <tr><td colSpan={7} className="px-3 py-6 text-center font-mono text-neutral-500">sin recurrentes</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+            {!cargando && visibles.length === 0 && (
+              <li className="px-3 py-6 text-center font-mono text-xs text-neutral-500">sin recurrentes</li>
+            )}
+          </ul>
         </section>
       </div>
 
