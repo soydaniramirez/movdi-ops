@@ -7,7 +7,7 @@ import {
   AREAS_LABEL, AREAS_VALIDAS, AREA_COLOR, ORIGENES_VALIDOS, type ModoAsignacion,
   type Persona, type Peticion,
   destinatariosPorModo, diasHasta, diasSinMovimiento, dx, esCompromisoPropio,
-  estadoMovimiento, fechaCorta, isAdmin, labelFecha,
+  estaAbierta, estaCerrada, estadoMovimiento, fechaCorta, isAdmin, labelFecha,
   mapPeticionRow, margenPeticion, matchNombre, personaDisponible, puedoVerPeticion,
   tengoSupervisadas,
 } from '@/lib/peticiones'
@@ -32,7 +32,7 @@ import {
 } from './actions'
 
 type Tab = 'general' | 'mis' | 'pedi' | 'recur' | 'atorado'
-type Filtro = 'todas' | 'vencidas' | 'semana' | 'entregadas' | (typeof AREAS_VALIDAS)[number]
+type Filtro = 'todas' | 'vencidas' | 'semana' | 'entregadas' | 'canceladas' | (typeof AREAS_VALIDAS)[number]
 
 const PRIO_COLOR: Record<string, string> = {
   alta: 'text-movdi-naranja border-movdi-naranja/40',
@@ -156,17 +156,19 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
     if (tab === 'mis') l = l.filter((t) => matchNombre(t.para, yo.nombre))
     if (tab === 'pedi') l = l.filter((t) => matchNombre(t.creadoPor, yo.nombre))
     if (tab === 'general' && personaFiltro) l = l.filter((t) => matchNombre(t.para, personaFiltro))
-    if (filtro === 'vencidas') l = l.filter((t) => diasHasta(t.fecha) < 0 && t.estatus !== 'entregado')
-    else if (filtro === 'semana') l = l.filter((t) => { const d = diasHasta(t.fecha); return d >= 0 && d <= 7 && t.estatus !== 'entregado' })
+    if (filtro === 'vencidas') l = l.filter((t) => diasHasta(t.fecha) < 0 && estaAbierta(t))
+    else if (filtro === 'semana') l = l.filter((t) => { const d = diasHasta(t.fecha); return d >= 0 && d <= 7 && estaAbierta(t) })
     else if (filtro === 'entregadas') l = l.filter((t) => t.estatus === 'entregado')
+    // las canceladas no aparecen en ningún KPI: este chip es su única entrada
+    else if (filtro === 'canceladas') l = l.filter((t) => t.estatus === 'cancelada')
     else if ((AREAS_VALIDAS as readonly string[]).includes(filtro)) l = l.filter((t) => t.area === filtro)
     // ocultas (paridad SPA): contarlas antes de filtrarlas; el toggle las re-muestra
     const nOcultas = scopeOcultas ? l.filter((t) => estaOcultaParaMi(t, yo.nombre)).length : 0
     if (scopeOcultas && !mostrarOcultas[scopeOcultas]) l = l.filter((t) => !estaOcultaParaMi(t, yo.nombre))
     // orden de renderTabla: entregadas al final, luego por fecha ascendente
     l = l.slice().sort((a, b) => {
-      const ea = a.estatus === 'entregado' ? 1 : 0
-      const eb = b.estatus === 'entregado' ? 1 : 0
+      const ea = estaCerrada(a) ? 1 : 0
+      const eb = estaCerrada(b) ? 1 : 0
       if (ea !== eb) return ea - eb
       return a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0
     })
@@ -210,7 +212,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
           .filter((t) =>
             matchNombre(t.para, p.nombre) &&
             puedoVerPeticion(t, yo) &&
-            t.estatus !== 'entregado' && t.estatus !== 'archivada')
+            estaAbierta(t))
           .map((t) => ({ t, estado: estadoMovimiento(t), dias: diasSinMovimiento(t) ?? 0 }))
           .filter((x) => x.estado === 'atorada' || x.estado === 'vencida')
           .sort((a, b) => b.dias - a.dias)
@@ -222,14 +224,14 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
 
   // card "peticiones privadas 🔒" (solo dirección, paridad renderSide)
   const rhCount = useMemo(
-    () => peticiones.filter((t) => t.privada && t.estatus !== 'entregado' && puedoVerPeticion(t, yo)).length,
+    () => peticiones.filter((t) => t.privada && estaAbierta(t) && puedoVerPeticion(t, yo)).length,
     [peticiones, yo],
   )
 
   // banner "📌 tareas asignadas a ti" (paridad renderGeneral)
   const misPendientes = useMemo(
     () => peticiones.filter((t) =>
-      matchNombre(t.para, yo.nombre) && puedoVerPeticion(t, yo) && !t.origenRecur && t.estatus !== 'entregado',
+      matchNombre(t.para, yo.nombre) && puedoVerPeticion(t, yo) && !t.origenRecur && estaAbierta(t),
     ).length,
     [peticiones, yo],
   )
@@ -237,9 +239,11 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
   const kpis = useMemo(() => {
     const visibles = peticiones.filter((t) => puedoVerPeticion(t, yo) && !t.origenRecur)
     return {
-      pendientes: visibles.filter((t) => t.estatus !== 'entregado').length,
-      vencidas: visibles.filter((t) => diasHasta(t.fecha) < 0 && t.estatus !== 'entregado').length,
-      semana: visibles.filter((t) => { const d = diasHasta(t.fecha); return d >= 0 && d <= 7 && t.estatus !== 'entregado' }).length,
+      // "pendientes" = lo que sigue VIVO. Una cancelada no entra aquí (ya no
+      // es carga de trabajo) ni en entregadas (no se cumplió): sale de los 4.
+      pendientes: visibles.filter((t) => estaAbierta(t)).length,
+      vencidas: visibles.filter((t) => diasHasta(t.fecha) < 0 && estaAbierta(t)).length,
+      semana: visibles.filter((t) => { const d = diasHasta(t.fecha); return d >= 0 && d <= 7 && estaAbierta(t) }).length,
       entregadas: visibles.filter((t) => t.estatus === 'entregado').length,
     }
   }, [peticiones, yo])
@@ -362,7 +366,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
           {tab !== 'atorado' && (
             <>
               <span className="mx-2 h-4 w-px bg-neutral-800" />
-              {(['todas', 'vencidas', 'semana', 'entregadas'] as Filtro[]).map((f) => (
+              {(['todas', 'vencidas', 'semana', 'entregadas', 'canceladas'] as Filtro[]).map((f) => (
                 <button key={f} onClick={() => setFiltro(f)}
                   className={`rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors ${filtro === f ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}>
                   {f === 'semana' ? 'esta semana' : f}
@@ -772,7 +776,7 @@ function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEst
   const soyDest = matchNombre(t.para, yo.nombre)
   const puedoActuar = soyCreador || soyDest
   const lf = labelFecha(t)
-  const vencida = t.estatus !== 'entregado' && diasHasta(t.fecha) < 0
+  const vencida = estaAbierta(t) && diasHasta(t.fecha) < 0
   const oculta = estaOcultaParaMi(t, yo.nombre)
   const compromiso = esCompromisoPropio(t)
   // regla de los 3 días hábiles: atorada = ROJO (calculado, no hay campo)
@@ -810,7 +814,7 @@ function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEst
           )}
           {/* ⚠ plazo ajustado (paridad SPA: margen de nacimiento ≤ 2 días;
               ≤ 1 = "muy ajustado" en naranja, 2 = "ajustado" en amarillo) */}
-          {t.estatus !== 'entregado' && !t.origenRecur && (() => {
+          {estaAbierta(t) && !t.origenRecur && (() => {
             const m = margenPeticion(t)
             if (m === null || m > 2) return null
             const txt = m <= 1 ? 'plazo muy ajustado' : 'plazo ajustado'
@@ -918,8 +922,9 @@ function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEst
       </td>
       {/* estatus (+ alerta de atorada: 3+ días hábiles sin movimiento) */}
       <td className="whitespace-nowrap px-3 py-2.5">
-        <span className={`font-mono text-[10px] uppercase ${t.estatus === 'entregado' ? 'text-movdi-verde' : t.estatus === 'proceso' ? 'text-movdi-amarillo' : 'text-neutral-400'}`}>
-          {t.estatus === 'entregado' ? 'entregado ✓' : t.estatus === 'proceso' ? 'en proceso' : t.estatus}
+        <span data-testid="estatus-peticion"
+          className={`font-mono text-[10px] uppercase ${t.estatus === 'entregado' ? 'text-movdi-verde' : t.estatus === 'proceso' ? 'text-movdi-amarillo' : t.estatus === 'cancelada' ? 'text-neutral-500 line-through' : 'text-neutral-400'}`}>
+          {t.estatus === 'entregado' ? 'entregado ✓' : t.estatus === 'proceso' ? 'en proceso' : t.estatus === 'cancelada' ? 'cancelada ✕' : t.estatus}
         </span>
         {atorada && (
           <div className="mt-0.5 font-mono text-[10px] font-medium text-movdi-naranja" data-testid="badge-atorada"
@@ -932,7 +937,7 @@ function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEst
       <td className="px-3 py-2.5">
         {puedoActuar && (
           <div className="reveal-acciones flex max-w-[15rem] flex-wrap gap-1.5">
-            {t.estatus !== 'entregado' && (
+            {estaAbierta(t) && (
               <>
                 <button onClick={onEntregar} data-testid="btn-entregar"
                   className={`${btn} border-movdi-verde/50 text-movdi-verde hover:bg-movdi-verde/10`}>
@@ -953,8 +958,9 @@ function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEst
                 </button>
               </>
             )}
-            {t.estatus === 'entregado' && (
-              <button onClick={() => onEstatus('pendiente')}
+            {(t.estatus === 'entregado' || t.estatus === 'cancelada') && (
+              <button onClick={() => onEstatus('pendiente')} data-testid="btn-reabrir"
+                title={t.estatus === 'cancelada' ? 'se canceló por error · vuelve a pendiente' : undefined}
                 className={`${btn} border-neutral-700 text-neutral-300 hover:border-neutral-500`}>
                 reabrir
               </button>
@@ -971,7 +977,7 @@ function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEst
                 👁
               </button>
             )}
-            {t.origenRecur && (soyCreador || admin) && t.estatus !== 'entregado' && (
+            {t.origenRecur && (soyCreador || admin) && estaAbierta(t) && (
               <button onClick={onMover} data-testid="btn-mover-instancia"
                 className={`${btn} border-movdi-amarillo/50 text-movdi-amarillo hover:bg-movdi-amarillo/10`}>
                 mover instancia

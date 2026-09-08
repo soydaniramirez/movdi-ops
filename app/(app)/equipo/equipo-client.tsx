@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { selectTodo } from '@/lib/supabase/select-todo'
 import {
   AREAS_LABEL, AREAS_VALIDAS, type Peticion,
-  dx, estaPausada, mapPeticionRow, matchNombre,
+  dx, estaAbierta, estaPausada, mapPeticionRow, matchNombre,
 } from '@/lib/peticiones'
 import { type Recurrente, mapRecurRow, obtenerInstanciasRecur } from '@/lib/recurrentes'
 import {
@@ -274,7 +274,7 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
                             <button data-testid="btn-desactivar"
                               onClick={() => {
                                 // paridad eliminarPersona: sin nada activo → confirm directo
-                                const pets = peticiones.filter((t) => matchNombre(t.para, p.nombre) && t.estatus !== 'entregado')
+                                const pets = peticiones.filter((t) => matchNombre(t.para, p.nombre) && estaAbierta(t))
                                 const recs = recurrentes.filter((r) => matchNombre(r.para, p.nombre) && r.activa)
                                 if (pets.length === 0 && recs.length === 0) {
                                   if (!confirm(`¿desactivar a ${p.nombre} ${p.apellido}?\n\nsu histórico se conserva.`)) return
@@ -365,14 +365,16 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
         <ModalReasignacion
           persona={modalReasign}
           personas={personas}
-          peticiones={peticiones.filter((t) => matchNombre(t.para, modalReasign.nombre) && t.estatus !== 'entregado')}
+          peticiones={peticiones.filter((t) => matchNombre(t.para, modalReasign.nombre) && estaAbierta(t))}
           recurrentes={recurrentes.filter((r) => matchNombre(r.para, modalReasign.nombre) && r.activa)}
           onCerrar={() => setModalReasign(null)}
-          onConfirmar={async (pet, rec) => {
+          onConfirmar={async (pet, rec, cancelarPet, cancelarRec) => {
             const ok = await accion(() => desactivarConReasignacion({
               personaId: modalReasign.id,
               reasignPeticionesA: pet || undefined,
               reasignRecurrentesA: rec || undefined,
+              cancelarPeticiones: cancelarPet,
+              cancelarRecurrentes: cancelarRec,
             }))
             if (ok) setModalReasign(null)
           }}
@@ -517,6 +519,23 @@ function ModalPersona({ editar, personas, onCerrar, onGuardar, onReenviar }: {
   )
 }
 
+// Botón-pastilla para elegir qué hacer con un bloque de tareas en la baja.
+function OpcionModo({ activa, peligro, testid, onClick, children }: {
+  activa: boolean
+  peligro?: boolean
+  testid: string
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  const activo = peligro ? 'border-movdi-naranja text-movdi-naranja' : 'border-neutral-300 text-neutral-100'
+  return (
+    <button type="button" data-testid={testid} aria-pressed={activa} onClick={onClick}
+      className={`rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors ${activa ? activo : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}>
+      {children}
+    </button>
+  )
+}
+
 // ============================================================
 function ModalReasignacion({ persona, personas, peticiones, recurrentes, onCerrar, onConfirmar }: {
   persona: PersonaConManagers
@@ -524,10 +543,14 @@ function ModalReasignacion({ persona, personas, peticiones, recurrentes, onCerra
   peticiones: Peticion[]
   recurrentes: Recurrente[]
   onCerrar: () => void
-  onConfirmar: (pet: string, rec: string) => Promise<void>
+  onConfirmar: (pet: string, rec: string, cancelarPet: boolean, cancelarRec: boolean) => Promise<void>
 }) {
   const [destPet, setDestPet] = useState('')
   const [destRec, setDestRec] = useState('')
+  // Salida alterna (2026-09-08): cuando lo pendiente ya no sirve, cerrarlo en
+  // BLOQUE en vez de heredárselo a alguien. Por defecto sigue siendo reasignar.
+  const [modoPet, setModoPet] = useState<'reasignar' | 'cancelar'>('reasignar')
+  const [modoRec, setModoRec] = useState<'reasignar' | 'cancelar'>('reasignar')
   const [err, setErr] = useState<string | null>(null)
 
   // paridad: candidatos activos, no pausados, no la persona
@@ -549,25 +572,69 @@ function ModalReasignacion({ persona, personas, peticiones, recurrentes, onCerra
             <strong>{persona.nombre}</strong> tiene
             {peticiones.length > 0 && <> · <strong>{peticiones.length}</strong> petición(es) activa(s)</>}
             {recurrentes.length > 0 && <> · <strong>{recurrentes.length}</strong> recurrente(s) activa(s)</>}.
-            elige a quién pasan antes de desactivar — todo o nada.
+            pásalas a alguien o ciérralas antes de desactivar — todo o nada.
           </p>
         </div>
         <div className="space-y-4">
+          {/* PETICIONES: reasignar (lo de siempre) o cerrar en bloque */}
           <div>
-            <label className={labelCls} htmlFor="reasign-pet">reasignar peticiones a</label>
-            <select id="reasign-pet" className={inputCls} value={destPet} onChange={(e) => setDestPet(e.target.value)}>
-              <option value="">— elige una persona —</option>
-              {candidatos.map((p) => <option key={p.id} value={p.nombre}>{p.nombre} {p.apellido} · {p.rol}</option>)}
-            </select>
-            {peticiones.length === 0 && <p className="mt-1 font-mono text-[10px] text-neutral-500">no tiene peticiones, este campo es opcional</p>}
+            <span className={labelCls}>sus {peticiones.length} petición(es) pendiente(s)</span>
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              <OpcionModo testid="modo-pet-reasignar" activa={modoPet === 'reasignar'}
+                onClick={() => { setModoPet('reasignar'); setErr(null) }}>
+                → reasignar a alguien
+              </OpcionModo>
+              <OpcionModo testid="modo-pet-cancelar" activa={modoPet === 'cancelar'} peligro
+                onClick={() => { setModoPet('cancelar'); setDestPet(''); setErr(null) }}>
+                ✕ cancelar todas
+              </OpcionModo>
+            </div>
+            {modoPet === 'reasignar' ? (
+              <>
+                <label className="sr-only" htmlFor="reasign-pet">reasignar peticiones a</label>
+                <select id="reasign-pet" className={inputCls} value={destPet} onChange={(e) => setDestPet(e.target.value)}>
+                  <option value="">— elige una persona —</option>
+                  {candidatos.map((p) => <option key={p.id} value={p.nombre}>{p.nombre} {p.apellido} · {p.rol}</option>)}
+                </select>
+                {peticiones.length === 0 && <p className="mt-1 font-mono text-[10px] text-neutral-500">no tiene peticiones, este campo es opcional</p>}
+              </>
+            ) : (
+              <p data-testid="aviso-cancelar-pet" className="border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-[10px] leading-relaxed text-neutral-400">
+                se cierran las <strong className="text-neutral-200">{peticiones.length}</strong> como
+                <strong className="text-neutral-200"> canceladas</strong> · no se borran (siguen en el
+                histórico) y no cuentan como entregadas ni en los KPIs de /peticiones
+              </p>
+            )}
           </div>
+
+          {/* RECURRENTES: reasignar el patrón o apagarlo */}
           <div>
-            <label className={labelCls} htmlFor="reasign-rec">reasignar recurrentes a</label>
-            <select id="reasign-rec" className={inputCls} value={destRec} onChange={(e) => setDestRec(e.target.value)}>
-              <option value="">— elige una persona —</option>
-              {candidatos.map((p) => <option key={p.id} value={p.nombre}>{p.nombre} {p.apellido} · {p.rol}</option>)}
-            </select>
-            {recurrentes.length === 0 && <p className="mt-1 font-mono text-[10px] text-neutral-500">no tiene recurrentes, este campo es opcional</p>}
+            <span className={labelCls}>sus {recurrentes.length} recurrente(s) activa(s)</span>
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              <OpcionModo testid="modo-rec-reasignar" activa={modoRec === 'reasignar'}
+                onClick={() => { setModoRec('reasignar'); setErr(null) }}>
+                → reasignar a alguien
+              </OpcionModo>
+              <OpcionModo testid="modo-rec-cancelar" activa={modoRec === 'cancelar'} peligro
+                onClick={() => { setModoRec('cancelar'); setDestRec(''); setErr(null) }}>
+                ✕ desactivar todas
+              </OpcionModo>
+            </div>
+            {modoRec === 'reasignar' ? (
+              <>
+                <label className="sr-only" htmlFor="reasign-rec">reasignar recurrentes a</label>
+                <select id="reasign-rec" className={inputCls} value={destRec} onChange={(e) => setDestRec(e.target.value)}>
+                  <option value="">— elige una persona —</option>
+                  {candidatos.map((p) => <option key={p.id} value={p.nombre}>{p.nombre} {p.apellido} · {p.rol}</option>)}
+                </select>
+                {recurrentes.length === 0 && <p className="mt-1 font-mono text-[10px] text-neutral-500">no tiene recurrentes, este campo es opcional</p>}
+              </>
+            ) : (
+              <p data-testid="aviso-cancelar-rec" className="border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-[10px] leading-relaxed text-neutral-400">
+                los <strong className="text-neutral-200">{recurrentes.length}</strong> patrones se apagan
+                (quedan pausados, igual que con ⏸) · dejan de generar entregas y su histórico se conserva
+              </p>
+            )}
           </div>
           {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
           <div className="flex justify-end gap-2">
@@ -575,12 +642,27 @@ function ModalReasignacion({ persona, personas, peticiones, recurrentes, onCerra
             <button data-testid="btn-reasign-confirmar"
               onClick={async () => {
                 setErr(null)
-                if (peticiones.length > 0 && !destPet) { setErr('elige a quién reasignar las peticiones'); return }
-                if (recurrentes.length > 0 && !destRec) { setErr('elige a quién reasignar las recurrentes'); return }
-                await onConfirmar(destPet, destRec)
+                const cancelaPet = modoPet === 'cancelar' && peticiones.length > 0
+                const cancelaRec = modoRec === 'cancelar' && recurrentes.length > 0
+                if (peticiones.length > 0 && modoPet === 'reasignar' && !destPet) {
+                  setErr('elige a quién reasignar las peticiones (o cancélalas)'); return
+                }
+                if (recurrentes.length > 0 && modoRec === 'reasignar' && !destRec) {
+                  setErr('elige a quién reasignar las recurrentes (o desactívalas)'); return
+                }
+                // cerrar en bloque es irreversible desde aquí (una por una sí se
+                // puede reabrir en /peticiones): se confirma antes de mandar.
+                if (cancelaPet || cancelaRec) {
+                  const partes = [
+                    cancelaPet ? `${peticiones.length} petición(es) quedarán CANCELADAS` : null,
+                    cancelaRec ? `${recurrentes.length} recurrente(s) quedarán DESACTIVADAS` : null,
+                  ].filter(Boolean).join('\n')
+                  if (!confirm(`${partes}\n\nsiguen en el histórico, pero ya no cuentan como pendientes. ¿va?`)) return
+                }
+                await onConfirmar(destPet, destRec, cancelaPet, cancelaRec)
               }}
               className="bg-red-600 px-4 py-2 text-xs font-medium hover:bg-movdi-naranja">
-              reasignar y desactivar
+              {modoPet === 'cancelar' || modoRec === 'cancelar' ? 'aplicar y desactivar' : 'reasignar y desactivar'}
             </button>
           </div>
         </div>

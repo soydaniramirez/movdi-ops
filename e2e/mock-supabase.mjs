@@ -437,7 +437,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (tabla === 'rpc/desactivar_persona_con_reasignacion' && req.method === 'POST') {
-      const { p_persona_id, p_reasignar_peticiones_a, p_reasignar_recurrentes_a } = JSON.parse(body || '{}')
+      const {
+        p_persona_id, p_reasignar_peticiones_a, p_reasignar_recurrentes_a,
+        p_cancelar_peticiones, p_cancelar_recurrentes,
+      } = JSON.parse(body || '{}')
       if (!esAdmin(yo)) return json(400, { code: 'P0001', message: 'solo dirección o heads pueden desactivar personas' })
       const persona = db.personas.find((p) => p.id === p_persona_id)
       if (!persona) return json(400, { code: 'P0001', message: 'persona no encontrada' })
@@ -449,15 +452,48 @@ const server = http.createServer(async (req, res) => {
       if (!destinoValido(p_reasignar_peticiones_a) || !destinoValido(p_reasignar_recurrentes_a)) {
         return json(400, { code: 'P0001', message: 'destino inválido' })
       }
-      const pets = db.peticiones.filter((t) => t.para.toLowerCase() === persona.nombre.toLowerCase() && t.estatus !== 'entregado')
+      // reasignar y cancelar son excluyentes (mismo raise que la función SQL)
+      if (p_cancelar_peticiones && p_reasignar_peticiones_a) {
+        return json(400, { code: 'P0001', message: 'peticiones: elige reasignar O cancelar, no ambas' })
+      }
+      if (p_cancelar_recurrentes && p_reasignar_recurrentes_a) {
+        return json(400, { code: 'P0001', message: 'recurrentes: elige reasignar O cancelar, no ambas' })
+      }
+      // 'cancelada' entra a los estatus cerrados: una ya cancelada no bloquea
+      const CERRADOS = ['entregado', 'archivada', 'cancelada']
+      const pets = db.peticiones.filter((t) => t.para.toLowerCase() === persona.nombre.toLowerCase() && !CERRADOS.includes(t.estatus))
       const recs = db.recurrentes.filter((r) => r.para.toLowerCase() === persona.nombre.toLowerCase() && r.activa)
-      if (pets.length > 0 && !p_reasignar_peticiones_a) return json(400, { code: 'P0001', message: 'elige a quién reasignar las peticiones' })
-      if (recs.length > 0 && !p_reasignar_recurrentes_a) return json(400, { code: 'P0001', message: 'elige a quién reasignar las recurrentes' })
+      if (pets.length > 0 && !p_reasignar_peticiones_a && !p_cancelar_peticiones) {
+        return json(400, { code: 'P0001', message: 'elige a quién reasignar las peticiones o cancélalas' })
+      }
+      if (recs.length > 0 && !p_reasignar_recurrentes_a && !p_cancelar_recurrentes) {
+        return json(400, { code: 'P0001', message: 'elige a quién reasignar las recurrentes o cancélalas' })
+      }
       // mutación (sin RLS: definer)
-      pets.forEach((t) => { t.para = p_reasignar_peticiones_a })
-      recs.forEach((r) => { r.para = p_reasignar_recurrentes_a })
+      const hoyMx = new Date().toISOString().slice(0, 10)
+      let canceladas = 0
+      let desactivadas = 0
+      if (p_reasignar_peticiones_a) pets.forEach((t) => { t.para = p_reasignar_peticiones_a })
+      else if (p_cancelar_peticiones) {
+        const rastro = `✕ cancelada (${hoyMx}, ${yo.nombre}): baja de ${persona.nombre}`
+        pets.forEach((t) => {
+          t.estatus = 'cancelada'
+          t.descripcion = t.descripcion ? `${t.descripcion}\n${rastro}` : rastro
+        })
+        canceladas = pets.length
+      }
+      if (p_reasignar_recurrentes_a) recs.forEach((r) => { r.para = p_reasignar_recurrentes_a })
+      else if (p_cancelar_recurrentes) {
+        recs.forEach((r) => { r.activa = false })
+        desactivadas = recs.length
+      }
       persona.activo = false
-      return json(200, { peticiones_reasignadas: pets.length, recurrentes_reasignadas: recs.length })
+      return json(200, {
+        peticiones_reasignadas: p_reasignar_peticiones_a ? pets.length : 0,
+        recurrentes_reasignadas: p_reasignar_recurrentes_a ? recs.length : 0,
+        peticiones_canceladas: canceladas,
+        recurrentes_desactivadas: desactivadas,
+      })
     }
 
     if (tabla === 'personas') {

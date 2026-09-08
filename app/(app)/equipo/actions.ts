@@ -7,7 +7,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { selectTodo } from '@/lib/supabase/select-todo'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { AREAS_VALIDAS, mapPersonaRow, matchNombre, personaDisponible } from '@/lib/peticiones'
+import { AREAS_VALIDAS, type EstatusPeticion, estaAbierta, mapPersonaRow, matchNombre, personaDisponible } from '@/lib/peticiones'
 import { esDireccion } from '@/lib/equipo'
 import { notificarToque } from '@/lib/supabase/notificar'
 
@@ -241,10 +241,17 @@ export async function reactivarPersona(input: { id: string }): Promise<Resultado
 // La función desactivar_persona_con_reasignacion (SECURITY DEFINER, check
 // de rol ceo|head DENTRO, una transacción) resuelve permiso y atomicidad
 // real a la vez. Migración: 20260704120000_cutover_rpc_desactivar_persona.
+// Salida alterna (2026-09-08): cuando las tareas de la persona YA NO SIRVEN,
+// reasignarlas le ensucia la carga a quien las recibe. Con cancelarPeticiones
+// / cancelarRecurrentes la baja cierra en bloque en vez de mover: peticiones
+// → estatus 'cancelada' (terminal, fuera de KPIs, sin borrar la fila) y
+// patrones → activa=false. Es SUMA: la reasignación de siempre no cambia.
 export async function desactivarConReasignacion(input: {
   personaId: string
   reasignPeticionesA?: string
   reasignRecurrentesA?: string
+  cancelarPeticiones?: boolean
+  cancelarRecurrentes?: boolean
 }): Promise<Resultado> {
   try {
     const { supabase } = await getAdminContexto() // gating ceo|head también aquí
@@ -260,14 +267,22 @@ export async function desactivarConReasignacion(input: {
     if (!persona) return { ok: false, error: 'persona no encontrada' }
 
     const nPet = (petRows ?? []).filter(
-      (t) => matchNombre(t.para as string | null, persona.nombre) && t.estatus !== 'entregado').length
+      (t) => matchNombre(t.para as string | null, persona.nombre) &&
+        estaAbierta({ estatus: (t.estatus ?? 'pendiente') as EstatusPeticion })).length
     const nRec = (recRows ?? []).filter(
       (r) => matchNombre(r.para, persona.nombre) && r.activa !== false).length
-    if (nPet > 0 && !input.reasignPeticionesA) {
-      return { ok: false, error: 'elige a quién reasignar las peticiones' }
+    // reasignar y cancelar son excluyentes (la RPC lo re-valida dentro)
+    if (input.cancelarPeticiones && input.reasignPeticionesA) {
+      return { ok: false, error: 'peticiones: elige reasignar o cancelar, no ambas' }
     }
-    if (nRec > 0 && !input.reasignRecurrentesA) {
-      return { ok: false, error: 'elige a quién reasignar las recurrentes' }
+    if (input.cancelarRecurrentes && input.reasignRecurrentesA) {
+      return { ok: false, error: 'recurrentes: elige reasignar o cancelar, no ambas' }
+    }
+    if (nPet > 0 && !input.reasignPeticionesA && !input.cancelarPeticiones) {
+      return { ok: false, error: 'elige a quién reasignar las peticiones o cancélalas' }
+    }
+    if (nRec > 0 && !input.reasignRecurrentesA && !input.cancelarRecurrentes) {
+      return { ok: false, error: 'elige a quién reasignar las recurrentes o cancélalas' }
     }
     const validarDestino = (nombre?: string) => {
       if (!nombre) return null
@@ -282,6 +297,8 @@ export async function desactivarConReasignacion(input: {
       p_persona_id: input.personaId,
       p_reasignar_peticiones_a: input.reasignPeticionesA ?? null,
       p_reasignar_recurrentes_a: input.reasignRecurrentesA ?? null,
+      p_cancelar_peticiones: input.cancelarPeticiones ?? false,
+      p_cancelar_recurrentes: input.cancelarRecurrentes ?? false,
     })
     if (error) {
       return { ok: false, error: `no se pudo completar — nada quedó desactivado: ${error.message}` }

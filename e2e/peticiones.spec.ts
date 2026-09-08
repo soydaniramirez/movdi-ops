@@ -378,3 +378,54 @@ test('deployment skew: si la Server Action del bundle viejo ya no existe, avisa 
   // el click NO muere en silencio: aviso claro pidiendo recargar
   await expect(page.getByRole('alert').filter({ hasText: 'recarga la página' })).toBeVisible()
 })
+
+// ------------------------------------------------------------
+// Estatus 'cancelada' (2026-09-08): terminal, pero NO es una entrega. Este
+// test cuida que no ensucie las métricas — si alguien vuelve a escribir
+// `estatus !== 'entregado'` para contar pendientes, aquí truena.
+test('cancelada: sale de pendientes SIN contar como entregada, y tiene su propio filtro', async ({ page, browser }) => {
+  await login(page, 'dani@movdi.mx')
+  await irAPeticiones(page)
+
+  // esperar a que cargue (los KPIs arrancan en 0 mientras llega el fetch)
+  await expect(page.getByRole('row').filter({ hasText: 'diseñar reel' })).toHaveCount(1)
+  const leer = async (k: string) =>
+    Number(await page.getByTestId(`kpi-${k}`).locator('div').last().innerText())
+  const antesPendientes = await leer('todas')
+  const antesEntregadas = await leer('entregadas')
+  expect(antesPendientes).toBeGreaterThan(0)
+
+  // dar de baja a Brenda CANCELANDO su pendiente (p-seed-3 "diseñar reel")
+  page.on('dialog', (d) => d.accept())
+  await page.goto('/equipo')
+  await page.getByTestId('card-persona').filter({ hasText: 'Brenda' }).getByTestId('btn-desactivar').click()
+  await page.getByTestId('modo-pet-cancelar').click()
+  await page.getByTestId('btn-reasign-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  expect((await estado()).peticiones.find((x) => x.id === 'p-seed-3')!.estatus).toBe('cancelada')
+
+  // KPIs: una pendiente menos, y entregadas SIN moverse
+  await irAPeticiones(page)
+  await expect(page.getByRole('row').filter({ hasText: 'diseñar reel' })).toHaveCount(1)
+  expect(await leer('todas')).toBe(antesPendientes - 1)
+  expect(await leer('entregadas')).toBe(antesEntregadas)
+
+  // no sale en "entregadas"; su única entrada es el chip nuevo
+  await page.getByTestId('kpi-entregadas').click()
+  await expect(page.getByRole('row').filter({ hasText: 'diseñar reel' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'canceladas', exact: true }).click()
+  const fila = page.getByRole('row').filter({ hasText: 'diseñar reel' })
+  await expect(fila).toHaveCount(1)
+  await expect(fila.getByTestId('estatus-peticion')).toHaveText('cancelada ✕')
+
+  // escape hatch: quien la creó puede reabrirla si se canceló de más
+  const ctx = await browser.newContext()
+  const p2 = await ctx.newPage()
+  await login(p2, 'antonio@movdi.mx') // creador de p-seed-3
+  await irAPeticiones(p2)
+  await p2.getByRole('button', { name: 'canceladas', exact: true }).click()
+  await p2.getByRole('row').filter({ hasText: 'diseñar reel' }).getByTestId('btn-reabrir').click()
+  await expect(p2.getByRole('row').filter({ hasText: 'diseñar reel' })).toHaveCount(0) // ya no está cancelada
+  expect((await estado()).peticiones.find((x) => x.id === 'p-seed-3')!.estatus).toBe('pendiente')
+  await ctx.close()
+})
