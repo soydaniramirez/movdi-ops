@@ -1,6 +1,8 @@
 -- ============================================================
--- ⏳ SIN APLICAR — requiere OK explícito de dirección (regla de CLAUDE.md:
---    toda migración se muestra antes de aplicarse).
+-- ✅ APLICADA el 2026-09-08 con OK explícito de dirección (Dani), tras
+--    mostrar el SQL. Verificado contra la BD viva: el CHECK ya admite
+--    'cancelada', la función quedó con 5 args (security definer, EXECUTE
+--    solo a authenticated) y ninguna fila existente cambió.
 -- ============================================================
 -- CUTOVER 11 — estatus 'cancelada' + salida alterna en la baja de persona
 --
