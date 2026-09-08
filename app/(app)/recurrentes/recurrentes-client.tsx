@@ -73,10 +73,39 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
     [visibles, filtroPersona],
   )
 
-  // Acordeón de patrones: arrancan TODAS colapsadas (la lista creció y en plano
-  // era ilegible, sobre todo en celular). Solo presentación — nada de esto toca
-  // la lógica de creación/pausa/eliminación.
+  // Agrupación por persona: un bloque por quien recibe los patrones, con sus
+  // recurrentes ordenadas por nombre adentro. Solo acomodo visual — el orden y
+  // el contenido salen de visiblesFiltradas, que ya respeta RLS + filtros.
+  const grupos = useMemo(() => {
+    const porPersona = new Map<string, Recurrente[]>()
+    for (const r of visiblesFiltradas) {
+      const lista = porPersona.get(r.para)
+      if (lista) lista.push(r)
+      else porPersona.set(r.para, [r])
+    }
+    return [...porPersona.entries()]
+      .map(([persona, patrones]) => ({
+        persona,
+        patrones: [...patrones].sort((a, b) => a.nombre.localeCompare(b.nombre)),
+      }))
+      .sort((a, b) => a.persona.localeCompare(b.persona))
+  }, [visiblesFiltradas])
+
+  // Acordeón de DOS niveles: persona → patrón. Todo arranca colapsado (la lista
+  // creció y en plano era ilegible, sobre todo en celular). Solo presentación —
+  // nada de esto toca la lógica de creación/pausa/eliminación.
+  const [gruposAbiertos, setGruposAbiertos] = useState<Set<string>>(new Set())
   const [abiertas, setAbiertas] = useState<Set<string>>(new Set())
+  // Con una sola persona en pantalla (filtro puesto, o alguien que solo ve lo
+  // suyo) el nivel de arriba estorba: se abre solo.
+  const grupoAbierto = (persona: string) => grupos.length === 1 || gruposAbiertos.has(persona)
+  const alternarGrupo = (persona: string) =>
+    setGruposAbiertos((prev) => {
+      const s = new Set(prev)
+      if (s.has(persona)) s.delete(persona)
+      else s.add(persona)
+      return s
+    })
   const alternarAbierta = useCallback((id: string) => {
     setAbiertas((prev) => {
       const s = new Set(prev)
@@ -85,9 +114,19 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
       return s
     })
   }, [])
-  const todasAbiertas = visiblesFiltradas.length > 0 && visiblesFiltradas.every((r) => abiertas.has(r.id))
-  const alternarTodas = () =>
-    setAbiertas(todasAbiertas ? new Set() : new Set(visiblesFiltradas.map((r) => r.id)))
+  const todasAbiertas =
+    visiblesFiltradas.length > 0 &&
+    grupos.every((g) => grupoAbierto(g.persona)) &&
+    visiblesFiltradas.every((r) => abiertas.has(r.id))
+  const alternarTodas = () => {
+    if (todasAbiertas) {
+      setGruposAbiertos(new Set())
+      setAbiertas(new Set())
+    } else {
+      setGruposAbiertos(new Set(grupos.map((g) => g.persona)))
+      setAbiertas(new Set(visiblesFiltradas.map((r) => r.id)))
+    }
+  }
 
   // Mis próximas entregas (motor de instancias, paridad obtenerInstanciasRecur)
   const misInstancias = useMemo(
@@ -215,103 +254,128 @@ export default function RecurrentesClient({ yo }: { yo: Persona }) {
               </select>
             </div>
           </div>
-          <ul className="mt-3 divide-y divide-neutral-800 overflow-hidden rounded-2xl border border-neutral-800" data-testid="tabla-recurrentes">
-            {visiblesFiltradas.map((r) => {
-              const puedeAdministrar = administraPatron(r)
-              const abierta = abiertas.has(r.id)
+          <div className="mt-3 space-y-2" data-testid="tabla-recurrentes">
+            {grupos.map((g, i) => {
+              const abiertoGrupo = grupoAbierto(g.persona)
+              const enPausa = g.patrones.filter((r) => !r.activa).length
               return (
-                <li key={r.id} data-testid="fila-recurrente" className="bg-neutral-900/40">
-                  {/* header colapsable: lo mínimo para reconocer el patrón de un vistazo */}
+                <section key={g.persona} data-testid="grupo-recurrentes" className="overflow-hidden rounded-2xl border border-neutral-800">
+                  {/* nivel 1: la persona. con un solo grupo en pantalla se abre solo */}
                   <button
                     type="button"
-                    data-testid="btn-detalle-recurrente"
-                    aria-expanded={abierta}
-                    aria-controls={`detalle-recur-${r.id}`}
-                    onClick={() => alternarAbierta(r.id)}
-                    className="flex w-full items-center gap-2.5 px-3 py-3 text-left transition-colors hover:bg-neutral-900 sm:gap-3"
+                    data-testid="btn-grupo-recurrentes"
+                    aria-expanded={abiertoGrupo}
+                    aria-controls={`grupo-recur-${i}`}
+                    onClick={() => alternarGrupo(g.persona)}
+                    className="flex w-full items-center gap-2.5 bg-neutral-900 px-3 py-2.5 text-left transition-colors hover:bg-neutral-800/60"
                   >
-                    <span aria-hidden className={`font-mono text-[11px] text-neutral-500 transition-transform duration-150 ${abierta ? 'rotate-90 text-movdi-naranja' : ''}`}>▶</span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold text-neutral-100">{r.nombre}</span>
-                      <span className="mt-0.5 block truncate font-mono text-[11px] text-neutral-500">
-                        para {r.para}
-                      </span>
+                    <span aria-hidden className={`font-mono text-[11px] text-neutral-500 transition-transform duration-150 ${abiertoGrupo ? 'rotate-90 text-movdi-naranja' : ''}`}>▶</span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-100">{g.persona}</span>
+                    <span className="shrink-0 font-mono text-[11px] text-neutral-500">
+                      {g.patrones.length} {g.patrones.length === 1 ? 'recurrente' : 'recurrentes'}
+                      {enPausa > 0 && <span className="text-neutral-600"> · {enPausa} en pausa</span>}
                     </span>
-                    {!r.activa && (
-                      <span className="shrink-0 border border-neutral-700 px-1.5 py-0.5 font-mono text-[10px] text-neutral-500">pausada</span>
-                    )}
                   </button>
 
-                  {/* detalle: todo lo que antes vivía en las columnas de la tabla */}
-                  {abierta && (
-                    <div id={`detalle-recur-${r.id}`} className="border-t border-neutral-800 px-3 pb-3 pt-3">
-                      {r.descripcion && <p className="mb-3 text-xs text-neutral-400">{r.descripcion}</p>}
-                      {/* a quién está asignada vive en el header (siempre visible);
-                          aquí va el resto de lo que mostraba la tabla */}
-                      <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-4">
-                        <div>
-                          <dt className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">frecuencia</dt>
-                          <dd className="mt-0.5"><span className="inline-block border border-neutral-700 px-1.5 py-0.5 font-mono text-[10px] text-neutral-300">{etiquetaFrecuencia(r)}</span></dd>
-                        </div>
-                        <div>
-                          <dt className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">próxima</dt>
-                          <dd className="mt-0.5 font-mono text-[11px] text-neutral-300">{fechaCorta(proximaFecha(r))}</dd>
-                        </div>
-                        <div>
-                          <dt className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">estado</dt>
-                          <dd data-testid="estado-recurrente" className={`mt-0.5 font-mono text-[11px] ${r.activa ? 'text-movdi-verde' : 'text-neutral-500'}`}>
-                            {r.activa ? 'activa' : 'pausada'}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">creada por</dt>
-                          <dd className="mt-0.5 font-mono text-[11px] text-neutral-400">{r.creadoPor}</dd>
-                        </div>
-                      </dl>
+                  {/* nivel 2: los patrones de esa persona */}
+                  {abiertoGrupo && (
+                    <ul id={`grupo-recur-${i}`} className="divide-y divide-neutral-800 border-t border-neutral-800">
+                      {g.patrones.map((r) => {
+                        const puedeAdministrar = administraPatron(r)
+                        const abierta = abiertas.has(r.id)
+                        return (
+                          <li key={r.id} data-testid="fila-recurrente" className="bg-neutral-900/40">
+                            {/* header colapsable: lo mínimo para reconocer el patrón de un vistazo */}
+                            <button
+                              type="button"
+                              data-testid="btn-detalle-recurrente"
+                              aria-expanded={abierta}
+                              aria-controls={`detalle-recur-${r.id}`}
+                              onClick={() => alternarAbierta(r.id)}
+                              className="flex w-full items-center gap-2.5 py-2.5 pl-5 pr-3 text-left transition-colors hover:bg-neutral-900 sm:gap-3"
+                            >
+                              <span aria-hidden className={`font-mono text-[11px] text-neutral-500 transition-transform duration-150 ${abierta ? 'rotate-90 text-movdi-naranja' : ''}`}>▶</span>
+                              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-100">{r.nombre}</span>
+                              {!r.activa && (
+                                <span className="shrink-0 border border-neutral-700 px-1.5 py-0.5 font-mono text-[10px] text-neutral-500">pausada</span>
+                              )}
+                            </button>
 
-                      <div className="mt-3 border-t border-neutral-800/70 pt-3">
-                        {puedeAdministrar ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {/* mover fechas queda en el creador (o ceo/head, regla del
-                                server en moverInstancia) — decisión 2026-07-20 */}
-                            {r.activa && (r.creadoPor === yo.nombre || admin) && (
-                              <button data-testid="btn-mover-proxima" title="mover próxima instancia"
-                                onClick={() => {
-                                  const inst = proximaInstanciaDe(r)
-                                  if (!inst) { setAviso(`no hay una entrega pendiente próxima de ${r.para} (¿pausada/inactiva?)`); return }
-                                  setModalMover(inst)
-                                }}
-                                className="border border-movdi-amarillo/40 px-2 py-1 font-mono text-[10px] text-movdi-amarillo hover:bg-movdi-amarillo/10">
-                                mover próxima
-                              </button>
+                            {/* detalle: todo lo que antes vivía en las columnas de la tabla */}
+                            {abierta && (
+                              <div id={`detalle-recur-${r.id}`} className="border-t border-neutral-800 pb-3 pl-5 pr-3 pt-3">
+                                {r.descripcion && <p className="mb-3 text-xs text-neutral-400">{r.descripcion}</p>}
+                                {/* a quién está asignada la dice el header del grupo;
+                                    aquí va el resto de lo que mostraba la tabla */}
+                                <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-4">
+                                  <div>
+                                    <dt className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">frecuencia</dt>
+                                    <dd className="mt-0.5"><span className="inline-block border border-neutral-700 px-1.5 py-0.5 font-mono text-[10px] text-neutral-300">{etiquetaFrecuencia(r)}</span></dd>
+                                  </div>
+                                  <div>
+                                    <dt className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">próxima</dt>
+                                    <dd className="mt-0.5 font-mono text-[11px] text-neutral-300">{fechaCorta(proximaFecha(r))}</dd>
+                                  </div>
+                                  <div>
+                                    <dt className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">estado</dt>
+                                    <dd data-testid="estado-recurrente" className={`mt-0.5 font-mono text-[11px] ${r.activa ? 'text-movdi-verde' : 'text-neutral-500'}`}>
+                                      {r.activa ? 'activa' : 'pausada'}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">creada por</dt>
+                                    <dd className="mt-0.5 font-mono text-[11px] text-neutral-400">{r.creadoPor}</dd>
+                                  </div>
+                                </dl>
+
+                                <div className="mt-3 border-t border-neutral-800/70 pt-3">
+                                  {puedeAdministrar ? (
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {/* mover fechas queda en el creador (o ceo/head, regla del
+                                          server en moverInstancia) — decisión 2026-07-20 */}
+                                      {r.activa && (r.creadoPor === yo.nombre || admin) && (
+                                        <button data-testid="btn-mover-proxima" title="mover próxima instancia"
+                                          onClick={() => {
+                                            const inst = proximaInstanciaDe(r)
+                                            if (!inst) { setAviso(`no hay una entrega pendiente próxima de ${r.para} (¿pausada/inactiva?)`); return }
+                                            setModalMover(inst)
+                                          }}
+                                          className="border border-movdi-amarillo/40 px-2 py-1 font-mono text-[10px] text-movdi-amarillo hover:bg-movdi-amarillo/10">
+                                          mover próxima
+                                        </button>
+                                      )}
+                                      <button data-testid="btn-toggle-recurrente" title={r.activa ? 'pausar' : 'activar'}
+                                        onClick={() => accion(() => toggleRecurrente({ id: r.id, activa: !r.activa }))}
+                                        className="border border-neutral-700 px-2 py-1 font-mono text-[10px] text-neutral-300 hover:bg-neutral-800">
+                                        {r.activa ? '⏸ pausar' : '▶ activar'}
+                                      </button>
+                                      <button data-testid="btn-eliminar-recurrente" title="eliminar"
+                                        onClick={async () => {
+                                          if (!confirm('¿eliminar esta recurrente?')) return
+                                          await accion(() => eliminarRecurrente({ id: r.id }))
+                                        }}
+                                        className="border border-movdi-naranja/40 px-2 py-1 font-mono text-[10px] text-movdi-naranja hover:bg-movdi-naranja/10">
+                                        ✕ eliminar
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="font-mono text-[10px] text-neutral-600">solo {r.creadoPor} edita</span>
+                                  )}
+                                </div>
+                              </div>
                             )}
-                            <button data-testid="btn-toggle-recurrente" title={r.activa ? 'pausar' : 'activar'}
-                              onClick={() => accion(() => toggleRecurrente({ id: r.id, activa: !r.activa }))}
-                              className="border border-neutral-700 px-2 py-1 font-mono text-[10px] text-neutral-300 hover:bg-neutral-800">
-                              {r.activa ? '⏸ pausar' : '▶ activar'}
-                            </button>
-                            <button data-testid="btn-eliminar-recurrente" title="eliminar"
-                              onClick={async () => {
-                                if (!confirm('¿eliminar esta recurrente?')) return
-                                await accion(() => eliminarRecurrente({ id: r.id }))
-                              }}
-                              className="border border-movdi-naranja/40 px-2 py-1 font-mono text-[10px] text-movdi-naranja hover:bg-movdi-naranja/10">
-                              ✕ eliminar
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="font-mono text-[10px] text-neutral-600">solo {r.creadoPor} edita</span>
-                        )}
-                      </div>
-                    </div>
+                          </li>
+                        )
+                      })}
+                    </ul>
                   )}
-                </li>
+                </section>
               )
             })}
             {!cargando && visibles.length === 0 && (
-              <li className="px-3 py-6 text-center font-mono text-xs text-neutral-500">sin recurrentes</li>
+              <p className="rounded-2xl border border-neutral-800 px-3 py-6 text-center font-mono text-xs text-neutral-500">sin recurrentes</p>
             )}
-          </ul>
+          </div>
         </section>
       </div>
 

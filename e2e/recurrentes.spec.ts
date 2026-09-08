@@ -316,3 +316,44 @@ test('acordeón de patrones: colapsados por default, abren su detalle al clic', 
   await page.getByTestId('btn-expandir-todo-recur').click()
   await expect(page.getByTestId('estado-recurrente')).toHaveCount(0)
 })
+
+// ------------------------------------------------------------
+test('agrupación por persona: un bloque por destinataria, colapsado y con conteo', async ({ page }) => {
+  await login(page, 'dani@movdi.mx')
+  await irARecurrentes(page)
+
+  // seeds: 4 patrones, todos de Antonio → un solo grupo, que se abre solo
+  await expect(page.getByTestId('grupo-recurrentes')).toHaveCount(1)
+  await expect(page.getByTestId('grupo-recurrentes')).toContainText('4 recurrentes')
+  await expect(page.getByTestId('fila-recurrente')).toHaveCount(4)
+
+  // repartir una recurrente a todo el equipo → varias personas en la lista
+  await page.getByTestId('btn-nueva-recurrente').click()
+  await page.locator('#rec-nombre').fill('bitácora mensual')
+  await page.getByText('todo el equipo · admin only').click()
+  await page.locator('#rec-frec').selectOption('mensual')
+  await page.locator('#rec-dia').selectOption('28')
+  page.once('dialog', (d) => void d.accept())
+  await page.getByTestId('btn-crear-rec-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  // 6 personas del equipo, ordenadas alfabéticamente y TODAS colapsadas
+  const grupos = page.getByTestId('grupo-recurrentes')
+  await expect(grupos).toHaveCount(6)
+  await expect(grupos.first()).toContainText('Antonio')
+  await expect(grupos.first()).toContainText('5 recurrentes') // 4 suyas + la nueva
+  await expect(grupos.nth(1)).toContainText('Arylene')
+  await expect(grupos.nth(1)).toContainText('1 recurrente')
+  await expect(page.getByTestId('fila-recurrente')).toHaveCount(0)
+
+  // abrir un grupo muestra SOLO sus patrones, todavía colapsados
+  await grupos.nth(1).getByTestId('btn-grupo-recurrentes').click()
+  await expect(page.getByTestId('fila-recurrente')).toHaveCount(1)
+  await expect(page.getByTestId('fila-recurrente')).toContainText('bitácora mensual')
+  await expect(page.getByTestId('estado-recurrente')).toHaveCount(0)
+
+  // el filtro por persona deja un solo grupo, y con uno solo se abre solo
+  await page.getByTestId('filtro-persona-recur').selectOption('Karla')
+  await expect(page.getByTestId('grupo-recurrentes')).toHaveCount(1)
+  await expect(page.getByTestId('fila-recurrente')).toHaveCount(1)
+})
