@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { selectTodo } from '@/lib/supabase/select-todo'
-import { type Peticion, mapPeticionRow, mapPersonaRow, matchNombre, type Persona, tengoSupervisadas } from '@/lib/peticiones'
+import { type Peticion, estaAbierta, mapPeticionRow, mapPersonaRow, matchNombre, type Persona, tengoSupervisadas } from '@/lib/peticiones'
 import { type Recurrente, mapRecurRow } from '@/lib/recurrentes'
 import { type Estrella, mapEstrellaRow } from '@/lib/estrellas'
 import { type PersonaConManagers, esDireccion } from '@/lib/equipo'
@@ -160,7 +160,7 @@ export default function ProgresoClient({ yo, gameInicial }: { yo: PersonaConMana
   // insumos del coach: vencidas, pendientes de la semana y ritmo de recurrentes
   const coachDatos = useMemo(() => {
     const mias = peticiones.filter((t) =>
-      matchNombre(t.para, yo.nombre) && !t.origenRecur && t.estatus !== 'entregado' && t.estatus !== 'archivada')
+      matchNombre(t.para, yo.nombre) && !t.origenRecur && estaAbierta(t))
     const hoyMs = new Date(new Date().toDateString()).getTime()
     const dias = (f: string) => Math.round((new Date(f + 'T00:00:00').getTime() - hoyMs) / 86400000)
     const ritmos = miRitmo.filter(({ cumpli }) => cumpli.total > 0).map(({ cumpli }) => cumpli.porcentaje)

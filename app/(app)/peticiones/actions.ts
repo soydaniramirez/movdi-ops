@@ -15,7 +15,7 @@ import { notificarServidor } from '@/lib/supabase/notificar'
 import { MSG_CUENTA_SIN_VINCULO, asegurarVinculoAuth } from '@/lib/supabase/vinculo'
 import {
   AREAS_VALIDAS, MODOS_ADMIN, ORIGENES_VALIDOS, type ModoAsignacion,
-  destinatariosPorModo, fechaCorta, hoyISO, isAdmin,
+  destinatariosPorModo, estaCerrada, fechaCorta, hoyISO, isAdmin,
   mapPersonaRow, matchNombre, personaDisponible, type Persona,
 } from '@/lib/peticiones'
 import {
@@ -335,7 +335,7 @@ export async function agregarNotaAvance(input: {
     if (t.creado_por !== yo.nombre && !matchNombre(t.para, yo.nombre)) {
       return { ok: false, error: 'solo el creador o el destinatario pueden dejar notas de avance' }
     }
-    if (t.estatus === 'entregado' || t.estatus === 'archivada') {
+    if (estaCerrada({ estatus: t.estatus })) {
       return { ok: false, error: 'esta petición ya está cerrada' }
     }
 

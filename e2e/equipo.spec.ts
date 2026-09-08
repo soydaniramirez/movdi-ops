@@ -303,3 +303,85 @@ test('REASIGNACIÓN DE TERCEROS (hallazgo 4.6): la RPC reasigna peticiones que e
   expect((st.peticiones.find((x) => x.id === 'p-seed-3'))!.para).toBe('Arylene') // fila de un tercero, reasignada
   expect((st.personas.find((x) => x.nombre === 'Brenda'))!.activo).toBe(false)
 })
+
+// ------------------------------------------------------------
+// Salida alterna (2026-09-08): las tareas de quien se va muchas veces ya no
+// sirven. Antes la baja EXIGÍA heredárselas a alguien; ahora se pueden cerrar.
+test('baja CANCELANDO en bloque: las peticiones quedan canceladas, no se borran, y la baja procede', async ({ page }) => {
+  await login(page, 'dani@movdi.mx')
+  await irAEquipo(page)
+  page.on('dialog', (d) => d.accept())
+
+  await page.getByTestId('card-persona').filter({ hasText: 'Antonio' }).getByTestId('btn-desactivar').click()
+  await expect(page.getByText('requiere reasignación')).toBeVisible()
+
+  // por default sigue siendo reasignar: el select está a la vista
+  await expect(page.locator('#reasign-pet')).toBeVisible()
+
+  // cambiar a "cancelar todas" esconde el select y explica qué va a pasar
+  await page.getByTestId('modo-pet-cancelar').click()
+  await expect(page.locator('#reasign-pet')).toHaveCount(0)
+  await expect(page.getByTestId('aviso-cancelar-pet')).toContainText('no cuentan como entregadas')
+
+  // las recurrentes se apagan en vez de heredarse
+  await page.getByTestId('modo-rec-cancelar').click()
+  await expect(page.getByTestId('aviso-cancelar-rec')).toBeVisible()
+
+  await page.getByTestId('btn-reasign-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  const st = await estado()
+  // las filas SIGUEN AHÍ (histórico intacto), solo cambiaron de estatus
+  const p1 = st.peticiones.find((x) => x.id === 'p-seed-1')!
+  const p2 = st.peticiones.find((x) => x.id === 'p-seed-2')!
+  expect(p1.estatus).toBe('cancelada')
+  expect(p2.estatus).toBe('cancelada')
+  expect(p1.para).toBe('Antonio')      // NO se le pasó a nadie
+  expect(p1.fecha_entrega).toBeNull()  // cancelada ≠ entregada
+  expect(p1.descripcion).toContain('✕ cancelada')  // rastro en el histórico
+  // los patrones quedan apagados, no reasignados
+  expect(st.recurrentes.filter((r) => r.para === 'Antonio' && r.activa)).toHaveLength(0)
+  expect(st.recurrentes.filter((r) => r.para === 'Antonio')).toHaveLength(4)
+  // y la baja SÍ procedió
+  expect((st.personas.find((x) => x.nombre === 'Antonio'))!.activo).toBe(false)
+})
+
+// ------------------------------------------------------------
+test('baja MIXTA: cancelar las peticiones y reasignar las recurrentes en la misma baja', async ({ page }) => {
+  await login(page, 'dani@movdi.mx')
+  await irAEquipo(page)
+  page.on('dialog', (d) => d.accept())
+
+  await page.getByTestId('card-persona').filter({ hasText: 'Antonio' }).getByTestId('btn-desactivar').click()
+  await page.getByTestId('modo-pet-cancelar').click()
+  await page.locator('#reasign-rec').selectOption('Brenda') // recurrentes sí se heredan
+  await page.getByTestId('btn-reasign-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  const st = await estado()
+  expect((st.peticiones.find((x) => x.id === 'p-seed-1'))!.estatus).toBe('cancelada')
+  expect(st.recurrentes.filter((r) => r.para === 'Brenda')).toHaveLength(4)
+  expect((st.personas.find((x) => x.nombre === 'Antonio'))!.activo).toBe(false)
+})
+
+// ------------------------------------------------------------
+test('cancelar en bloque respeta la atomicidad: si la RPC falla, nada se cancela', async ({ page }) => {
+  await login(page, 'dani@movdi.mx')
+  await irAEquipo(page)
+  page.on('dialog', (d) => d.accept())
+
+  await fetch(`${MOCK}/__test/fallar`, {
+    method: 'POST',
+    body: JSON.stringify({ tabla: 'rpc/desactivar_persona_con_reasignacion', metodo: 'POST' }),
+  })
+
+  await page.getByTestId('card-persona').filter({ hasText: 'Antonio' }).getByTestId('btn-desactivar').click()
+  await page.getByTestId('modo-pet-cancelar').click()
+  await page.getByTestId('modo-rec-cancelar').click()
+  await page.getByTestId('btn-reasign-confirmar').click()
+
+  await expect(page.locator('p[role="alert"]').first()).toContainText('nada quedó desactivado')
+  const st = await estado()
+  expect((st.peticiones.find((x) => x.id === 'p-seed-1'))!.estatus).toBe('pendiente')
+  expect((st.personas.find((x) => x.nombre === 'Antonio'))!.activo).toBe(true)
+})

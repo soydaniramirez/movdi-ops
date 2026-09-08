@@ -34,8 +34,8 @@ export default function RhLista({ peticiones }: { peticiones: Peticion[] }) {
             <p className="text-sm font-semibold">{t.privada && '🔒 '}{t.nombre}</p>
             <p className="mt-0.5 font-mono text-[11px] text-neutral-500">
               de {t.creadoPor} para {t.para} · {t.fecha} ·{' '}
-              <span className={t.estatus === 'entregado' ? 'text-movdi-verde' : t.estatus === 'proceso' ? 'text-movdi-amarillo' : ''}>
-                {t.estatus === 'entregado' ? 'entregado ✓' : t.estatus === 'proceso' ? 'en proceso' : t.estatus}
+              <span className={t.estatus === 'entregado' ? 'text-movdi-verde' : t.estatus === 'proceso' ? 'text-movdi-amarillo' : t.estatus === 'cancelada' ? 'text-neutral-500 line-through' : ''}>
+                {t.estatus === 'entregado' ? 'entregado ✓' : t.estatus === 'proceso' ? 'en proceso' : t.estatus === 'cancelada' ? 'cancelada ✕' : t.estatus}
               </span>
             </p>
           </article>

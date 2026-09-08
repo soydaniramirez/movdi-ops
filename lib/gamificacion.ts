@@ -3,7 +3,7 @@
 // logros). No se inventó ninguna fórmula; los quirks del SPA se conservan y
 // están señalados.
 
-import { type Peticion, type Persona, esCompromisoPropio, matchNombre } from './peticiones'
+import { type Peticion, type Persona, cierreNeutro, esCompromisoPropio, estaAbierta, matchNombre } from './peticiones'
 import { type Recurrente, calcularFechasEsperadas } from './recurrentes'
 import { type Estrella } from './estrellas'
 
@@ -67,7 +67,7 @@ const sinCompromisosPropios = (peticiones: Peticion[]) =>
 // ---------- rachas ----------
 export function calcularRachaActual(nombre: string, peticiones: Peticion[]): number {
   const lista = sinCompromisosPropios(peticiones)
-    .filter((t) => matchNombre(t.para, nombre) && t.estatus !== 'archivada')
+    .filter((t) => matchNombre(t.para, nombre) && !cierreNeutro(t))
     .sort((a, b) => b.fecha.localeCompare(a.fecha))
   let racha = 0
   for (const t of lista) {
@@ -79,7 +79,7 @@ export function calcularRachaActual(nombre: string, peticiones: Peticion[]): num
 
 export function calcularMejorRacha(nombre: string, peticiones: Peticion[]): number {
   const lista = sinCompromisosPropios(peticiones)
-    .filter((t) => matchNombre(t.para, nombre) && t.estatus !== 'archivada')
+    .filter((t) => matchNombre(t.para, nombre) && !cierreNeutro(t))
     .sort((a, b) => a.fecha.localeCompare(b.fecha))
   let mejor = 0
   let actual = 0
@@ -215,7 +215,7 @@ export function calcularStatsPersona(
   const tarde = 0
   const h = hoy ?? new Date(new Date().toDateString()).toISOString().slice(0, 10)
   const pendientesVencidas = consideradas.filter(
-    (t) => matchNombre(t.para, nombre) && t.estatus !== 'entregado' && t.estatus !== 'archivada' && t.fecha < h,
+    (t) => matchNombre(t.para, nombre) && estaAbierta(t) && t.fecha < h,
   )
   const total = entregadas.length + pendientesVencidas.length
   const porcentaje = total === 0 ? 0 : Math.round((aTiempo / total) * 100)
@@ -371,7 +371,7 @@ export function calcularCumplimiento(
   const detalle: { fecha: string; estado: 'entregada' | 'pendiente' | 'no_registrada'; tarde: boolean }[] = []
   for (const fecha of fechasRelevantes) {
     const inst = instancias.find((i) => i.fecha === fecha)
-    if (inst && inst.estatus === 'archivada') continue
+    if (inst && cierreNeutro(inst)) continue
     if (inst && inst.estatus === 'entregado') { entregadas++; detalle.push({ fecha, estado: 'entregada', tarde: false }) }
     else if (inst) detalle.push({ fecha, estado: 'pendiente', tarde: true })
     else detalle.push({ fecha, estado: 'no_registrada', tarde: false })
@@ -486,7 +486,7 @@ export function calcularLogros(opts: {
   const finMesAnt = new Date(hoy.getFullYear(), hoy.getMonth(), 0).toISOString().slice(0, 10)
 
   const peticionesDelMesAnt = consideradas.filter(
-    (t) => matchNombre(t.para, nombre) && t.estatus !== 'archivada' && t.fecha >= inicioMesAnt && t.fecha <= finMesAnt,
+    (t) => matchNombre(t.para, nombre) && !cierreNeutro(t) && t.fecha >= inicioMesAnt && t.fecha <= finMesAnt,
   )
   const vencidasDelMesAnt = peticionesDelMesAnt.filter((t) => t.estatus !== 'entregado')
   const mesPerfecto = peticionesDelMesAnt.length >= 3 && vencidasDelMesAnt.length === 0

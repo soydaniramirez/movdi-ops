@@ -2,7 +2,7 @@
 // Las instancias son VIRTUALES (calculadas al vuelo); solo se materializan en
 // una fila de peticiones al entregar o al mover.
 
-import { type Peticion, type Persona, estaPausada, matchNombre, tengoSupervisadas } from './peticiones'
+import { type Peticion, type Persona, estaCerrada, estaPausada, matchNombre, tengoSupervisadas } from './peticiones'
 
 export type Recurrente = {
   id: string
@@ -194,13 +194,13 @@ export function obtenerInstanciasRecur(opts: {
 
     // Si la instancia (movida o normal) ya está entregada/archivada,
     // calcular la SIGUIENTE fecha y volver a buscar.
-    if (inst && (inst.estatus === 'entregado' || inst.estatus === 'archivada')) {
+    if (inst && estaCerrada(inst)) {
       fechaR = siguienteOcurrencia(fechaR, r)
       inst = instanciaEfectivaPara(r, fechaR)
     }
 
     if (inst) {
-      if (inst.estatus === 'entregado' || inst.estatus === 'archivada') continue
+      if (estaCerrada(inst)) continue
       out.push({ ...inst, recurOrigen: r.id, esVirtual: false })
     } else {
       out.push({

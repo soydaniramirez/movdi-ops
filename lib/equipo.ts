@@ -1,6 +1,6 @@
 // Dominio del equipo — semáforo y agrupación por managers (paridad renderSide).
 
-import { type Peticion, type Persona, diasHasta, matchNombre, normalizarTexto, tengoSupervisadas } from './peticiones'
+import { type Peticion, type Persona, diasHasta, estaAbierta, matchNombre, normalizarTexto, tengoSupervisadas } from './peticiones'
 import { type Instancia } from './recurrentes'
 
 export type PersonaConManagers = Persona & { managers: string[]; managerPrincipal: string | null }
@@ -39,9 +39,9 @@ export function calcularSemaforo(
   instancias: Instancia[],
 ): ItemSemaforo {
   const normales = peticiones.filter(
-    (t) => matchNombre(t.para, p.nombre) && t.estatus !== 'entregado' && !t.origenRecur,
+    (t) => matchNombre(t.para, p.nombre) && estaAbierta(t) && !t.origenRecur,
   )
-  const recurInst = instancias.filter((t) => t.estatus !== 'entregado')
+  const recurInst = instancias.filter((t) => estaAbierta(t))
   const tareas = [...normales, ...recurInst]
   const venc = tareas.filter((t) => diasHasta(t.fecha) < 0).length
   const sem7 = tareas.filter((t) => { const d = diasHasta(t.fecha); return d >= 0 && d <= 7 }).length

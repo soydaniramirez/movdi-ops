@@ -26,6 +26,30 @@ export type Persona = {
   managers: string[]
 }
 
+// ---------- estatus ----------
+// Ciclo de vida de una petición. 'pendiente'/'proceso' están VIVAS; las otras
+// tres son TERMINALES y se distinguen por lo que significan para las métricas:
+//   entregado → se cumplió (lo único que suma en gamificación y KPIs)
+//   archivada → legacy heredado del SPA (el código lo respeta, nada lo asigna)
+//   cancelada → se cerró porque ya no sirve (2026-09-08, salida de la baja de
+//               persona): queda en el histórico, pero NI suma como entregada
+//               NI pesa como pendiente/vencida.
+export const ESTATUS_PETICION = ['pendiente', 'proceso', 'entregado', 'archivada', 'cancelada'] as const
+export type EstatusPeticion = (typeof ESTATUS_PETICION)[number]
+
+const CERRADOS: readonly string[] = ['entregado', 'archivada', 'cancelada']
+
+// ¿La petición sigue viva? Sustituye al viejo `estatus !== 'entregado'`, que
+// contaba una cancelada como pendiente (y por tanto la metía a KPIs, semáforos
+// y vencidas). Úsalo para TODA cuenta de carga de trabajo.
+export const estaCerrada = (t: Pick<Peticion, 'estatus'>) => CERRADOS.includes(t.estatus)
+export const estaAbierta = (t: Pick<Peticion, 'estatus'>) => !estaCerrada(t)
+
+// Cierre NEUTRO: terminó sin cumplimiento, y no debe premiar ni castigar.
+// Gamificación las saca del numerador Y del denominador.
+export const cierreNeutro = (t: Pick<Peticion, 'estatus'>) =>
+  t.estatus === 'archivada' || t.estatus === 'cancelada'
+
 export type Peticion = {
   id: string
   zona: 'general' | 'heads'
@@ -36,7 +60,10 @@ export type Peticion = {
   area: string | null
   fecha: string
   prioridad: 'alta' | 'media' | 'baja'
-  estatus: 'pendiente' | 'proceso' | 'entregado' | 'archivada'
+  // 'cancelada' (2026-09-08): cierre TERMINAL sin cumplimiento — la tarea ya
+  // no sirve (típicamente por la baja de la persona). No es 'entregado' (no
+  // suma) ni 'archivada' (ese es el estado legacy heredado del SPA).
+  estatus: EstatusPeticion
   privada: boolean
   origenRecur: string | null
   grupoId: string | null
@@ -135,7 +162,7 @@ export function mapPeticionRow(r: any): Peticion {
     area: r.area ?? null,
     fecha: r.fecha,
     prioridad: r.prioridad ?? 'media',
-    estatus: r.estatus ?? 'pendiente',
+    estatus: (r.estatus ?? 'pendiente') as EstatusPeticion,
     privada: r.privada === true,
     origenRecur: r.origen_recur ?? null,
     grupoId: r.grupo_id ?? null,
@@ -178,6 +205,7 @@ export const fechaCorta = (s: string) => {
 }
 
 export function labelFecha(t: Peticion): string {
+  if (t.estatus === 'cancelada') return 'cancelada'
   if (t.estatus === 'entregado') {
     const limite = t.extensionJustificada === false ? (t.fechaOriginal ?? t.fecha) : t.fecha
     if (t.fechaEntrega && t.fechaEntrega > limite) {
@@ -258,7 +286,7 @@ export function estadoMovimiento(
   t: Pick<Peticion, 'estatus' | 'fecha' | 'actualizadaEn' | 'creadaEn'>,
   hoy?: string,
 ): EstadoMovimiento | null {
-  if (t.estatus === 'entregado' || t.estatus === 'archivada') return null
+  if (estaCerrada(t)) return null
   const h = hoy ?? hoyISO()
   const sinMov = diasSinMovimiento(t, h)
   if (sinMov !== null && sinMov >= 3) return 'atorada'
