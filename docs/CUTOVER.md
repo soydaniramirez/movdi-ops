@@ -387,8 +387,11 @@ candado no aplica si la config se retira del código).
 
 ## H. POST-CUTOVER — Aprobación de entrega (2026-09-18)
 
-**Migración 12: `20260918120000_cutover_aprobacion_entrega.sql` — ⏳ SIN APLICAR**
-(requiere OK explícito de dirección tras mostrar el SQL, como toda migración).
+**Migración 12: `20260918120000_cutover_aprobacion_entrega.sql` — ✅ APLICADA el 2026-09-18**
+(OK explícito de dirección tras mostrar el SQL; registrada como `20260918200044`).
+Las 7 verificaciones del pie del archivo corrieron limpias contra la BD viva,
+con sesiones simuladas (`role authenticated` + claims del JWT) dentro de
+transacciones con `rollback`; los advisors no reportaron nada nuevo.
 
 Problema: cuando el destinatario marcaba "entregado", quien pidió la petición no
 se enteraba de nada y no existía el paso de "sí, esto es lo que pedí".

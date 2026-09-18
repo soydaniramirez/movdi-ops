@@ -1,5 +1,22 @@
 -- ============================================================
--- ⏳ SIN APLICAR — requiere OK explícito de dirección (mostrar este SQL antes).
+-- ✅ APLICADA el 2026-09-18 con OK explícito de dirección (Dani), tras mostrar
+--    el SQL. Registrada como 20260918200044_cutover_aprobacion_entrega.
+--    Verificado contra la BD viva (las 7 verificaciones del pie, con sesiones
+--    simuladas dentro de transacciones con rollback):
+--      1. 0 entregadas sin sello · 949 selladas por el backfill · 0 selladas
+--         que no estén entregadas.
+--      2. Entregar como DESTINATARIO: pasa, aprobada_* quedan NULL y
+--         updated_at SÍ se mueve (entregar es movimiento real).
+--      3. Aprobar como CREADOR: sella y updated_at queda CONGELADO.
+--      4. Aprobar como DESTINATARIO: revienta con el mensaje del guard.
+--      4b. Ese mismo destinatario limpiando el sello (null): pasa.
+--      5. Aprobar → reabrir → re-entregar: aprobada_* vuelven a NULL.
+--      6. anon: 0 filas de lectura y 0 filas afectadas al intentar sellar
+--         (la RLS de UPDATE lo corta antes del guard). La verificación por
+--         HTTP con la anon key no se pudo correr desde el sandbox (la política
+--         de red bloquea *.supabase.co); el equivalente a nivel de BD sí.
+--      7. Security advisors: sin hallazgos nuevos (siguen solo los dos
+--         conocidos y documentados: recurrentes_avisos y los helpers mi_*).
 -- ============================================================
 -- CUTOVER 12 — aprobación de entrega (2026-09-18)
 --
