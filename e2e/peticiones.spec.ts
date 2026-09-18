@@ -429,3 +429,253 @@ test('cancelada: sale de pendientes SIN contar como entregada, y tiene su propio
   expect((await estado()).peticiones.find((x) => x.id === 'p-seed-3')!.estatus).toBe('pendiente')
   await ctx.close()
 })
+
+// ------------------------------------------------------------
+// Aprobación de entrega (cutover 12, 2026-09-18). Antes, entregar no avisaba
+// NADA a quien pidió la petición y el ciclo se cerraba de un solo lado.
+async function token(email: string) {
+  const r = await fetch(`${MOCK}/auth/v1/token?grant_type=password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: PASS }),
+  })
+  return ((await r.json()) as { access_token: string }).access_token
+}
+
+// Brenda entrega 'diseñar reel' (p-seed-3), que le pidió Antonio.
+async function entregarDiseñarReel(page: Page, nota = 'ya quedó el corte final') {
+  await login(page, 'brenda@movdi.mx')
+  await irAPeticiones(page)
+  await page.getByRole('button', { name: 'mis pendientes' }).click()
+  const card = page.getByTestId('card-peticion').filter({ hasText: 'diseñar reel' })
+  await card.getByTestId('btn-entregar').click()
+  await page.locator('#ent-nota').fill(nota)
+  await page.getByTestId('btn-entrega-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  return card
+}
+
+test('entregar avisa a quien la pidió; aprobar avisa de vuelta y cierra el ciclo', async ({ page, browser }) => {
+  const cardBrenda = await entregarDiseñarReel(page)
+
+  // (1) el creador recibe la notificación de entrega
+  let st = await estado()
+  const aviso = st.notificaciones.find((n) => n.tipo === 'entrega_por_aprobar')!
+  expect(aviso).toBeTruthy()
+  expect(aviso.para).toBe('Antonio')
+  expect(aviso.titulo).toBe('Brenda entregó "diseñar reel"')
+  expect(aviso.detalle).toContain('revísala y apruébala')
+  expect(aviso.detalle).toContain('ya quedó el corte final')
+  expect(aviso.peticion_id).toBe('p-seed-3')
+  // entregada, pero NO aprobada todavía
+  expect(st.peticiones.find((x) => x.id === 'p-seed-3')!.aprobada_en).toBeNull()
+
+  // (2) el destinatario ve que está esperando el visto bueno (y no puede aprobar)
+  await expect(cardBrenda.getByTestId('esperando-aprobacion')).toBeVisible()
+  await expect(cardBrenda.getByTestId('btn-aprobar-entrega')).toHaveCount(0)
+  await expect(cardBrenda.getByTestId('btn-pedir-cambios')).toHaveCount(0)
+
+  // (3) el creador la ve en su cola "por aprobar" y la aprueba
+  const ctx = await browser.newContext()
+  const p2 = await ctx.newPage()
+  await login(p2, 'antonio@movdi.mx')
+  await irAPeticiones(p2)
+  await expect(p2.getByTestId('kpi-por_aprobar')).toContainText('1')
+  await p2.getByTestId('kpi-por_aprobar').click()
+  const card = p2.getByTestId('card-peticion').filter({ hasText: 'diseñar reel' })
+  await expect(card.getByTestId('badge-por-aprobar')).toBeVisible()
+  await card.getByTestId('btn-aprobar-entrega').click()
+
+  // la cola se vacía: sale del filtro "por aprobar" y el KPI desaparece
+  await expect(card).toHaveCount(0)
+  await expect(p2.getByTestId('kpi-por_aprobar')).toHaveCount(0)
+  // y en la lista completa queda sellada, sin perder el label de labelFecha
+  await p2.getByRole('button', { name: 'todas', exact: true }).click()
+  await expect(card.getByTestId('sello-aprobada')).toBeVisible()
+  await expect(card.getByText('entregada ✓')).toBeVisible()
+  await expect(card.getByTestId('badge-por-aprobar')).toHaveCount(0)
+
+  st = await estado()
+  const t = st.peticiones.find((x) => x.id === 'p-seed-3')!
+  expect(t.estatus).toBe('entregado') // aprobar NO cambia el estatus
+  expect(t.aprobada_en).toBeTruthy()
+  expect(t.aprobada_por).toBe('Antonio')
+  const ok = st.notificaciones.find((n) => n.tipo === 'entrega_aprobada')!
+  expect(ok.para).toBe('Brenda')
+  expect(ok.titulo).toBe('Antonio aprobó tu entrega de "diseñar reel"')
+  await ctx.close()
+})
+
+// ------------------------------------------------------------
+test('pedir cambios: motivo obligatorio, vuelve a pendiente con la línea en la descripción y avisa', async ({ page, browser }) => {
+  await entregarDiseñarReel(page)
+
+  const ctx = await browser.newContext()
+  const p2 = await ctx.newPage()
+  await login(p2, 'antonio@movdi.mx')
+  await irAPeticiones(p2)
+  await p2.getByRole('button', { name: 'lo que pedí' }).click()
+  const card = p2.getByTestId('card-peticion').filter({ hasText: 'diseñar reel' })
+  await card.getByTestId('btn-pedir-cambios').click()
+
+  // motivo corto → error, no guarda
+  await p2.locator('#pc-motivo').fill('no')
+  await p2.getByTestId('btn-cambios-confirmar').click()
+  await expect(p2.getByRole('dialog').locator('p[role="alert"]')).toContainText('mínimo 3 caracteres')
+
+  await p2.locator('#pc-motivo').fill('falta el corte vertical para stories')
+  await p2.getByTestId('btn-cambios-confirmar').click()
+  await expect(p2.getByRole('dialog')).toHaveCount(0)
+
+  const st = await estado()
+  const t = st.peticiones.find((x) => x.id === 'p-seed-3')!
+  expect(t.estatus).toBe('pendiente')
+  expect(t.aprobada_en).toBeNull()
+  expect(t.descripcion).toContain('↩ cambios pedidos (')
+  expect(t.descripcion).toContain('Antonio): falta el corte vertical para stories')
+  expect(t.descripcion).toContain('reel de talento') // no pisa lo que ya había
+
+  const notif = st.notificaciones.find((n) => n.tipo === 'cambios_pedidos')!
+  expect(notif.para).toBe('Brenda')
+  expect(notif.titulo).toBe('Antonio pidió cambios en "diseñar reel"')
+  expect(notif.detalle).toContain('falta el corte vertical para stories')
+  await ctx.close()
+})
+
+// ------------------------------------------------------------
+test('solo quien la pidió aprueba: un tercero no ve los botones y el API lo rechaza', async ({ page, browser }) => {
+  await entregarDiseñarReel(page)
+
+  // Karla (head, jefa de Brenda) VE la petición por RLS de equipo… pero no es
+  // quien la pidió: nada de aprobar ni pedir cambios.
+  const ctx = await browser.newContext()
+  const p2 = await ctx.newPage()
+  await login(p2, 'karla@movdi.mx')
+  await irAPeticiones(p2)
+  const card = p2.getByTestId('card-peticion').filter({ hasText: 'diseñar reel' })
+  await expect(card).toBeVisible()
+  await expect(card.getByTestId('btn-aprobar-entrega')).toHaveCount(0)
+  await expect(card.getByTestId('btn-pedir-cambios')).toHaveCount(0)
+  await expect(p2.getByTestId('kpi-por_aprobar')).toHaveCount(0)
+  await ctx.close()
+
+  // …y saltarse la UI tampoco sirve. Karla ni siquiera pasa la RLS de UPDATE
+  // (no es creadora ni destinataria: su PATCH no toca ninguna fila), y a
+  // Brenda —que SÍ puede editar la fila para entregarla— la frena el guard de
+  // BD (trigger peticiones_guard_aprobacion).
+  const patch = async (email: string) => {
+    const tk = await token(email)
+    return fetch(`${MOCK}/rest/v1/peticiones?id=eq.p-seed-3`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aprobada_en: new Date().toISOString(), aprobada_por: 'Brenda' }),
+    })
+  }
+  expect((await patch('brenda@movdi.mx')).status).toBeGreaterThanOrEqual(400)
+  await patch('karla@movdi.mx') // pasa sin error, pero sin filas afectadas
+  expect((await estado()).peticiones.find((x) => x.id === 'p-seed-3')!.aprobada_en).toBeNull()
+})
+
+// ------------------------------------------------------------
+// Nadie se aprueba a sí mismo y nadie revisa lo que generó el sistema: las
+// instancias recurrentes y los compromisos propios nacen aprobados de facto.
+test('recurrentes y compromisos propios: sin aviso de entrega ni botones de aprobación', async ({ page, browser }) => {
+  await login(page, 'antonio@movdi.mx')
+  await irAPeticiones(page)
+
+  // instancia recurrente (p-seed-2, patrón de Dani)
+  await page.getByRole('button', { name: 'instancias recurrentes' }).click()
+  const recur = page.getByTestId('card-peticion').filter({ hasText: 'nómina quincenal' })
+  await recur.getByTestId('btn-entregar').click()
+  await page.getByTestId('btn-entrega-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(recur.getByTestId('esperando-aprobacion')).toHaveCount(0)
+
+  // compromiso propio (creador = destinatario)
+  await page.getByTestId('btn-nuevo-compromiso').click()
+  await page.locator('#comp-nombre').fill('ordenar carpeta de talento')
+  await page.locator('#comp-origen').selectOption('propio')
+  await page.getByTestId('btn-compromiso-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.getByRole('button', { name: 'mis pendientes' }).click()
+  const propio = page.getByTestId('card-peticion').filter({ hasText: 'ordenar carpeta de talento' })
+  await propio.getByTestId('btn-entregar').click()
+  await page.getByTestId('btn-entrega-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(propio.getByTestId('btn-aprobar-entrega')).toHaveCount(0)
+  await expect(propio.getByTestId('btn-reabrir')).toBeVisible() // el reabrir de siempre
+
+  const st = await estado()
+  expect(st.notificaciones.filter((n) => n.tipo === 'entrega_por_aprobar')).toHaveLength(0)
+
+  // y Dani, creadora del patrón recurrente, no tiene cola que atender
+  const ctx = await browser.newContext()
+  const p2 = await ctx.newPage()
+  await login(p2, 'dani@movdi.mx')
+  await irAPeticiones(p2)
+  await expect(p2.getByTestId('kpi-por_aprobar')).toHaveCount(0)
+  await ctx.close()
+})
+
+// ------------------------------------------------------------
+// Hueco detectado antes de aplicar la migración 12: una entrega aprobada
+// conserva su botón "reabrir", y reabrir no limpiaba el sello — la
+// RE-ENTREGA nacía ya aprobada, sin botones y sin cola, aunque nadie la
+// hubiera revisado. El sello se limpia en cada entrega nueva.
+test('aprobar → reabrir → re-entregar: la entrega nueva vuelve a la cola por aprobar', async ({ page, browser }) => {
+  await entregarDiseñarReel(page, 'primera versión')
+
+  // el creador aprueba
+  const ctx = await browser.newContext()
+  const p2 = await ctx.newPage()
+  await login(p2, 'antonio@movdi.mx')
+  await irAPeticiones(p2)
+  await p2.getByTestId('kpi-por_aprobar').click()
+  await p2.getByTestId('card-peticion').filter({ hasText: 'diseñar reel' })
+    .getByTestId('btn-aprobar-entrega').click()
+  await expect(p2.getByTestId('kpi-por_aprobar')).toHaveCount(0)
+  expect((await estado()).peticiones.find((x) => x.id === 'p-seed-3')!.aprobada_por).toBe('Antonio')
+
+  // la destinataria reabre (su botón de siempre) y vuelve a entregar
+  await irAPeticiones(page)
+  await page.getByRole('button', { name: 'mis pendientes' }).click()
+  const card = page.getByTestId('card-peticion').filter({ hasText: 'diseñar reel' })
+  await card.getByTestId('btn-reabrir').click()
+  await expect(card.getByTestId('btn-entregar')).toBeVisible()
+  await card.getByTestId('btn-entregar').click()
+  await page.locator('#ent-nota').fill('segunda versión con el corte vertical')
+  await page.getByTestId('btn-entrega-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  // el sello NO sobrevive: la entrega nueva pide aprobación nueva
+  let st = await estado()
+  const t = st.peticiones.find((x) => x.id === 'p-seed-3')!
+  expect(t.estatus).toBe('entregado')
+  expect(t.aprobada_en).toBeNull()
+  expect(t.aprobada_por).toBeNull()
+  expect(st.notificaciones.filter((n) => n.tipo === 'entrega_por_aprobar')).toHaveLength(2)
+  await expect(card.getByTestId('esperando-aprobacion')).toBeVisible()
+
+  // y el creador la tiene otra vez en su cola, con los dos botones
+  await irAPeticiones(p2)
+  await expect(p2.getByTestId('kpi-por_aprobar')).toContainText('1')
+  const card2 = p2.getByTestId('card-peticion').filter({ hasText: 'diseñar reel' })
+  await expect(card2.getByTestId('badge-por-aprobar')).toBeVisible()
+  await expect(card2.getByTestId('btn-aprobar-entrega')).toBeVisible()
+  await expect(card2.getByTestId('btn-pedir-cambios')).toBeVisible()
+  await expect(card2.getByTestId('sello-aprobada')).toHaveCount(0)
+  await ctx.close()
+
+  // el guard sigue siendo asimétrico: la destinataria puede LIMPIAR el sello
+  // (es lo que hace su re-entrega) pero no ponerlo.
+  const tk = await token('brenda@movdi.mx')
+  const patch = (cuerpo: Record<string, unknown>) =>
+    fetch(`${MOCK}/rest/v1/peticiones?id=eq.p-seed-3`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(cuerpo),
+    })
+  expect((await patch({ aprobada_en: new Date().toISOString(), aprobada_por: 'Brenda' })).status).toBeGreaterThanOrEqual(400)
+  expect((await patch({ aprobada_en: null, aprobada_por: null })).status).toBeLessThan(400)
+  st = await estado()
+  expect(st.peticiones.find((x) => x.id === 'p-seed-3')!.aprobada_en).toBeNull()
+})

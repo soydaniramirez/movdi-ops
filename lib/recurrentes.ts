@@ -224,6 +224,9 @@ export function obtenerInstanciasRecur(opts: {
         linkEntrega: null,
         notaEntrega: null,
         fechaEntrega: null,
+        // una instancia recurrente no pide aprobación (cutover 12)
+        aprobadaEn: null,
+        aprobadaPor: null,
         ocultaPara: [],
         creadaEn: null,
         origen: null,

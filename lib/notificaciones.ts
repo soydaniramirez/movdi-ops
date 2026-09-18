@@ -27,13 +27,17 @@ export function mapNotifRow(r: any): Notificacion {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-// Paridad SPA + el tipo nuevo recurrente_hoy (cutover 4.2b)
+// Paridad SPA + recurrente_hoy (cutover 4.2b) + el ciclo de aprobación de
+// entrega (cutover 12: entrega_por_aprobar / entrega_aprobada / cambios_pedidos)
 export function iconoNotif(tipo: string): string {
   if (tipo === 'nueva_peticion') return '📥'
   if (tipo === 'fecha_cambiada') return '📅'
   if (tipo === 'reabierta') return '🔄'
   if (tipo === 'estrella') return '⭐'
   if (tipo === 'recurrente_hoy') return '↻'
+  if (tipo === 'entrega_por_aprobar') return '📦'
+  if (tipo === 'entrega_aprobada') return '✅'
+  if (tipo === 'cambios_pedidos') return '↩'
   return '🔔'
 }
 
