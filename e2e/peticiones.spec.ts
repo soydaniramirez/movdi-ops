@@ -679,3 +679,61 @@ test('aprobar → reabrir → re-entregar: la entrega nueva vuelve a la cola por
   st = await estado()
   expect(st.peticiones.find((x) => x.id === 'p-seed-3')!.aprobada_en).toBeNull()
 })
+
+// ------------------------------------------------------------
+// Buscador (2026-09-18): manda sobre pestaña, chips y ocultas — lo que busco
+// lo quiero encontrar aunque esté entregado, oculto o cancelado.
+test('buscador: por nombre, por persona, sin acentos, y encuentra una entregada oculta', async ({ page }) => {
+  // una entregada Y oculta para Antonio: invisible en la vista normal
+  const tk = await token('antonio@movdi.mx')
+  await fetch(`${MOCK}/rest/v1/peticiones`, {
+    method: 'POST', headers: { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      zona: 'general', nombre: 'informe camaleón oculto', descripcion: 'cierre del trimestre',
+      creado_por: 'Antonio', para: 'Brenda', area: 'pm', fecha: '2026-08-20', prioridad: 'baja',
+      estatus: 'entregado', privada: false, oculta_para: ['Antonio'], fecha_entrega: '2026-08-20',
+    }),
+  })
+
+  await login(page, 'antonio@movdi.mx')
+  await irAPeticiones(page)
+  const fila = (txt: string) => page.getByTestId('card-peticion').filter({ hasText: txt })
+
+  // vista normal: la oculta no está
+  await expect(fila('informe camaleón oculto')).toHaveCount(0)
+
+  // 1) por nombre — y desde "mis pendientes", una pestaña donde esa fila NO vive
+  await page.getByRole('button', { name: 'mis pendientes' }).click()
+  await page.getByTestId('buscador').fill('reel')
+  await expect(page.getByTestId('resumen-busqueda')).toContainText('1 resultado')
+  await expect(fila('diseñar reel')).toBeVisible()
+
+  // 2) sin acentos ni ñ: "disenar" encuentra "diseñar"
+  await page.getByTestId('buscador').fill('disenar')
+  await expect(fila('diseñar reel')).toBeVisible()
+
+  // 3) por persona (destinataria)
+  await page.getByTestId('buscador').fill('BRENDA')
+  await expect(fila('diseñar reel')).toBeVisible()
+
+  // 4) la entregada OCULTA sí aparece al buscar, con su estado a la vista
+  await page.getByTestId('buscador').fill('camaleon')
+  await expect(page.getByTestId('resumen-busqueda')).toContainText('1 resultado')
+  const oculta = fila('informe camaleón oculto')
+  await expect(oculta).toBeVisible()
+  await expect(oculta.getByTestId('estatus-peticion')).toHaveText('entregado ✓')
+  await expect(oculta).toContainText('🙈')
+
+  // 5) varias palabras = todas deben estar (y en cualquier campo)
+  await page.getByTestId('buscador').fill('camaleon brenda')
+  await expect(oculta).toBeVisible()
+  await page.getByTestId('buscador').fill('camaleon karla')
+  await expect(page.getByTestId('resumen-busqueda')).toContainText('0 resultados')
+  await expect(page.getByText('sin resultados para «camaleon karla»')).toBeVisible()
+
+  // 6) ✕ limpia y vuelve la vista normal (tabs de regreso, oculta escondida)
+  await page.getByTestId('btn-limpiar-busqueda').click()
+  await expect(page.getByTestId('resumen-busqueda')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'lo que pedí' })).toBeVisible()
+  await expect(fila('informe camaleón oculto')).toHaveCount(0)
+})

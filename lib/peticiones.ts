@@ -362,6 +362,33 @@ export const normalizarTexto = (s: string) =>
 export const matchNombre = (a: string | null, b: string | null) =>
   !!a && !!b && normalizarTexto(a) === normalizarTexto(b)
 
+// ---------- buscador de /peticiones (2026-09-18) ----------
+// Busca en lo que la gente recuerda de una petición: su nombre, lo que decía,
+// quién la pidió, para quién es, la evidencia de entrega y el cliente ligado
+// (del catálogo o el capturado a mano en `detalle`).
+//
+// Sin distinguir mayúsculas NI acentos: ambos lados pasan por normalizarTexto
+// (NFD + quita diacríticos), así que "diseñar" se encuentra con "disenar" y
+// "Montserrat" con "montserrat".
+//
+// Varias palabras = TODAS deben aparecer (en cualquier campo y en cualquier
+// orden): "juli valeria" encuentra la petición de inspo de Juli asignada a
+// Valeria, no todo lo que diga "juli".
+export function coincideBusqueda(
+  t: Pick<Peticion, 'nombre' | 'descripcion' | 'para' | 'creadoPor' | 'notaEntrega' | 'linkEntrega' | 'detalle'>,
+  termino: string,
+  opts?: { cliente?: string | null },
+): boolean {
+  const palabras = normalizarTexto(termino).split(/\s+/).filter(Boolean)
+  if (!palabras.length) return true
+  const clienteDetalle = typeof t.detalle?.cliente_nombre === 'string' ? t.detalle.cliente_nombre : null
+  const heno = normalizarTexto(
+    [t.nombre, t.descripcion, t.para, t.creadoPor, t.notaEntrega, t.linkEntrega, clienteDetalle, opts?.cliente]
+      .filter(Boolean).join(' '),
+  )
+  return palabras.every((w) => heno.includes(w))
+}
+
 export function puedoVerPeticion(t: Peticion, yo: Persona) {
   if (!t.privada) return true
   if (matchNombre(t.creadoPor, yo.nombre)) return true
