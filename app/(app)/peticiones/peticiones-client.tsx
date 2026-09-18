@@ -6,10 +6,11 @@ import { selectTodo } from '@/lib/supabase/select-todo'
 import {
   AREAS_LABEL, AREAS_VALIDAS, AREA_COLOR, ORIGENES_VALIDOS, type ModoAsignacion,
   type Persona, type Peticion,
-  destinatariosPorModo, diasHasta, diasSinMovimiento, dx, esCompromisoPropio,
-  esperaAprobacion, estaAbierta, estaAprobada, estaCerrada, estadoMovimiento,
-  fechaCorta, isAdmin, labelFecha, mapPeticionRow, margenPeticion, matchNombre,
-  personaDisponible, puedoVerPeticion, requiereAprobacion, tengoSupervisadas,
+  coincideBusqueda, destinatariosPorModo, diasHasta, diasSinMovimiento, dx,
+  esCompromisoPropio, esperaAprobacion, estaAbierta, estaAprobada, estaCerrada,
+  estadoMovimiento, fechaCorta, isAdmin, labelFecha, mapPeticionRow,
+  margenPeticion, matchNombre, personaDisponible, puedoVerPeticion,
+  requiereAprobacion, tengoSupervisadas,
 } from '@/lib/peticiones'
 import { type Recurrente, mapRecurRow, obtenerInstanciasRecur } from '@/lib/recurrentes'
 import {
@@ -67,6 +68,11 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
     general: false, mis: false, pedi: false,
   })
   const [aviso, setAviso] = useState<string | null>(null)
+  // buscador (2026-09-18): `busqueda` es lo tecleado, `busquedaAplicada` lo que
+  // ya pasó el debounce de 200ms — filtrar en cada tecla sobre >1000 filas se
+  // siente pegajoso en móvil.
+  const [busqueda, setBusqueda] = useState('')
+  const [busquedaAplicada, setBusquedaAplicada] = useState('')
   // petición resaltada al llegar desde la campana (?pet=<id>)
   const [resaltada, setResaltada] = useState<string | null>(null)
   // conteo GLOBAL de privadas activas para dirección (RPC que solo cuenta,
@@ -81,6 +87,16 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
   const [modalMover, setModalMover] = useState<Peticion | null>(null)
   const [modalNota, setModalNota] = useState<Peticion | null>(null)
   const [modalCambios, setModalCambios] = useState<Peticion | null>(null)
+
+  useEffect(() => {
+    const id = setTimeout(() => setBusquedaAplicada(busqueda.trim()), 200)
+    return () => clearTimeout(id)
+  }, [busqueda])
+
+  // Modo búsqueda: manda sobre tab, chips y ocultas — lo que busco lo quiero
+  // encontrar aunque esté entregado, oculto o cancelado.
+  const buscando = busquedaAplicada.length > 0
+  const limpiarBusqueda = useCallback(() => { setBusqueda(''); setBusquedaAplicada('') }, [])
 
   const admin = isAdmin(yo)
   // panel "qué está atorado": dirección, heads y jefas directas (estas últimas
@@ -155,9 +171,23 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
 
   // ---------- lista filtrada (paridad renderGeneral/renderMis/renderPedi) ----------
   const scopeOcultas: 'general' | 'mis' | 'pedi' | null =
-    tab === 'recur' || tab === 'atorado' ? null : tab
+    buscando || tab === 'recur' || tab === 'atorado' ? null : tab
 
   const { lista, ocultasCount } = useMemo(() => {
+    // BÚSQUEDA: barre TODO lo que puedo ver (RLS ya lo acotó al cargar), sin
+    // importar la pestaña, el chip de filtro ni si está oculta de mi vista.
+    // Orden por fecha DESCENDENTE: al buscar en el histórico, lo reciente
+    // arriba (la lista normal usa el orden del tablero, ascendente).
+    if (buscando) {
+      const l = peticiones
+        .filter((t) => puedoVerPeticion(t, yo))
+        .filter((t) => coincideBusqueda(t, busquedaAplicada, {
+          cliente: t.clienteId ? clientes.find((c) => c.id === t.clienteId)?.nombre ?? null : null,
+        }))
+        .slice()
+        .sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0))
+      return { lista: l, ocultasCount: 0 }
+    }
     if (tab === 'atorado') return { lista: [], ocultasCount: 0 }
     let l = peticiones.filter((t) => puedoVerPeticion(t, yo))
     if (tab === 'recur') l = l.filter((t) => t.origenRecur)
@@ -184,11 +214,11 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
       return a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0
     })
     return { lista: l, ocultasCount: nOcultas }
-  }, [peticiones, tab, filtro, yo, personaFiltro, mostrarOcultas, scopeOcultas])
+  }, [peticiones, tab, filtro, yo, personaFiltro, mostrarOcultas, scopeOcultas, buscando, busquedaAplicada, clientes])
 
   // ---------- semáforo lateral (paridad renderSide: solo vista general, ceo/head) ----------
   const bloques = useMemo(() => {
-    if (tab !== 'general') return []
+    if (tab !== 'general' || buscando) return []
     const visiblesParaSem = peticiones.filter(
       (t) => !t.privada || matchNombre(t.creadoPor, yo.nombre) || matchNombre(t.para, yo.nombre),
     )
@@ -202,7 +232,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
         ))
         .sort(ordenSemaforo),
     }))
-  }, [tab, peticiones, personas, recurrentes, yo])
+  }, [tab, peticiones, personas, recurrentes, yo, buscando])
 
   // ---------- panel "qué está atorado" (heads/dirección) ----------
   // Tareas atoradas (3+ días hábiles sin movimiento) o vencidas del equipo,
@@ -211,7 +241,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
   // Solo peticiones ya visibles por RLS — los to-dos privados NUNCA se
   // cargan aquí.
   const atorados = useMemo(() => {
-    if (tab !== 'atorado' || !veAtorados) return []
+    if (tab !== 'atorado' || !veAtorados || buscando) return []
     const equipo = esDireccion(yo)
       ? personas.filter((p) => p.activo !== false && p.nombre !== yo.nombre)
       : personas.filter((p) =>
@@ -231,7 +261,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
       })
       .filter((g) => g.tareas.length > 0)
       .sort((a, b) => b.maxDias - a.maxDias)
-  }, [tab, veAtorados, personas, peticiones, yo])
+  }, [tab, veAtorados, personas, peticiones, yo, buscando])
 
   // card "peticiones privadas 🔒" (solo dirección, paridad renderSide)
   const rhCount = useMemo(
@@ -345,6 +375,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
             <button key={lab} type="button" data-testid={`kpi-${f}`}
               title={f === 'por_aprobar' ? 'entregas que pediste y esperan tu visto bueno' : `filtrar: ${lab}`}
               onClick={() => {
+                limpiarBusqueda() // un KPI es la vista normal, no un resultado de búsqueda
                 setFiltro(f as Filtro)
                 // la cola de aprobación vive en "lo que pedí"
                 if (f === 'por_aprobar') setTab('pedi')
@@ -358,7 +389,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
         </section>
 
         {/* 📌 banner tareas asignadas a mí (paridad renderGeneral) */}
-        {tab === 'general' && misPendientes > 0 && (
+        {tab === 'general' && misPendientes > 0 && !buscando && (
           <button
             onClick={() => setTab('mis')}
             data-testid="banner-mis-pendientes"
@@ -374,7 +405,48 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
           </button>
         )}
 
-        {/* Tabs + filtros */}
+        {/* 🔎 buscador (2026-09-18): arriba de las tabs porque manda sobre
+            ellas — mientras haya texto, se busca en TODAS las peticiones que
+            puedo ver (entregadas, ocultas y canceladas incluidas). */}
+        <div className="relative mt-6">
+          <span aria-hidden className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-neutral-500">🔎</span>
+          <input
+            id="buscador-peticiones"
+            data-testid="buscador"
+            type="text"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') limpiarBusqueda() }}
+            placeholder="buscar petición, persona, cliente…"
+            aria-label="buscar peticiones"
+            autoComplete="off"
+            className="w-full rounded-full border border-neutral-800 bg-neutral-900 py-2.5 pl-10 pr-11 text-sm text-neutral-100 outline-none placeholder:text-neutral-500 focus:border-movdi-naranja"
+          />
+          {busqueda && (
+            <button
+              onClick={limpiarBusqueda}
+              data-testid="btn-limpiar-busqueda"
+              aria-label="limpiar búsqueda"
+              title="limpiar búsqueda"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-full px-2.5 py-1.5 text-sm text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {buscando && (
+          <p data-testid="resumen-busqueda" className="mt-3 font-mono text-[11px] text-neutral-400">
+            <strong className="text-movdi-naranja">{lista.length}</strong>{' '}
+            {lista.length === 1 ? 'resultado' : 'resultados'} para «{busquedaAplicada}»
+            <span className="block text-neutral-500 sm:ml-2 sm:inline">
+              en todas tus peticiones · incluye entregadas, ocultas y canceladas
+            </span>
+          </p>
+        )}
+
+        {/* Tabs + filtros (la búsqueda los reemplaza mientras está activa) */}
+        {!buscando && (
         <nav className="mt-6 flex flex-wrap items-center gap-2">
           {([
             ['general', 'general'], ['mis', 'mis pendientes'], ['pedi', 'lo que pedí'],
@@ -412,9 +484,10 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
             </>
           )}
         </nav>
+        )}
 
         {/* filtro por persona activo (viene del semáforo) */}
-        {tab === 'general' && personaFiltro && (
+        {tab === 'general' && personaFiltro && !buscando && (
           <p className="mt-3 flex items-center gap-2 font-mono text-[11px] text-neutral-400">
             viendo peticiones de <strong className="text-movdi-naranja">{personaFiltro}</strong>
             <button onClick={() => setPersonaFiltro(null)} data-testid="quitar-filtro-persona"
@@ -459,7 +532,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
         {/* ⏸ panel "qué está atorado" (heads/dirección): atoradas/vencidas del
             equipo agrupadas por persona · más días sin movimiento arriba ·
             SOLO peticiones/compromisos, jamás to-dos privados */}
-        {tab === 'atorado' && veAtorados && (
+        {tab === 'atorado' && veAtorados && !buscando && (
           <section className="mt-6" data-testid="panel-atorados">
             {cargando && <p className="font-mono text-xs text-neutral-500">cargando…</p>}
             {!cargando && atorados.length === 0 && (
@@ -529,12 +602,14 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
         {/* Lista (tabla, paridad renderTabla) + semáforo lateral (paridad renderSide).
             Mobile: el semáforo baja debajo de la lista en <lg (antes estaba
             oculto sin alternativa — auditoría 2026-07-20). */}
-        {tab !== 'atorado' && (
+        {(tab !== 'atorado' || buscando) && (
         <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:items-start">
           <section className="min-w-0 flex-1" data-testid="lista-peticiones">
             {cargando && <p className="font-mono text-xs text-neutral-500">cargando…</p>}
             {!cargando && lista.length === 0 && (
-              <p className="font-mono text-xs text-neutral-500">no hay peticiones en esta vista</p>
+              <p className="font-mono text-xs text-neutral-500">
+                {buscando ? `sin resultados para «${busquedaAplicada}»` : 'no hay peticiones en esta vista'}
+              </p>
             )}
             {lista.length > 0 && (
               <div className="overflow-x-auto rounded-2xl border border-neutral-800">
@@ -577,7 +652,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
             )}
           </section>
 
-          {(bloques.length > 0 || (tab === 'general' && esDireccion(yo))) && (
+          {(bloques.length > 0 || (tab === 'general' && esDireccion(yo) && !buscando)) && (
             <aside className="w-full shrink-0 space-y-5 lg:sticky lg:top-16 lg:max-h-[calc(100vh-5rem)] lg:w-64 lg:overflow-y-auto" data-testid="semaforo">
               {bloques.map((b) => (
                 <div key={b.titulo}>
@@ -597,7 +672,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
                   </div>
                 </div>
               ))}
-              {tab === 'general' && esDireccion(yo) && (
+              {tab === 'general' && esDireccion(yo) && !buscando && (
                 <div className="border border-movdi-naranja/30 bg-movdi-naranja/5 px-3 py-2.5" data-testid="card-privadas">
                   <div className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">peticiones privadas 🔒</div>
                   {/* total GLOBAL vía RPC conteo_privadas_activas (solo cuenta,
