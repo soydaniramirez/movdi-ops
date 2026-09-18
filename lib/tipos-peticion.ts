@@ -11,7 +11,7 @@
 // corrige solo.
 
 import { type Cliente, USO_CFDI, constanciaVigente, normalizarUsoCFDI } from './clientes'
-import { hoyISO, sumaDiasHabiles } from './peticiones'
+import { hoyISO, matchNombre, sumaDiasHabiles } from './peticiones'
 
 export type ValorDetalle = string | boolean
 export type Detalle = Record<string, ValorDetalle>
@@ -47,6 +47,9 @@ export type TipoPeticion = {
   key: string
   label: string
   grupo?: string                // agrupa el select (con brief / sin brief / ruta)
+  // legacy: sale del MENÚ pero sigue definido, para que las peticiones
+  // históricas conserven su etiqueta y su detalle (no se migran datos).
+  legacy?: boolean
   requiereDescripcion?: boolean // la descripción general se vuelve bloqueante
   usaCliente?: boolean          // muestra el selector del catálogo de clientes
   slaDiasHabiles?: number       // fecha_compromiso automática (techo del rango)
@@ -126,20 +129,35 @@ const digitalConBrief = (key: string, label: string): TipoPeticion => ({
 const digitalSinBrief = (key: string, label: string): TipoPeticion => ({
   key, label, grupo: 'sin brief', requiereDescripcion: true, campos: [],
 })
+// Fuera del menú, vivo en el histórico (ver `legacy` arriba).
+const legacy = (t: TipoPeticion): TipoPeticion => ({ ...t, legacy: true, grupo: undefined })
 
 // ---------- catálogo de tipos por área ----------
 export const TIPOS_POR_AREA: Partial<Record<string, TipoPeticion[]>> = {
+  // Digital (2026-09-18): el menú YA NO es uno solo para el área — depende de
+  // quién recibe (ver MENU_POR_PERSONA abajo). Aquí vive el catálogo completo:
+  // primero los tipos vigentes, después los legacy (fuera del menú, pero
+  // definidos para que el histórico conserve etiqueta y detalle).
+  // Todos los vigentes piden lo mismo que siempre: link del brief (Notion).
   digital: [
-    digitalConBrief('pitch_deck', 'pitch deck'),
-    digitalConBrief('pieza_rrss_talento', 'pieza RRSS de talento'),
-    digitalConBrief('pieza_rrss_movdi', 'pieza RRSS de MOVDI'),
-    digitalConBrief('ideacion', 'ideación'),
-    digitalConBrief('ajuste_pieza', 'ajuste a pieza existente'),
-    digitalConBrief('email_talento', 'email de talento'),
-    digitalConBrief('roster_web', 'actualización roster web'),
-    digitalSinBrief('asesoria_notion', 'asesoría Notion'),
-    digitalSinBrief('asesoria_everest', 'asesoría Everest'),
-    digitalSinBrief('revision_talento', 'revisión de talento'),
+    digitalConBrief('correo_incorporacion', 'correo de incorporación o específico'),
+    digitalConBrief('media_kit', 'media kit'),
+    digitalConBrief('pieza_rrss', 'pieza RRSS'),
+    digitalConBrief('pitch_desarrollo_contenido', 'pitch / desarrollo de contenido'),
+    digitalConBrief('estrategia_identidad_marca', 'estrategia de identidad-marca'),
+    digitalConBrief('roster_web_actualizacion', 'actualización roster / web'),
+    digitalConBrief('desarrollo_identidad_marca', 'desarrollo de identidad-marca'),
+    // ↓ legacy: NO se pueden elegir; solo etiquetan lo ya creado
+    legacy(digitalConBrief('pitch_deck', 'pitch deck')),
+    legacy(digitalConBrief('pieza_rrss_talento', 'pieza RRSS de talento')),
+    legacy(digitalConBrief('pieza_rrss_movdi', 'pieza RRSS de MOVDI')),
+    legacy(digitalConBrief('ideacion', 'ideación')),
+    legacy(digitalConBrief('ajuste_pieza', 'ajuste a pieza existente')),
+    legacy(digitalConBrief('email_talento', 'email de talento')),
+    legacy(digitalConBrief('roster_web', 'actualización roster web')),
+    legacy(digitalSinBrief('asesoria_notion', 'asesoría Notion')),
+    legacy(digitalSinBrief('asesoria_everest', 'asesoría Everest')),
+    legacy(digitalSinBrief('revision_talento', 'revisión de talento')),
   ],
   admi: [
     {
@@ -219,6 +237,58 @@ export const tipoDe = (area: string | null, key: string | null): TipoPeticion | 
 
 export const etiquetaTipo = (area: string | null, key: string | null): string =>
   tipoDe(area, key)?.label ?? key ?? ''
+
+// ---------- menú por PERSONA (Digital, 2026-09-18) ----------
+// El menú de Digital dejó de ser uno solo para toda el área: depende de quién
+// RECIBE la petición, porque cada quien hace cosas distintas. El catálogo se
+// define una sola vez arriba (keys estables) y aquí solo se dice qué ve cada
+// persona, por NOMBRE de pila — el mismo formato que guarda `peticiones.para`
+// y que compara `matchNombre` (sin acentos ni mayúsculas).
+//
+// Quien NO esté en el mapa ve el catálogo vigente completo de su área: alguien
+// nuevo en Digital puede recibir peticiones desde el día uno sin tocar código,
+// y dar de baja a alguien tampoco rompe nada (su entrada deja de usarse).
+const MENU_POR_PERSONA: Partial<Record<string, Record<string, readonly string[]>>> = {
+  digital: {
+    Valeria: ['correo_incorporacion', 'media_kit', 'pieza_rrss', 'pitch_desarrollo_contenido', 'estrategia_identidad_marca'],
+    Diana: ['correo_incorporacion', 'media_kit', 'pieza_rrss', 'roster_web_actualizacion', 'desarrollo_identidad_marca'],
+    Brenda: ['correo_incorporacion', 'pieza_rrss'],
+  },
+}
+
+// Lo que se puede ELEGIR hoy en un área: el catálogo sin los legacy.
+export const tiposVigentesDeArea = (area: string): TipoPeticion[] =>
+  tiposDeArea(area).filter((t) => !t.legacy)
+
+// Keys permitidas para UNA persona (fallback: todo lo vigente del área).
+function keysPermitidasPara(area: string, nombre: string): string[] {
+  const vigentes = tiposVigentesDeArea(area).map((t) => t.key)
+  const mapa = MENU_POR_PERSONA[area]
+  if (!mapa) return vigentes
+  const suyas = Object.entries(mapa).find(([n]) => matchNombre(n, nombre))?.[1]
+  if (!suyas) return vigentes
+  // se cruza contra el catálogo: una key mal escrita en el mapa no inventa un
+  // tipo, solo se ignora
+  return vigentes.filter((k) => suyas.includes(k))
+}
+
+// Tipos que aplican a TODOS los destinatarios (intersección, en el orden del
+// catálogo). Petición de grupo a varias personas de Digital → solo lo que
+// todas tienen en común. Sin destinatario todavía → todo lo vigente del área.
+export function tiposParaDestinatarios(area: string, destinatarios: string[]): TipoPeticion[] {
+  const vigentes = tiposVigentesDeArea(area)
+  const limpios = destinatarios.filter(Boolean)
+  if (!limpios.length) return vigentes
+  const permitidas = limpios.map((n) => new Set(keysPermitidasPara(area, n)))
+  return vigentes.filter((t) => permitidas.every((s) => s.has(t.key)))
+}
+
+// Candado real (lo usan el formulario Y la Server Action): un tipo legacy o
+// ajeno a la persona nunca pasa.
+export const tipoPermitidoPara = (
+  area: string | null, key: string | null, destinatarios: string[],
+): boolean =>
+  !!area && !!key && tiposParaDestinatarios(area, destinatarios).some((t) => t.key === key)
 
 const lleno = (v: ValorDetalle | undefined): boolean =>
   typeof v === 'boolean' ? true : typeof v === 'string' && v.trim().length > 0

@@ -49,7 +49,7 @@ test('digital: sin tipo no hay crear; con brief el link es bloqueante', async ({
   await expect(page.getByTestId('hint-bloqueantes')).toContainText('elige el tipo')
 
   // tipo con brief: el link es bloqueante
-  await page.getByTestId('pet-tipo').selectOption('pitch_deck')
+  await page.getByTestId('pet-tipo').selectOption('media_kit')
   await expect(page.getByTestId('btn-crear-confirmar')).toBeDisabled()
   await expect(page.getByTestId('hint-bloqueantes')).toContainText('link del brief')
 
@@ -60,25 +60,92 @@ test('digital: sin tipo no hay crear; con brief el link es bloqueante', async ({
   await expect(page.getByTestId('card-peticion').filter({ hasText: 'deck para cliente nuevo' })).toBeVisible()
   const st = await estado()
   const creada = st.peticiones.find((p) => p.nombre === 'deck para cliente nuevo')!
-  expect(creada.tipo_peticion).toBe('pitch_deck')
+  expect(creada.tipo_peticion).toBe('media_kit')
   expect((creada.detalle as Record<string, unknown>).link_brief).toBe('https://www.notion.so/movdi/brief-deck')
 })
 
 // ------------------------------------------------------------
-test('digital sin brief: la descripción es el bloqueante', async ({ page }) => {
+// (el tipo "sin brief" salió del menú de digital en 2026-09-18 — todos los
+// tipos vigentes llevan brief. El mecanismo de requiereDescripcion se sigue
+// probando donde vive hoy: la consulta administrativa.)
+test('consulta administrativa: la descripción es el bloqueante', async ({ page }) => {
   await login(page, 'antonio@movdi.mx')
   await abrirModalCrear(page)
 
-  await page.locator('#pet-nombre').fill('ayuda con notion')
-  await page.locator('#pet-area').selectOption('digital')
-  await page.locator('#pet-para').selectOption('Karla')
-  await page.getByTestId('pet-tipo').selectOption('asesoria_notion')
+  await page.locator('#pet-nombre').fill('duda de facturación')
+  await page.locator('#pet-area').selectOption('admi')
+  await page.locator('#pet-para').selectOption('Lucia')
+  await page.getByTestId('pet-tipo').selectOption('consulta_admin')
+  await page.locator('#det-id_campana').fill('CMP-77')
 
   await expect(page.getByTestId('btn-crear-confirmar')).toBeDisabled()
   await expect(page.getByTestId('hint-bloqueantes')).toContainText('descripción')
 
-  await page.locator('#pet-desc').fill('necesito reordenar la base de talentos')
+  await page.locator('#pet-desc').fill('quiero saber si ya pagaron la campaña de agosto')
   await expect(page.getByTestId('btn-crear-confirmar')).toBeEnabled()
+})
+
+// ------------------------------------------------------------
+// Menú de Digital por PERSONA (2026-09-18): lo que ofrece el select depende
+// de quién recibe, y el servidor no acepta un tipo que esa persona no haga.
+const opcionesTipo = (page: Page) =>
+  page.getByTestId('pet-tipo').locator('option').allTextContents()
+
+test('digital: el menú depende del destinatario, se limpia al cambiarlo y el servidor lo respalda', async ({ page }) => {
+  await login(page, 'antonio@movdi.mx')
+  await abrirModalCrear(page)
+  await page.locator('#pet-nombre').fill('pieza para el lanzamiento')
+  await page.locator('#pet-area').selectOption('digital')
+
+  // Karla NO está en el mapa → ve el catálogo vigente completo (7)
+  await page.locator('#pet-para').selectOption('Karla')
+  let ops = await opcionesTipo(page)
+  expect(ops.filter((o) => !o.startsWith('—'))).toHaveLength(7)
+  expect(ops.join(' ')).toContain('media kit')
+  // y ningún legacy asoma
+  expect(ops.join(' ')).not.toContain('pitch deck')
+  expect(ops.join(' ')).not.toContain('asesoría Notion')
+
+  // elige un tipo que solo existe para los no mapeados / algunas personas
+  await page.getByTestId('pet-tipo').selectOption('media_kit')
+  await expect(page.getByTestId('pet-tipo')).toHaveValue('media_kit')
+
+  // cambiar a Brenda (mapeada, 2 tipos) limpia el tipo que ya no aplica
+  await page.locator('#pet-para').selectOption('Brenda')
+  await expect(page.getByTestId('pet-tipo')).toHaveValue('')
+  ops = await opcionesTipo(page)
+  expect(ops.filter((o) => !o.startsWith('—'))).toEqual([
+    'correo de incorporación o específico', 'pieza RRSS',
+  ])
+
+  // el candado real vive en el servidor: aunque el cliente mande un tipo que
+  // Brenda no recibe (select manipulado), la creación se rechaza
+  await page.getByTestId('pet-tipo').evaluate((el) => {
+    const o = document.createElement('option')
+    o.value = 'media_kit'
+    o.textContent = 'media kit (inyectado)'
+    ;(el as HTMLSelectElement).appendChild(o)
+  })
+  await page.getByTestId('pet-tipo').selectOption('media_kit')
+  await page.locator('#det-link_brief').fill('https://www.notion.so/movdi/brief-x')
+  await page.getByTestId('btn-crear-confirmar').click()
+  await expect(page.getByRole('dialog').locator('p[role="alert"]')).toContainText('no es un tipo que Brenda reciba')
+  expect((await estado()).peticiones.find((p) => p.nombre === 'pieza para el lanzamiento')).toBeUndefined()
+})
+
+// ------------------------------------------------------------
+test('digital a toda el área: solo los tipos que TODAS tienen en común', async ({ page }) => {
+  await login(page, 'antonio@movdi.mx')
+  await abrirModalCrear(page)
+  await page.locator('#pet-nombre').fill('pieza para todas')
+  await page.getByText('un área completa').click()
+  await page.locator('#pet-area-grupo').selectOption('digital')
+
+  // Brenda (2 tipos) + Karla (todos) → la intersección son los 2 de Brenda
+  const ops = await opcionesTipo(page)
+  expect(ops.filter((o) => !o.startsWith('—'))).toEqual([
+    'correo de incorporación o específico', 'pieza RRSS',
+  ])
 })
 
 // ------------------------------------------------------------

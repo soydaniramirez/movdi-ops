@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test'
 import {
   type Detalle,
-  aplicarCliente, areaTieneTipos, camposVisibles, fechaPorSLA,
-  sanitizarDetalle, tipoDe, validarDetalle,
+  aplicarCliente, areaTieneTipos, camposVisibles, etiquetaTipo, fechaPorSLA,
+  sanitizarDetalle, tipoDe, tipoPermitidoPara, tiposParaDestinatarios,
+  tiposVigentesDeArea, validarDetalle,
 } from '../lib/tipos-peticion'
 import { type Cliente, USO_CFDI, constanciaVigente, normalizarUsoCFDI, usoCfdiLabel } from '../lib/clientes'
 import { sumaDiasHabiles } from '../lib/peticiones'
@@ -183,4 +184,106 @@ test('aplicarCliente: normaliza — uso CFDI legado a clave y persona_moral bool
   expect(aplicarCliente(rutaA, {}, cliente({ personaMoral: true })).tipo_persona).toBe('moral')
   expect(aplicarCliente(rutaA, {}, cliente({ personaMoral: false })).tipo_persona).toBe('fisica')
   expect(aplicarCliente(rutaA, {}, cliente({ personaMoral: null })).tipo_persona).toBeUndefined()
+})
+
+// ------------------------------------------------------------
+// Menú de Digital por PERSONA (2026-09-18). El catálogo se define una vez;
+// aquí se prueba quién ve qué, el fallback de los no mapeados, la
+// intersección de un grupo y que los legacy salieron del menú sin perder su
+// etiqueta.
+const labels = (tipos: { label: string }[]) => tipos.map((t) => t.label)
+
+test('digital por persona: Valeria 5, Diana 5, Brenda 2', () => {
+  expect(labels(tiposParaDestinatarios('digital', ['Valeria']))).toEqual([
+    'correo de incorporación o específico',
+    'media kit',
+    'pieza RRSS',
+    'pitch / desarrollo de contenido',
+    'estrategia de identidad-marca',
+  ])
+  expect(labels(tiposParaDestinatarios('digital', ['Diana']))).toEqual([
+    'correo de incorporación o específico',
+    'media kit',
+    'pieza RRSS',
+    'actualización roster / web',
+    'desarrollo de identidad-marca',
+  ])
+  expect(labels(tiposParaDestinatarios('digital', ['Brenda']))).toEqual([
+    'correo de incorporación o específico',
+    'pieza RRSS',
+  ])
+  // el nombre se compara normalizado (como el resto del proyecto)
+  expect(tiposParaDestinatarios('digital', ['valeria'])).toHaveLength(5)
+  expect(tiposParaDestinatarios('digital', ['VALERIA'])).toHaveLength(5)
+})
+
+test('digital: quien NO está en el mapa ve el catálogo vigente completo', () => {
+  // alguien nuevo (o Karla, que no está mapeada): nada se rompe, ve los 7
+  expect(tiposParaDestinatarios('digital', ['Karla'])).toHaveLength(7)
+  expect(tiposParaDestinatarios('digital', ['Persona Nueva'])).toHaveLength(7)
+  // sin destinatario todavía, el select ofrece todo lo vigente
+  expect(tiposParaDestinatarios('digital', [])).toHaveLength(7)
+  expect(tiposVigentesDeArea('digital')).toHaveLength(7)
+})
+
+test('digital en grupo: intersección de los destinatarios', () => {
+  expect(labels(tiposParaDestinatarios('digital', ['Valeria', 'Brenda']))).toEqual([
+    'correo de incorporación o específico',
+    'pieza RRSS',
+  ])
+  expect(labels(tiposParaDestinatarios('digital', ['Valeria', 'Diana']))).toEqual([
+    'correo de incorporación o específico',
+    'media kit',
+    'pieza RRSS',
+  ])
+  // un no mapeado no recorta a los demás (ve todo, así que no resta)
+  expect(tiposParaDestinatarios('digital', ['Valeria', 'Karla'])).toHaveLength(5)
+})
+
+test('tipoPermitidoPara: candado del servidor por destinatario', () => {
+  expect(tipoPermitidoPara('digital', 'pieza_rrss', ['Brenda'])).toBe(true)
+  expect(tipoPermitidoPara('digital', 'media_kit', ['Brenda'])).toBe(false)
+  expect(tipoPermitidoPara('digital', 'media_kit', ['Valeria'])).toBe(true)
+  expect(tipoPermitidoPara('digital', 'roster_web_actualizacion', ['Valeria'])).toBe(false)
+  expect(tipoPermitidoPara('digital', 'roster_web_actualizacion', ['Diana'])).toBe(true)
+  // grupo: tiene que valer para TODAS
+  expect(tipoPermitidoPara('digital', 'media_kit', ['Valeria', 'Brenda'])).toBe(false)
+  expect(tipoPermitidoPara('digital', 'correo_incorporacion', ['Valeria', 'Brenda'])).toBe(true)
+  // legacy: ya no se puede crear con él, ni para los no mapeados
+  expect(tipoPermitidoPara('digital', 'pitch_deck', ['Karla'])).toBe(false)
+  expect(tipoPermitidoPara('digital', 'asesoria_notion', ['Valeria'])).toBe(false)
+  // áreas sin mapa por persona: se comportan igual que antes
+  expect(tipoPermitidoPara('admi', 'factura', ['Lucia'])).toBe(true)
+  expect(tipoPermitidoPara('legal', 'contrato_movdi', ['Quien Sea'])).toBe(true)
+})
+
+test('legacy: fuera del menú, pero el histórico conserva etiqueta y campos', () => {
+  // no aparecen en ningún menú…
+  const vigentes = tiposVigentesDeArea('digital').map((t) => t.key)
+  for (const k of ['pitch_deck', 'ideacion', 'asesoria_notion', 'roster_web', 'pieza_rrss_talento']) {
+    expect(vigentes).not.toContain(k)
+    // …pero siguen definidos: una petición vieja no pierde su etiqueta
+    expect(tipoDe('digital', k)).toBeTruthy()
+  }
+  expect(etiquetaTipo('digital', 'pitch_deck')).toBe('pitch deck')
+  expect(etiquetaTipo('digital', 'asesoria_notion')).toBe('asesoría Notion')
+  expect(etiquetaTipo('digital', 'roster_web')).toBe('actualización roster web')
+  // y su detalle se sigue leyendo con la misma config
+  expect(tipoDe('digital', 'pitch_deck')!.campos.map((c) => c.key)).toEqual(['link_brief'])
+  expect(tipoDe('digital', 'asesoria_notion')!.requiereDescripcion).toBe(true)
+})
+
+test('los tipos nuevos de digital piden brief y nada más', () => {
+  for (const k of [
+    'correo_incorporacion', 'media_kit', 'pieza_rrss', 'pitch_desarrollo_contenido',
+    'estrategia_identidad_marca', 'roster_web_actualizacion', 'desarrollo_identidad_marca',
+  ]) {
+    const t = tipoDe('digital', k)!
+    expect(t).toBeTruthy()
+    expect(t.campos.map((c) => c.key)).toEqual(['link_brief'])
+    expect(t.campos[0].clase).toBe('bloqueante')
+    expect(t.requiereDescripcion).toBeFalsy()
+    expect(t.usaCliente).toBeFalsy()
+    expect(t.slaDiasHabiles).toBeUndefined()
+  }
 })

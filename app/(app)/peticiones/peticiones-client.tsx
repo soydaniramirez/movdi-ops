@@ -23,7 +23,7 @@ import {
 import {
   type CampoTipo, type Detalle, type TipoPeticion,
   aplicarCliente, areaTieneTipos, camposVisibles, etiquetaTipo, fechaPorSLA,
-  tipoDe, tiposDeArea, validarDetalle,
+  tipoDe, tipoPermitidoPara, tiposParaDestinatarios, validarDetalle,
 } from '@/lib/tipos-peticion'
 import { type Cliente, mapClienteRow } from '@/lib/clientes'
 import {
@@ -1227,6 +1227,14 @@ function ModalCrear({ yo, personas, clientes, admin, onCerrar, onCrear }: {
     .sort((a, b) => a.nombre.localeCompare(b.nombre))
   const delArea = (area: string) => elegibles.filter((p) => p.areas.includes(area))
 
+  // El menú de tipos depende de QUIÉN recibe (Digital, 2026-09-18). En modo
+  // área son todas las personas del área: se muestra lo que TODAS tienen en
+  // común. Sin destinatario elegido todavía, el catálogo vigente completo.
+  const destinatariosTipo = modo === 'una' ? (para ? [para] : [])
+    : modo === 'area' ? delArea(areaGrupo).map((p) => p.nombre)
+    : []
+  const tiposMenu = candadoActivo ? tiposParaDestinatarios(areaActiva!, destinatariosTipo) : []
+
   const modos: { v: ModoAsignacion; lab: string; adminOnly?: boolean }[] = [
     { v: 'una', lab: 'una persona' },
     { v: 'varias', lab: 'varias personas · selección manual' },
@@ -1300,7 +1308,13 @@ function ModalCrear({ yo, personas, clientes, admin, onCerrar, onCrear }: {
             </div>
             <div>
               <label className={labelCls} htmlFor="pet-para">para</label>
-              <select id="pet-para" className={inputCls} value={para} onChange={(e) => setPara(e.target.value)}>
+              <select id="pet-para" className={inputCls} value={para}
+                onChange={(e) => {
+                  const nuevo = e.target.value
+                  setPara(nuevo)
+                  // el tipo elegido puede no existir para la persona nueva
+                  if (tipoKey && !tipoPermitidoPara(areaUna, tipoKey, nuevo ? [nuevo] : [])) resetTipo()
+                }}>
                 <option value="">— elige —</option>
                 {delArea(areaUna).map((p) => (
                   <option key={p.id} value={p.nombre}>{p.nombre} {p.apellido} · {p.rol}</option>
@@ -1348,7 +1362,7 @@ function ModalCrear({ yo, personas, clientes, admin, onCerrar, onCrear }: {
                 onChange={(e) => cambiarTipo(e.target.value)}>
                 <option value="">— elige el tipo —</option>
                 {(() => {
-                  const tipos = tiposDeArea(areaActiva!)
+                  const tipos = tiposMenu
                   const grupos = [...new Set(tipos.map((t) => t.grupo).filter(Boolean))] as string[]
                   if (!grupos.length) return tipos.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)
                   return [

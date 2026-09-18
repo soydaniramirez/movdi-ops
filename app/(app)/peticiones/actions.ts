@@ -20,7 +20,7 @@ import {
 } from '@/lib/peticiones'
 import {
   type Detalle, areaTieneTipos, fechaPorSLA, sanitizarDetalle, tipoDe,
-  validarDetalle,
+  tipoPermitidoPara, validarDetalle,
 } from '@/lib/tipos-peticion'
 import { mapClienteRow, normalizarUsoCFDI } from '@/lib/clientes'
 
@@ -117,6 +117,12 @@ export async function crearPeticion(input: {
     if (candadoAplica) {
       const tipo = tipoDe(area, input.tipoPeticion ?? null)
       if (!tipo) return { ok: false, error: 'elige el tipo de petición — esta área lo requiere' }
+      // El menú depende de la PERSONA (Digital, 2026-09-18): el mismo candado
+      // que el formulario, pero aquí es el real. Cubre también los tipos
+      // legacy, que ya no se pueden crear aunque sigan definidos.
+      if (!tipoPermitidoPara(area, tipo.key, destinatarios)) {
+        return { ok: false, error: `"${tipo.label}" no es un tipo que ${destinatarios.join(', ')} reciba` }
+      }
       detalle = sanitizarDetalle(tipo, input.detalle ?? {})
       const v = validarDetalle(tipo, detalle, { descripcion: input.descripcion })
       if (!v.ok) {
