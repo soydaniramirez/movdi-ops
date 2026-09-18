@@ -32,7 +32,9 @@ const MES_PREV = (() => { const d = new Date(); return new Date(d.getFullYear(),
 const PERSONAS_BASE = [
   { nombre: 'Antonio', apellido: 'López', nivel: 'ejecutivo', areas: ['pm'], es_direccion: false },
   { nombre: 'Arylene', apellido: 'Ruiz', nivel: 'ejecutivo', areas: ['pm'], es_direccion: false },
-  { nombre: 'Brenda', apellido: 'Mora', nivel: 'ejecutivo', areas: ['imkt'], es_direccion: false },
+  // imkt + digital: en Digital el menú de tipos depende de la persona y
+  // Brenda es una de las mapeadas (2026-09-18)
+  { nombre: 'Brenda', apellido: 'Mora', nivel: 'ejecutivo', areas: ['imkt', 'digital'], es_direccion: false },
   { nombre: 'Karla', apellido: 'Vega', nivel: 'head', areas: ['digital'], es_direccion: false },
   { nombre: 'Sarai', apellido: 'Luna', nivel: 'rh', areas: ['rh'], es_direccion: false },
   // cutover 10: Lucia es de admi (edita el catálogo) y también recibe legal

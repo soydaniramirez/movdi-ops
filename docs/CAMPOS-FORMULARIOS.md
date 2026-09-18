@@ -12,17 +12,35 @@ snapshot editable en la petición.
 
 ## DIGITAL
 
-**Con brief** — pitch deck · pieza RRSS talento · pieza RRSS MOVDI · ideación · ajuste a pieza existente · email de talento · actualización roster web
+**El menú depende de la PERSONA que recibe** (2026-09-18). Todos los tipos
+vigentes piden lo mismo:
 
 | campo | clase |
 |---|---|
 | link del brief (Notion) | 🔒 bloqueante |
 
-**Sin brief** — asesoría Notion · asesoría Everest · revisión de talento
+| tipo | Valeria | Diana | Bren (Brenda Reyes) |
+|---|:--:|:--:|:--:|
+| correo de incorporación o específico | ✓ | ✓ | ✓ |
+| media kit | ✓ | ✓ | |
+| pieza RRSS | ✓ | ✓ | ✓ |
+| pitch / desarrollo de contenido | ✓ | | |
+| estrategia de identidad-marca | ✓ | | |
+| actualización roster / web | | ✓ | |
+| desarrollo de identidad-marca | | ✓ | |
 
-| campo | clase |
-|---|---|
-| descripción de la solicitud (el campo general) | 🔒 bloqueante |
+Quien **no** esté en el mapa (alguien nuevo en Digital, o Dani/Emmanuel) ve los
+**7** tipos. Una petición de grupo a varias personas de Digital solo ofrece lo
+que **todas** tienen en común. El mapa vive en `MENU_POR_PERSONA` dentro de
+`lib/tipos-peticion.ts`, por nombre de pila: agregar o quitar a alguien es una
+línea, y no hacerlo tampoco rompe nada.
+
+**Legacy — fuera del menú, vivos en el histórico**: pitch deck · pieza RRSS de
+talento · pieza RRSS de MOVDI · ideación · ajuste a pieza existente · email de
+talento · actualización roster web · asesoría Notion · asesoría Everest ·
+revisión de talento. Siguen definidos (marcados `legacy`) para que las
+peticiones ya creadas conserven su etiqueta y su detalle; no se pueden elegir
+ni crear. No se migró ningún dato.
 
 ## ADMI
 
