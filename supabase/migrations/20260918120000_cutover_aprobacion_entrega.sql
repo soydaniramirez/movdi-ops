@@ -56,12 +56,20 @@ set aprobada_en = coalesce(fecha_entrega::timestamptz, now()),
     aprobada_por = creado_por
 where estatus = 'entregado' and aprobada_en is null;
 
--- ---------- (3) guard: aprobar es del creador y de nadie más ----------
+-- ---------- (3) guard: PONER el sello es del creador y de nadie más ----------
 -- La RLS de UPDATE deja escribir la fila entera al creador Y al destinatario
 -- (así ha sido siempre: ambos mueven estatus, fecha y evidencia). Sin este
 -- guard, el destinatario podría auto-aprobarse su propia entrega llamando al
 -- API con la anon key, saltándose la Server Action. Se cierra en BD, que es
 -- la única barrera real del proyecto.
+--
+-- Asimetría a propósito: el candado es sobre ESCRIBIR UN SELLO (valor no
+-- nulo). LIMPIARLO (dejarlo en NULL) lo puede hacer cualquiera que ya pueda
+-- editar la fila, porque es lo que tiene que pasar cuando una entrega
+-- aprobada se reabre y se vuelve a entregar: la entrega nueva NO puede
+-- heredar el visto bueno de la anterior. Poner el sello = aprobar (creador);
+-- quitarlo = "esto vuelve a necesitar revisión", que es lo contrario de un
+-- privilegio.
 --
 -- Solo aplica a sesiones de usuario (auth.uid() not null): migraciones,
 -- backfills y funciones SECURITY DEFINER siguen pudiendo tocar las columnas.
@@ -71,12 +79,12 @@ language plpgsql
 set search_path = ''
 as $$
 begin
-  if (new.aprobada_en  is distinct from old.aprobada_en
-   or new.aprobada_por is distinct from old.aprobada_por)
+  if ((new.aprobada_en  is not null and new.aprobada_en  is distinct from old.aprobada_en)
+   or (new.aprobada_por is not null and new.aprobada_por is distinct from old.aprobada_por))
    and auth.uid() is not null
    and new.creado_por is distinct from public.mi_nombre()
   then
-    raise exception 'solo quien pidió la petición puede aprobar o revertir su entrega';
+    raise exception 'solo quien pidió la petición puede aprobar su entrega';
   end if;
   return new;
 end
@@ -96,9 +104,13 @@ create trigger peticiones_guard_aprobacion
 --   3. Aprobar (sesión del creador) → aprobada_en/aprobada_por se llenan y
 --      updated_at NO se mueve (aprobar no es movimiento).
 --   4. Intentar aprobar desde la sesión del DESTINATARIO (API directo):
---      → 'solo quien pidió la petición puede aprobar o revertir su entrega'.
---   5. Petición anónima a peticiones → 0 filas / 401.
---   6. Security advisors sin hallazgos nuevos.
+--      → 'solo quien pidió la petición puede aprobar su entrega'.
+--   4b. Esa misma sesión poniendo aprobada_en = null → SÍ pasa (es lo que
+--      hace una re-entrega tras reabrir).
+--   5. Aprobar → reabrir → volver a entregar: aprobada_en queda en NULL y la
+--      petición regresa a la cola "por aprobar" del creador.
+--   6. Petición anónima a peticiones → 0 filas / 401.
+--   7. Security advisors sin hallazgos nuevos.
 -- ============================================================
 -- ROLLBACK (manual):
 --   drop trigger if exists peticiones_guard_aprobacion on public.peticiones;

@@ -359,17 +359,28 @@ export async function entregarPeticion(input: {
   try {
     const { supabase, yo } = await getContexto()
     const nota = (input.nota || '').trim()
+    const entrega = {
+      estatus: 'entregado',
+      link_entrega: (input.link || '').trim() || null,
+      nota_entrega: nota || null,
+      fecha_entrega: hoyISO(),
+    }
+    // Toda entrega nueva pide aprobación NUEVA: una re-entrega (tras reabrir
+    // o tras pedir cambios) no puede heredar el visto bueno de la anterior.
+    // Limpiar el sello lo permite el guard de BD a creador y destinatario —
+    // ponerlo, solo al creador.
     // RLS: solo creador o destinatario pueden actualizar
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('peticiones')
-      .update({
-        estatus: 'entregado',
-        link_entrega: (input.link || '').trim() || null,
-        nota_entrega: nota || null,
-        fecha_entrega: hoyISO(),
-      })
+      .update({ ...entrega, aprobada_en: null, aprobada_por: null })
       .eq('id', input.id)
       .select()
+    // pre-cutover 12: si las columnas aún no existen, se entrega igual. Marcar
+    // entregado NUNCA debe depender del orden migración/deploy.
+    if (error && /aprobada_/i.test(error.message) && (error.code === 'PGRST204' || error.code === '42703')) {
+      ;({ data, error } = await supabase
+        .from('peticiones').update(entrega).eq('id', input.id).select())
+    }
     if (error) return { ok: false, error: error.message }
     if (!data?.length) return { ok: false, error: 'no puedes cambiar el estatus de esta petición' }
 

@@ -615,3 +615,67 @@ test('recurrentes y compromisos propios: sin aviso de entrega ni botones de apro
   await expect(p2.getByTestId('kpi-por_aprobar')).toHaveCount(0)
   await ctx.close()
 })
+
+// ------------------------------------------------------------
+// Hueco detectado antes de aplicar la migración 12: una entrega aprobada
+// conserva su botón "reabrir", y reabrir no limpiaba el sello — la
+// RE-ENTREGA nacía ya aprobada, sin botones y sin cola, aunque nadie la
+// hubiera revisado. El sello se limpia en cada entrega nueva.
+test('aprobar → reabrir → re-entregar: la entrega nueva vuelve a la cola por aprobar', async ({ page, browser }) => {
+  await entregarDiseñarReel(page, 'primera versión')
+
+  // el creador aprueba
+  const ctx = await browser.newContext()
+  const p2 = await ctx.newPage()
+  await login(p2, 'antonio@movdi.mx')
+  await irAPeticiones(p2)
+  await p2.getByTestId('kpi-por_aprobar').click()
+  await p2.getByTestId('card-peticion').filter({ hasText: 'diseñar reel' })
+    .getByTestId('btn-aprobar-entrega').click()
+  await expect(p2.getByTestId('kpi-por_aprobar')).toHaveCount(0)
+  expect((await estado()).peticiones.find((x) => x.id === 'p-seed-3')!.aprobada_por).toBe('Antonio')
+
+  // la destinataria reabre (su botón de siempre) y vuelve a entregar
+  await irAPeticiones(page)
+  await page.getByRole('button', { name: 'mis pendientes' }).click()
+  const card = page.getByTestId('card-peticion').filter({ hasText: 'diseñar reel' })
+  await card.getByTestId('btn-reabrir').click()
+  await expect(card.getByTestId('btn-entregar')).toBeVisible()
+  await card.getByTestId('btn-entregar').click()
+  await page.locator('#ent-nota').fill('segunda versión con el corte vertical')
+  await page.getByTestId('btn-entrega-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  // el sello NO sobrevive: la entrega nueva pide aprobación nueva
+  let st = await estado()
+  const t = st.peticiones.find((x) => x.id === 'p-seed-3')!
+  expect(t.estatus).toBe('entregado')
+  expect(t.aprobada_en).toBeNull()
+  expect(t.aprobada_por).toBeNull()
+  expect(st.notificaciones.filter((n) => n.tipo === 'entrega_por_aprobar')).toHaveLength(2)
+  await expect(card.getByTestId('esperando-aprobacion')).toBeVisible()
+
+  // y el creador la tiene otra vez en su cola, con los dos botones
+  await irAPeticiones(p2)
+  await expect(p2.getByTestId('kpi-por_aprobar')).toContainText('1')
+  const card2 = p2.getByTestId('card-peticion').filter({ hasText: 'diseñar reel' })
+  await expect(card2.getByTestId('badge-por-aprobar')).toBeVisible()
+  await expect(card2.getByTestId('btn-aprobar-entrega')).toBeVisible()
+  await expect(card2.getByTestId('btn-pedir-cambios')).toBeVisible()
+  await expect(card2.getByTestId('sello-aprobada')).toHaveCount(0)
+  await ctx.close()
+
+  // el guard sigue siendo asimétrico: la destinataria puede LIMPIAR el sello
+  // (es lo que hace su re-entrega) pero no ponerlo.
+  const tk = await token('brenda@movdi.mx')
+  const patch = (cuerpo: Record<string, unknown>) =>
+    fetch(`${MOCK}/rest/v1/peticiones?id=eq.p-seed-3`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(cuerpo),
+    })
+  expect((await patch({ aprobada_en: new Date().toISOString(), aprobada_por: 'Brenda' })).status).toBeGreaterThanOrEqual(400)
+  expect((await patch({ aprobada_en: null, aprobada_por: null })).status).toBeLessThan(400)
+  st = await estado()
+  expect(st.peticiones.find((x) => x.id === 'p-seed-3')!.aprobada_en).toBeNull()
+})

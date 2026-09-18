@@ -615,12 +615,14 @@ const server = http.createServer(async (req, res) => {
         const cambios = JSON.parse(body || '{}')
         const objetivo = aplicarFiltros(db.peticiones, url.searchParams).filter((r) => puedeEditarPeticion(r, yo))
         // paridad trigger peticiones_guard_aprobacion (cutover 12): la RLS de
-        // UPDATE deja escribir al creador Y al destinatario, pero aprobada_en/
-        // aprobada_por son SOLO del creador (si no, el destinatario podría
-        // auto-aprobarse por API, saltándose la Server Action).
-        const tocaAprobacion = 'aprobada_en' in cambios || 'aprobada_por' in cambios
-        if (tocaAprobacion && objetivo.some((r) => r.creado_por !== yo.nombre)) {
-          return json(400, { code: 'P0001', message: 'solo quien pidió la petición puede aprobar o revertir su entrega' })
+        // UPDATE deja escribir al creador Y al destinatario, pero PONER el
+        // sello (valor no nulo) es SOLO del creador — si no, el destinatario
+        // podría auto-aprobarse por API saltándose la Server Action. LIMPIARLO
+        // (null) sí puede cualquiera de los dos: es lo que hace una re-entrega
+        // después de reabrir.
+        const poneSello = cambios.aprobada_en != null || cambios.aprobada_por != null
+        if (poneSello && objetivo.some((r) => r.creado_por !== yo.nombre)) {
+          return json(400, { code: 'P0001', message: 'solo quien pidió la petición puede aprobar su entrega' })
         }
         // paridad trigger peticiones_touch_movimiento (cutover 9): solo el
         // cambio REAL de estatus/descripcion/entrega mueve updated_at;

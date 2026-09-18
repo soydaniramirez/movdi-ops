@@ -401,10 +401,15 @@ Qué agrega la migración (todo aditivo):
   `aprobada_por = creado_por`). Sin esto, la cola del equipo amanecería con
   742 históricos. El UPDATE no mueve `updated_at` (no toca ninguna columna de
   la lista del trigger de movimiento).
-- **Trigger `peticiones_guard_aprobacion`**: solo el creador puede escribir
-  esas dos columnas. `peticiones_update` deja editar la fila al creador Y al
-  destinatario (así entrega, cambia fecha y sube evidencia); sin el guard, el
-  destinatario podría auto-aprobarse llamando al API con la anon key. El guard
+- **Trigger `peticiones_guard_aprobacion`** (asimétrico a propósito): PONER el
+  sello (un valor no nulo) exige ser el creador; LIMPIARLO (dejarlo en NULL) lo
+  puede hacer cualquiera que ya pueda editar la fila. `peticiones_update` deja
+  editar la fila al creador Y al destinatario (así entrega, cambia fecha y sube
+  evidencia); sin el guard, el destinatario podría auto-aprobarse llamando al
+  API con la anon key. Limpiar el sello no es un privilegio: es exactamente lo
+  que tiene que pasar cuando una entrega aprobada se reabre y se vuelve a
+  entregar (`entregarPeticion` manda `aprobada_* = null` en CADA entrega, así
+  que la entrega nueva nunca hereda el visto bueno de la anterior). El guard
   solo aplica a sesiones de usuario (`auth.uid() is not null`), para no
   estorbar a migraciones ni a funciones SECURITY DEFINER.
 
@@ -421,7 +426,9 @@ Orden de despliegue (la migración es aditiva; el código tolera ambos órdenes)
    aparece y `aprobarEntrega` devuelve un aviso claro
    ("falta aplicar la migración de BD (cutover 12)") en vez del error crudo.
    Los avisos de entrega (`entrega_por_aprobar`) SÍ salen desde el deploy, aun
-   sin migración: no dependen de ninguna columna nueva.
+   sin migración: no dependen de ninguna columna nueva, y `entregarPeticion`
+   reintenta sin las columnas nuevas si todavía no existen, para que marcar
+   entregado nunca dependa del orden.
 
 Verificación post-aplicación:
 - `select count(*) from peticiones where estatus='entregado' and aprobada_en is null;` → 0.
@@ -429,8 +436,11 @@ Verificación post-aplicación:
   recibe la notificación 📦.
 - Aprobar (sesión del creador) → se llenan `aprobada_en`/`aprobada_por` y
   `updated_at` NO se mueve.
-- PATCH directo de `aprobada_en` con la sesión del DESTINATARIO → lo rechaza el
-  guard ("solo quien pidió la petición puede aprobar o revertir su entrega").
+- PATCH directo de `aprobada_en` con un valor, desde la sesión del DESTINATARIO
+  → lo rechaza el guard ("solo quien pidió la petición puede aprobar su
+  entrega"); el mismo PATCH con `null` SÍ pasa (es lo que hace una re-entrega).
+- Aprobar → reabrir → volver a entregar → `aprobada_*` queda en NULL y la
+  petición regresa a la cola "por aprobar" del creador.
 - Petición anónima a `peticiones` → 0 filas / 401 · advisors sin hallazgos nuevos.
 
 Rollback de la 12:
