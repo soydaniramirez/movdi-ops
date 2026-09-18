@@ -50,6 +50,30 @@ export const estaAbierta = (t: Pick<Peticion, 'estatus'>) => !estaCerrada(t)
 export const cierreNeutro = (t: Pick<Peticion, 'estatus'>) =>
   t.estatus === 'archivada' || t.estatus === 'cancelada'
 
+// ---------- aprobación de entrega (cutover 12, 2026-09-18) ----------
+// Quien pidió la petición cierra el ciclo: revisa la entrega y la aprueba (o
+// pide cambios). Helpers ÚNICOS — úsense en UI y servidor para no repetir el
+// criterio.
+//
+// Hay dos entregas que NO piden aprobación (nadie se aprueba a sí mismo, y
+// nadie revisa una instancia que el sistema generó sola):
+//   · auto-asignadas / compromisos propios (creador = destinatario)
+//   · instancias de recurrentes (origenRecur)
+// Esas nacen aprobadas de facto: se calcula aquí, no se escribe en BD.
+export const requiereAprobacion = (
+  t: Pick<Peticion, 'creadoPor' | 'para' | 'origenRecur'>,
+) => !t.origenRecur && !matchNombre(t.creadoPor, t.para)
+
+// Entregada y esperando el visto bueno del creador (la cola "por aprobar").
+export const esperaAprobacion = (
+  t: Pick<Peticion, 'estatus' | 'creadoPor' | 'para' | 'origenRecur' | 'aprobadaEn'>,
+) => t.estatus === 'entregado' && requiereAprobacion(t) && !t.aprobadaEn
+
+// Entregada y con el ciclo cerrado (aprobada de verdad o de facto).
+export const estaAprobada = (
+  t: Pick<Peticion, 'estatus' | 'creadoPor' | 'para' | 'origenRecur' | 'aprobadaEn'>,
+) => t.estatus === 'entregado' && !esperaAprobacion(t)
+
 export type Peticion = {
   id: string
   zona: 'general' | 'heads'
@@ -74,6 +98,12 @@ export type Peticion = {
   linkEntrega: string | null
   notaEntrega: string | null
   fechaEntrega: string | null
+  // Aprobación de entrega (cutover 12, 2026-09-18): sello de que QUIEN PIDIÓ
+  // la petición ya la revisó y la dio por buena. Entregada con aprobadaEn en
+  // null = está en la cola "por aprobar" del creador. Fuera de gamificación:
+  // el XP/cumplimiento/rachas siguen mirando estatus + fechaEntrega.
+  aprobadaEn: string | null
+  aprobadaPor: string | null
   ocultaPara: string[]
   creadaEn: string | null
   // Fase compromisos (cutover 9): de dónde nace la tarea. NULL = histórico
@@ -173,6 +203,8 @@ export function mapPeticionRow(r: any): Peticion {
     linkEntrega: r.link_entrega ?? null,
     notaEntrega: r.nota_entrega ?? null,
     fechaEntrega: r.fecha_entrega ?? null,
+    aprobadaEn: r.aprobada_en ?? null,
+    aprobadaPor: r.aprobada_por ?? null,
     ocultaPara: r.oculta_para ?? [],
     creadaEn: r.created_at ?? null,
     origen: r.origen ?? null,

@@ -7,9 +7,9 @@ import {
   AREAS_LABEL, AREAS_VALIDAS, AREA_COLOR, ORIGENES_VALIDOS, type ModoAsignacion,
   type Persona, type Peticion,
   destinatariosPorModo, diasHasta, diasSinMovimiento, dx, esCompromisoPropio,
-  estaAbierta, estaCerrada, estadoMovimiento, fechaCorta, isAdmin, labelFecha,
-  mapPeticionRow, margenPeticion, matchNombre, personaDisponible, puedoVerPeticion,
-  tengoSupervisadas,
+  esperaAprobacion, estaAbierta, estaAprobada, estaCerrada, estadoMovimiento,
+  fechaCorta, isAdmin, labelFecha, mapPeticionRow, margenPeticion, matchNombre,
+  personaDisponible, puedoVerPeticion, requiereAprobacion, tengoSupervisadas,
 } from '@/lib/peticiones'
 import { type Recurrente, mapRecurRow, obtenerInstanciasRecur } from '@/lib/recurrentes'
 import {
@@ -26,13 +26,14 @@ import {
 } from '@/lib/tipos-peticion'
 import { type Cliente, mapClienteRow } from '@/lib/clientes'
 import {
-  agregarNotaAvance, cambiarEstatus, cambiarFecha, crearCompromiso,
+  agregarNotaAvance, aprobarEntrega, cambiarEstatus, cambiarFecha, crearCompromiso,
   crearPeticion, desocultarPeticion, eliminarPeticion, entregarPeticion,
   guardarClienteAlCatalogo, moverInstancia, ocultarEntregadas, ocultarPeticion,
+  pedirCambios,
 } from './actions'
 
 type Tab = 'general' | 'mis' | 'pedi' | 'recur' | 'atorado'
-type Filtro = 'todas' | 'vencidas' | 'semana' | 'entregadas' | 'canceladas' | (typeof AREAS_VALIDAS)[number]
+type Filtro = 'todas' | 'vencidas' | 'semana' | 'entregadas' | 'canceladas' | 'por_aprobar' | (typeof AREAS_VALIDAS)[number]
 
 const PRIO_COLOR: Record<string, string> = {
   alta: 'text-movdi-naranja border-movdi-naranja/40',
@@ -79,6 +80,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
   const [modalFecha, setModalFecha] = useState<Peticion | null>(null)
   const [modalMover, setModalMover] = useState<Peticion | null>(null)
   const [modalNota, setModalNota] = useState<Peticion | null>(null)
+  const [modalCambios, setModalCambios] = useState<Peticion | null>(null)
 
   const admin = isAdmin(yo)
   // panel "qué está atorado": dirección, heads y jefas directas (estas últimas
@@ -126,8 +128,15 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
     if (!resaltada || peticiones.length === 0) return
     const t = peticiones.find((x) => x.id === resaltada)
     if (!t) return
+    // la tab tiene que ser una donde la fila EXISTA: mía si me la asignaron,
+    // "lo que pedí" si yo la pedí (avisos de entrega/aprobación), general si no
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTab(t.origenRecur ? 'recur' : matchNombre(t.para, yo.nombre) ? 'mis' : 'general')
+    setTab(
+      t.origenRecur ? 'recur'
+      : matchNombre(t.para, yo.nombre) ? 'mis'
+      : matchNombre(t.creadoPor, yo.nombre) ? 'pedi'
+      : 'general',
+    )
     setFiltro('todas')
     const timer = setTimeout(() => {
       document.getElementById(`pet-row-${resaltada}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -161,6 +170,8 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
     else if (filtro === 'entregadas') l = l.filter((t) => t.estatus === 'entregado')
     // las canceladas no aparecen en ningún KPI: este chip es su única entrada
     else if (filtro === 'canceladas') l = l.filter((t) => t.estatus === 'cancelada')
+    // cola de aprobación (cutover 12): entregadas mías que aún no doy por buenas
+    else if (filtro === 'por_aprobar') l = l.filter((t) => esperaAprobacion(t) && matchNombre(t.creadoPor, yo.nombre))
     else if ((AREAS_VALIDAS as readonly string[]).includes(filtro)) l = l.filter((t) => t.area === filtro)
     // ocultas (paridad SPA): contarlas antes de filtrarlas; el toggle las re-muestra
     const nOcultas = scopeOcultas ? l.filter((t) => estaOcultaParaMi(t, yo.nombre)).length : 0
@@ -245,6 +256,8 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
       vencidas: visibles.filter((t) => diasHasta(t.fecha) < 0 && estaAbierta(t)).length,
       semana: visibles.filter((t) => { const d = diasHasta(t.fecha); return d >= 0 && d <= 7 && estaAbierta(t) }).length,
       entregadas: visibles.filter((t) => t.estatus === 'entregado').length,
+      // lo que YO pedí, ya entregado y esperando mi visto bueno
+      porAprobar: visibles.filter((t) => matchNombre(t.creadoPor, yo.nombre) && esperaAprobacion(t)).length,
     }
   }, [peticiones, yo])
 
@@ -317,16 +330,26 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
         {/* KPIs (paridad calcKpis) — bloques sólidos de la paleta (zona resumen).
             CLICABLES (decisión 2026-07-20): cada tarjeta aplica su filtro
             equivalente. Mobile: 2 columnas en pantallas chicas. */}
-        <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <section className={`mt-6 grid grid-cols-2 gap-3 ${kpis.porAprobar > 0 ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
           {([
             ['pendientes', kpis.pendientes, 'bg-movdi-gris text-black', 'todas'],
             ['vencidas', kpis.vencidas, kpis.vencidas > 0 ? 'bg-movdi-naranja text-black' : 'border border-neutral-800 bg-neutral-900 text-neutral-500', 'vencidas'],
             ['esta semana', kpis.semana, kpis.semana > 0 ? 'bg-movdi-amarillo text-black' : 'border border-neutral-800 bg-neutral-900 text-neutral-500', 'semana'],
             ['entregadas', kpis.entregadas, 'bg-movdi-verde text-black', 'entregadas'],
+            // "por aprobar" solo aparece cuando hay algo que aprobar: es una
+            // cola de trabajo MÍA, no un número decorativo (cutover 12)
+            ...(kpis.porAprobar > 0
+              ? ([['por aprobar', kpis.porAprobar, 'bg-movdi-rosa text-black', 'por_aprobar']] as const)
+              : []),
           ] as const).map(([lab, val, bloque, f]) => (
             <button key={lab} type="button" data-testid={`kpi-${f}`}
-              onClick={() => { setFiltro(f as Filtro); if (tab === 'atorado') setTab('general') }}
-              title={`filtrar: ${lab}`}
+              title={f === 'por_aprobar' ? 'entregas que pediste y esperan tu visto bueno' : `filtrar: ${lab}`}
+              onClick={() => {
+                setFiltro(f as Filtro)
+                // la cola de aprobación vive en "lo que pedí"
+                if (f === 'por_aprobar') setTab('pedi')
+                else if (tab === 'atorado') setTab('general')
+              }}
               className={`card-hover rounded-2xl px-4 py-3.5 text-left ${bloque} ${filtro === f ? 'ring-2 ring-white/60' : ''}`}>
               <div className="font-mono text-[10px] uppercase tracking-wider opacity-70">{lab}</div>
               <div className="text-3xl font-bold tracking-tight">{val}</div>
@@ -535,6 +558,8 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
                         onGuardarCliente={() => accion(() => guardarClienteAlCatalogo({ peticionId: t.id }))}
                         onEstatus={(nuevo) => accion(() => cambiarEstatus({ id: t.id, estatus: nuevo }))}
                         onEntregar={() => setModalEntrega(t)}
+                        onAprobar={() => accion(() => aprobarEntrega({ id: t.id }))}
+                        onPedirCambios={() => setModalCambios(t)}
                         onCambiarFecha={() => setModalFecha(t)}
                         onMover={() => setModalMover(t)}
                         onNota={() => setModalNota(t)}
@@ -665,6 +690,16 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
           }}
         />
       )}
+      {modalCambios && (
+        <ModalPedirCambios
+          t={modalCambios}
+          onCerrar={() => setModalCambios(null)}
+          onConfirmar={async (motivo) => {
+            const ok = await accion(() => pedirCambios({ id: modalCambios.id, motivo }))
+            if (ok) setModalCambios(null)
+          }}
+        />
+      )}
       {modalMover && (
         <ModalMoverInstancia
           t={modalMover}
@@ -756,7 +791,7 @@ function BannerPodio({ yo, historial }: {
 // ============================================================
 // Fila de la tabla (paridad renderFila del SPA: petición · de → para ·
 // área · fecha · prio · estatus · acciones)
-function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEstatus, onEntregar, onCambiarFecha, onMover, onNota, onEliminar, onOcultar, onDesocultar }: {
+function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEstatus, onEntregar, onAprobar, onPedirCambios, onCambiarFecha, onMover, onNota, onEliminar, onOcultar, onDesocultar }: {
   t: Peticion
   yo: Persona
   admin: boolean
@@ -765,6 +800,8 @@ function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEst
   onGuardarCliente: () => void
   onEstatus: (n: 'pendiente' | 'proceso') => void
   onEntregar: () => void
+  onAprobar: () => void
+  onPedirCambios: () => void
   onCambiarFecha: () => void
   onMover: () => void
   onNota: () => void
@@ -779,6 +816,9 @@ function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEst
   const vencida = estaAbierta(t) && diasHasta(t.fecha) < 0
   const oculta = estaOcultaParaMi(t, yo.nombre)
   const compromiso = esCompromisoPropio(t)
+  // aprobación de entrega (cutover 12): la cierra quien la pidió
+  const porAprobar = esperaAprobacion(t)
+  const aprobada = estaAprobada(t) && requiereAprobacion(t)
   // regla de los 3 días hábiles: atorada = ROJO (calculado, no hay campo)
   const atorada = estadoMovimiento(t) === 'atorada'
   const diasSinMov = diasSinMovimiento(t)
@@ -914,6 +954,12 @@ function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEst
         </div>
         <div className={`font-mono text-[10px] ${t.estatus === 'entregado' ? 'text-movdi-verde/80' : vencida ? 'text-movdi-naranja' : 'text-neutral-500'}`}>
           {lf}
+          {/* el "Nd tarde" de labelFecha se conserva; esto solo agrega en qué
+              va el visto bueno de quien la pidió */}
+          {aprobada && <span data-testid="sello-aprobada"> · aprobada</span>}
+          {porAprobar && !soyCreador && (
+            <span data-testid="esperando-aprobacion" className="text-neutral-500"> · esperando aprobación</span>
+          )}
         </div>
       </td>
       {/* prioridad */}
@@ -926,6 +972,12 @@ function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEst
           className={`font-mono text-[10px] uppercase ${t.estatus === 'entregado' ? 'text-movdi-verde' : t.estatus === 'proceso' ? 'text-movdi-amarillo' : t.estatus === 'cancelada' ? 'text-neutral-500 line-through' : 'text-neutral-400'}`}>
           {t.estatus === 'entregado' ? 'entregado ✓' : t.estatus === 'proceso' ? 'en proceso' : t.estatus === 'cancelada' ? 'cancelada ✕' : t.estatus}
         </span>
+        {porAprobar && soyCreador && (
+          <div className="mt-0.5 font-mono text-[10px] font-medium text-movdi-rosa" data-testid="badge-por-aprobar"
+            title="tú la pediste: revísala y apruébala (o pide cambios)">
+            ⏳ por aprobar
+          </div>
+        )}
         {atorada && (
           <div className="mt-0.5 font-mono text-[10px] font-medium text-movdi-naranja" data-testid="badge-atorada"
             title={`sin movimiento real (estatus, notas o entrega) desde hace ${diasSinMov} días hábiles`}>
@@ -958,7 +1010,23 @@ function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEst
                 </button>
               </>
             )}
-            {(t.estatus === 'entregado' || t.estatus === 'cancelada') && (
+            {/* el creador de una entrega por aprobar no "reabre" a secas:
+                aprueba o pide cambios con motivo (cutover 12) */}
+            {porAprobar && soyCreador && (
+              <>
+                <button onClick={onAprobar} data-testid="btn-aprobar-entrega"
+                  title="dar por buena la entrega · se le avisa a quien la hizo"
+                  className={`${btn} border-movdi-verde/50 text-movdi-verde hover:bg-movdi-verde/10`}>
+                  ✓ aprobar entrega
+                </button>
+                <button onClick={onPedirCambios} data-testid="btn-pedir-cambios"
+                  title="regresarla a pendiente explicando qué falta"
+                  className={`${btn} border-movdi-naranja/50 text-movdi-naranja hover:bg-movdi-naranja/10`}>
+                  ↩ pedir cambios
+                </button>
+              </>
+            )}
+            {(t.estatus === 'cancelada' || (t.estatus === 'entregado' && !(porAprobar && soyCreador))) && (
               <button onClick={() => onEstatus('pendiente')} data-testid="btn-reabrir"
                 title={t.estatus === 'cancelada' ? 'se canceló por error · vuelve a pendiente' : undefined}
                 className={`${btn} border-neutral-700 text-neutral-300 hover:border-neutral-500`}>
@@ -1649,6 +1717,53 @@ function ModalNotaAvance({ t, onCerrar, onConfirmar }: {
           <button onClick={guardar} disabled={guardando} data-testid="btn-nota-confirmar"
             className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85 disabled:opacity-50">
             {guardando ? 'guardando…' : 'guardar nota'}
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  )
+}
+
+// ============================================================
+// ↩ pedir cambios (cutover 12): el "reabrir" del creador, pero con motivo
+// obligatorio. La línea se anexa a la descripción (mismo patrón que la nota
+// de avance) y el destinatario recibe la notificación con el motivo.
+function ModalPedirCambios({ t, onCerrar, onConfirmar }: {
+  t: Peticion
+  onCerrar: () => void
+  onConfirmar: (motivo: string) => Promise<void>
+}) {
+  const [motivo, setMotivo] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+  const [guardando, setGuardando] = useState(false)
+
+  async function guardar() {
+    setErr(null)
+    if (motivo.trim().length < 3) { setErr('escribe qué hay que cambiar (mínimo 3 caracteres)'); return }
+    setGuardando(true)
+    await onConfirmar(motivo)
+    setGuardando(false)
+  }
+
+  return (
+    <ModalShell titulo={`↩ pedir cambios · ${t.nombre}`} onCerrar={onCerrar}>
+      <div className="space-y-4">
+        <p className="font-mono text-[11px] text-neutral-500">
+          la petición vuelve a <strong>pendiente</strong> y {t.para} recibe tu motivo.
+          queda escrito en la descripción para que no se pierda el porqué.
+        </p>
+        <div>
+          <label className={labelCls} htmlFor="pc-motivo">¿qué hay que cambiar?</label>
+          <textarea id="pc-motivo" rows={3} maxLength={200} className={inputCls} autoFocus
+            placeholder="ej: falta el corte vertical para stories"
+            value={motivo} onChange={(e) => setMotivo(e.target.value)} />
+        </div>
+        {err && <p role="alert" className="font-mono text-xs text-movdi-naranja">{err}</p>}
+        <div className="flex justify-end gap-2">
+          <button onClick={onCerrar} className="rounded-full border border-neutral-700 px-4 py-2 text-xs text-neutral-300">cancelar</button>
+          <button onClick={guardar} disabled={guardando} data-testid="btn-cambios-confirmar"
+            className="rounded-full bg-movdi-naranja px-4 py-2 text-xs font-medium hover:bg-movdi-naranja/85 disabled:opacity-50">
+            {guardando ? 'enviando…' : 'pedir cambios'}
           </button>
         </div>
       </div>

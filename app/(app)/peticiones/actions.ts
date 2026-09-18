@@ -357,20 +357,151 @@ export async function entregarPeticion(input: {
   nota?: string
 }): Promise<Resultado> {
   try {
-    const { supabase } = await getContexto()
+    const { supabase, yo } = await getContexto()
+    const nota = (input.nota || '').trim()
     // RLS: solo creador o destinatario pueden actualizar
     const { data, error } = await supabase
       .from('peticiones')
       .update({
         estatus: 'entregado',
         link_entrega: (input.link || '').trim() || null,
-        nota_entrega: (input.nota || '').trim() || null,
+        nota_entrega: nota || null,
         fecha_entrega: hoyISO(),
       })
       .eq('id', input.id)
       .select()
     if (error) return { ok: false, error: error.message }
     if (!data?.length) return { ok: false, error: 'no puedes cambiar el estatus de esta petición' }
+
+    // Aviso de entrega (cutover 12): quien la pidió se entera y le queda el
+    // paso de aprobar. NO se avisa de lo que no se aprueba: instancias
+    // recurrentes y auto-asignadas (yo mismo soy el creador).
+    const t = data[0]
+    if (!t.origen_recur && !matchNombre(t.creado_por, yo.nombre)) {
+      const detalle = nota
+        ? `revísala y apruébala · ${nota.length > 80 ? `${nota.slice(0, 79)}…` : nota}`
+        : 'revísala y apruébala'
+      await notificar(supabase, yo, [], [{
+        para: t.creado_por,
+        tipo: 'entrega_por_aprobar',
+        titulo: `${yo.nombre} entregó "${t.nombre}"`,
+        detalle,
+        peticion_id: t.id,
+      }])
+    }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
+  }
+}
+
+// ---------- aprobar entrega / pedir cambios (cutover 12) ----------
+// El ciclo lo cierra QUIEN PIDIÓ la petición: revisa la entrega y la aprueba,
+// o la regresa con un motivo. Ambas acciones son solo del creador (validado
+// aquí Y respaldado por el trigger peticiones_guard_aprobacion de la BD).
+// Nada de esto toca gamificación: el XP, el cumplimiento y las rachas siguen
+// mirando estatus='entregado' + fecha_entrega, como siempre.
+
+// Row + validaciones comunes a las dos acciones.
+async function getEntregaDelCreador(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  yo: Persona,
+  id: string,
+): Promise<{ ok: true; t: Record<string, any> } | { ok: false; error: string }> { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const { data: rows, error } = await supabase.from('peticiones').select('*').eq('id', id)
+  const t = rows?.[0]
+  if (error || !t) return { ok: false, error: 'petición no encontrada' }
+  if (!matchNombre(t.creado_por, yo.nombre)) {
+    return { ok: false, error: 'solo quien pidió la petición puede aprobar o pedir cambios' }
+  }
+  if (t.estatus !== 'entregado') {
+    return { ok: false, error: 'esta petición no está entregada' }
+  }
+  if (t.origen_recur || matchNombre(t.creado_por, t.para)) {
+    return { ok: false, error: 'esta entrega no requiere aprobación' }
+  }
+  return { ok: true, t }
+}
+
+export async function aprobarEntrega(input: { id: string }): Promise<Resultado> {
+  try {
+    const { supabase, yo } = await getContexto()
+    const ctx = await getEntregaDelCreador(supabase, yo, input.id)
+    if (!ctx.ok) return ctx
+    const { t } = ctx
+    if (t.aprobada_en) return { ok: false, error: 'esta entrega ya está aprobada' }
+
+    const { data, error } = await supabase
+      .from('peticiones')
+      .update({ aprobada_en: new Date().toISOString(), aprobada_por: yo.nombre })
+      .eq('id', input.id)
+      .select('id')
+    if (error) {
+      // pre-cutover 12: las columnas aún no existen en BD
+      if (/aprobada_/i.test(error.message) && (error.code === 'PGRST204' || error.code === '42703')) {
+        return { ok: false, error: 'la aprobación de entregas aún no está habilitada — falta aplicar la migración de BD (cutover 12)' }
+      }
+      return { ok: false, error: error.message }
+    }
+    if (!data?.length) return { ok: false, error: 'no se pudo aprobar la entrega' }
+
+    await notificar(supabase, yo, [], [{
+      para: t.para,
+      tipo: 'entrega_aprobada',
+      titulo: `${yo.nombre} aprobó tu entrega de "${t.nombre}"`,
+      detalle: 'quedó cerrada ✓',
+      peticion_id: t.id,
+    }])
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
+  }
+}
+
+// "Pedir cambios" reemplaza al reabrir pelón del creador: regresa la petición
+// a 'pendiente' CON un motivo, que queda escrito en la descripción (mismo
+// patrón que agregarNotaAvance: una línea al final, sin columna nueva). Como
+// cambia estatus y descripcion, cuenta como movimiento — el contador de días
+// sin movimiento arranca de nuevo, que es justo lo que se quiere.
+export async function pedirCambios(input: { id: string; motivo: string }): Promise<Resultado> {
+  try {
+    const { supabase, yo } = await getContexto()
+    const motivo = (input.motivo || '').replace(/\s+/g, ' ').trim()
+    if (motivo.length < 3) return { ok: false, error: 'escribe qué hay que cambiar (mínimo 3 caracteres)' }
+    if (motivo.length > 200) return { ok: false, error: 'máximo 200 caracteres — es una nota de una línea' }
+
+    const ctx = await getEntregaDelCreador(supabase, yo, input.id)
+    if (!ctx.ok) return ctx
+    const { t } = ctx
+
+    const linea = `↩ cambios pedidos (${fechaCorta(hoyISO())}, ${yo.nombre}): ${motivo}`
+    const descripcion = t.descripcion ? `${t.descripcion}\n${linea}` : linea
+    const { data, error } = await supabase
+      .from('peticiones')
+      .update({
+        estatus: 'pendiente',
+        descripcion,
+        aprobada_en: null,
+        aprobada_por: null,
+      })
+      .eq('id', input.id)
+      .select('id')
+    if (error) {
+      // pre-cutover 12: las columnas aún no existen en BD
+      if (/aprobada_/i.test(error.message) && (error.code === 'PGRST204' || error.code === '42703')) {
+        return { ok: false, error: 'la aprobación de entregas aún no está habilitada — falta aplicar la migración de BD (cutover 12)' }
+      }
+      return { ok: false, error: error.message }
+    }
+    if (!data?.length) return { ok: false, error: 'no se pudieron pedir cambios en esta petición' }
+
+    await notificar(supabase, yo, [], [{
+      para: t.para,
+      tipo: 'cambios_pedidos',
+      titulo: `${yo.nombre} pidió cambios en "${t.nombre}"`,
+      detalle: `vuelve a estar pendiente · ${motivo}`,
+      peticion_id: t.id,
+    }])
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }

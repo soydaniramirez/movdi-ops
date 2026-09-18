@@ -17,7 +17,8 @@ const pet = (o: Partial<Peticion>): Peticion => ({
   creadoPor: 'Dani', para: 'Antonio', area: 'pm', fecha: '2026-07-20', prioridad: 'media',
   estatus: 'pendiente', privada: false, origenRecur: null, grupoId: null, fechaOriginal: null,
   motivoCambioFecha: null, cambioVistoPorCreador: true, extensionJustificada: null,
-  linkEntrega: null, notaEntrega: null, fechaEntrega: null, ocultaPara: [], creadaEn: null,
+  linkEntrega: null, notaEntrega: null, fechaEntrega: null, aprobadaEn: null,
+  aprobadaPor: null, ocultaPara: [], creadaEn: null,
   origen: null, actualizadaEn: null, tipoPeticion: null, detalle: null, clienteId: null, ...o,
 })
 

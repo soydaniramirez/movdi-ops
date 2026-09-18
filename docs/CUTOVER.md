@@ -381,3 +381,61 @@ drop column tipo_peticion; drop table public.clientes;
 drop function public.mi_tiene_area(text); drop function public.unaccent_inmutable(text);`
 La UI tolera columnas ausentes (los selects de clientes quedan vacíos y el
 candado no aplica si la config se retira del código).
+
+
+---
+
+## H. POST-CUTOVER — Aprobación de entrega (2026-09-18)
+
+**Migración 12: `20260918120000_cutover_aprobacion_entrega.sql` — ⏳ SIN APLICAR**
+(requiere OK explícito de dirección tras mostrar el SQL, como toda migración).
+
+Problema: cuando el destinatario marcaba "entregado", quien pidió la petición no
+se enteraba de nada y no existía el paso de "sí, esto es lo que pedí".
+
+Qué agrega la migración (todo aditivo):
+- `peticiones.aprobada_en timestamptz` + `peticiones.aprobada_por text`.
+  NULL en una entregada = está en la cola "por aprobar" del creador.
+- **Backfill**: las 949 entregadas vivas nacen aprobadas
+  (`aprobada_en = coalesce(fecha_entrega::timestamptz, now())`,
+  `aprobada_por = creado_por`). Sin esto, la cola del equipo amanecería con
+  742 históricos. El UPDATE no mueve `updated_at` (no toca ninguna columna de
+  la lista del trigger de movimiento).
+- **Trigger `peticiones_guard_aprobacion`**: solo el creador puede escribir
+  esas dos columnas. `peticiones_update` deja editar la fila al creador Y al
+  destinatario (así entrega, cambia fecha y sube evidencia); sin el guard, el
+  destinatario podría auto-aprobarse llamando al API con la anon key. El guard
+  solo aplica a sesiones de usuario (`auth.uid() is not null`), para no
+  estorbar a migraciones ni a funciones SECURITY DEFINER.
+
+Lo que NO cambia: ninguna policy de RLS, el trigger `peticiones_touch_movimiento`
+(aprobar NO es movimiento: las columnas nuevas caen en su rama `else` y congelan
+`updated_at`), y **toda la gamificación** — XP, cumplimiento, rachas, leaderboard
+y cierre de mes siguen leyendo `estatus='entregado'` + `fecha_entrega`.
+
+Orden de despliegue (la migración es aditiva; el código tolera ambos órdenes):
+1. **Aplicar la migración 12** (tras el OK). Con el bundle viejo vivo no pasa
+   nada: nadie lee ni escribe las columnas nuevas.
+2. **Merge + deploy del PR.** Si se invierte el orden, la app sigue funcionando:
+   sin columnas, todo lo entregado se ve aprobado, el KPI "por aprobar" nunca
+   aparece y `aprobarEntrega` devuelve un aviso claro
+   ("falta aplicar la migración de BD (cutover 12)") en vez del error crudo.
+   Los avisos de entrega (`entrega_por_aprobar`) SÍ salen desde el deploy, aun
+   sin migración: no dependen de ninguna columna nueva.
+
+Verificación post-aplicación:
+- `select count(*) from peticiones where estatus='entregado' and aprobada_en is null;` → 0.
+- Entregar (sesión del destinatario) → `aprobada_en` sigue NULL y el creador
+  recibe la notificación 📦.
+- Aprobar (sesión del creador) → se llenan `aprobada_en`/`aprobada_por` y
+  `updated_at` NO se mueve.
+- PATCH directo de `aprobada_en` con la sesión del DESTINATARIO → lo rechaza el
+  guard ("solo quien pidió la petición puede aprobar o revertir su entrega").
+- Petición anónima a `peticiones` → 0 filas / 401 · advisors sin hallazgos nuevos.
+
+Rollback de la 12:
+```sql
+drop trigger if exists peticiones_guard_aprobacion on public.peticiones;
+drop function if exists public.peticiones_guard_aprobacion();
+alter table public.peticiones drop column if exists aprobada_en, drop column if exists aprobada_por;
+```

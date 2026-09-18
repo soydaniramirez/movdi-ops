@@ -140,6 +140,10 @@ test('iconos y tiempo relativo (paridad SPA + tipo nuevo recurrente_hoy)', () =>
   expect(iconoNotif('reabierta')).toBe('🔄')
   expect(iconoNotif('estrella')).toBe('⭐')
   expect(iconoNotif('recurrente_hoy')).toBe('↻')
+  // ciclo de aprobación de entrega (cutover 12)
+  expect(iconoNotif('entrega_por_aprobar')).toBe('📦')
+  expect(iconoNotif('entrega_aprobada')).toBe('✅')
+  expect(iconoNotif('cambios_pedidos')).toBe('↩')
   expect(iconoNotif('otro_tipo')).toBe('🔔')
 
   const ahora = Date.parse('2026-07-03T12:00:00Z')
@@ -152,4 +156,37 @@ test('iconos y tiempo relativo (paridad SPA + tipo nuevo recurrente_hoy)', () =>
   // mapNotifRow completo
   const n = mapNotifRow({ id: 'x', para: 'A', tipo: 't', titulo: 'T', detalle: null, peticion_id: 'p1', vista: true, creada_en: 'z' })
   expect(n).toEqual({ id: 'x', para: 'A', tipo: 't', titulo: 'T', detalle: null, peticionId: 'p1', vista: true, creadaEn: 'z' })
+})
+
+// ------------------------------------------------------------
+// Aprobación de entrega (cutover 12): el aviso de entrega llega a la campana
+// de quien la pidió y el clic aterriza en "lo que pedí", que es la única tab
+// donde esa fila existe para el creador.
+test('campana: el aviso de entrega lleva a la petición en "lo que pedí"', async ({ page, browser }) => {
+  // Brenda entrega 'diseñar reel' (p-seed-3), que le pidió Antonio
+  await login(page, 'brenda@movdi.mx')
+  await page.goto('/peticiones')
+  await page.getByRole('button', { name: 'mis pendientes' }).click()
+  await page.getByTestId('card-peticion').filter({ hasText: 'diseñar reel' }).getByTestId('btn-entregar').click()
+  await page.getByTestId('btn-entrega-confirmar').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  const ctx = await browser.newContext()
+  const p2 = await ctx.newPage()
+  await login(p2, 'antonio@movdi.mx')
+  await p2.getByTestId('btn-campana').click()
+  const aviso = p2.getByTestId('notif-item').filter({ hasText: 'Brenda entregó "diseñar reel"' })
+  await expect(aviso).toContainText('📦')
+  await expect(aviso).toContainText('revísala y apruébala')
+  await aviso.click()
+
+  await expect(p2).toHaveURL(/\/peticiones\?pet=p-seed-3/)
+  await expect(p2.getByRole('button', { name: 'lo que pedí' })).toHaveClass(/text-movdi-naranja/)
+  const fila = p2.locator('#pet-row-p-seed-3')
+  await expect(fila).toBeVisible()
+  await expect(fila.getByTestId('badge-por-aprobar')).toBeVisible()
+
+  const st = await estado()
+  expect(st.notificaciones.find((n) => n.tipo === 'entrega_por_aprobar')!.vista).toBe(true)
+  await ctx.close()
 })

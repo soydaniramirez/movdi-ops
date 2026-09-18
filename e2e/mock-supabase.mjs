@@ -103,6 +103,7 @@ function reset() {
         estatus: 'pendiente', privada: false, origen_recur: null, grupo_id: null,
         fecha_original: null, motivo_cambio_fecha: null, cambio_visto_por_creador: true,
         extension_justificada: null, link_entrega: null, nota_entrega: null, fecha_entrega: null,
+        aprobada_en: null, aprobada_por: null,
         oculta_para: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       },
       {
@@ -111,6 +112,7 @@ function reset() {
         estatus: 'pendiente', privada: false, origen_recur: 'rec-1', grupo_id: null,
         fecha_original: null, motivo_cambio_fecha: null, cambio_visto_por_creador: true,
         extension_justificada: null, link_entrega: null, nota_entrega: null, fecha_entrega: null,
+        aprobada_en: null, aprobada_por: null,
         oculta_para: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       },
       // ↓ entregas del MES ANTERIOR para el cierre de mes (Antonio, 7 entregas:
@@ -123,6 +125,8 @@ function reset() {
         extension_justificada: null, link_entrega: null, nota_entrega: null,
         // solo la primera con anticipación 3+ días (bonus +3); el resto sin dato
         fecha_entrega: i === 0 ? `${MES_PREV}-02` : null,
+        // paridad con el backfill del cutover 12: el histórico nace aprobado
+        aprobada_en: `${MES_PREV}-10T12:00:00Z`, aprobada_por: 'Dani',
         oculta_para: [], created_at: `${MES_PREV}-01T12:00:00Z`, updated_at: `${MES_PREV}-01T12:00:00Z`,
       })),
       {
@@ -131,6 +135,7 @@ function reset() {
         estatus: 'pendiente', privada: false, origen_recur: null, grupo_id: null,
         fecha_original: null, motivo_cambio_fecha: null, cambio_visto_por_creador: true,
         extension_justificada: null, link_entrega: null, nota_entrega: null, fecha_entrega: null,
+        aprobada_en: null, aprobada_por: null,
         oculta_para: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       },
     ],
@@ -599,7 +604,8 @@ const server = http.createServer(async (req, res) => {
           fecha_original: null, motivo_cambio_fecha: null, cambio_visto_por_creador: true,
           extension_justificada: null, link_entrega: null, nota_entrega: null, fecha_entrega: null,
           origen_recur: null, grupo_id: null, descripcion: null, origen: null,
-          tipo_peticion: null, detalle: null, cliente_id: null, ...f,
+          tipo_peticion: null, detalle: null, cliente_id: null,
+          aprobada_en: null, aprobada_por: null, ...f,
         }))
         db.peticiones.push(...creadas)
         if (prefer.includes('return=representation')) return representar(creadas)
@@ -608,6 +614,14 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'PATCH') {
         const cambios = JSON.parse(body || '{}')
         const objetivo = aplicarFiltros(db.peticiones, url.searchParams).filter((r) => puedeEditarPeticion(r, yo))
+        // paridad trigger peticiones_guard_aprobacion (cutover 12): la RLS de
+        // UPDATE deja escribir al creador Y al destinatario, pero aprobada_en/
+        // aprobada_por son SOLO del creador (si no, el destinatario podría
+        // auto-aprobarse por API, saltándose la Server Action).
+        const tocaAprobacion = 'aprobada_en' in cambios || 'aprobada_por' in cambios
+        if (tocaAprobacion && objetivo.some((r) => r.creado_por !== yo.nombre)) {
+          return json(400, { code: 'P0001', message: 'solo quien pidió la petición puede aprobar o revertir su entrega' })
+        }
         // paridad trigger peticiones_touch_movimiento (cutover 9): solo el
         // cambio REAL de estatus/descripcion/entrega mueve updated_at;
         // oculta_para, cambio_visto_por_creador, privada, fecha… no lo tocan
