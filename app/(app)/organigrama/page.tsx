@@ -31,9 +31,9 @@ export default async function OrganigramaPage() {
   const personas = (rows ?? []).map(mapPersonaConManagers)
 
   // "editar en equipo": solo si además tiene acceso a la pestaña equipo
-  // (dirección, head o jefa directa). RH/admi sin gente a cargo no lo ven.
+  // (dirección, head, RH o jefa directa). Admi sin gente a cargo no lo ve.
   const puedeEditarEquipo =
-    esDireccion(yo) || yo.nivel === 'head' || tengoSupervisadas(yo, personas)
+    esDireccion(yo) || yo.nivel === 'head' || yo.nivel === 'rh' || tengoSupervisadas(yo, personas)
 
   return <OrganigramaView personas={personas} puedeEditarEquipo={puedeEditarEquipo} />
 }

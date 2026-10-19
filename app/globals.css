@@ -136,3 +136,30 @@ tr:hover .reveal-acciones,
 .orgchart > ul { padding-top: 0; }
 .orgchart > ul > li::before,
 .orgchart > ul > li::after { display: none; }
+
+/* ── Organigrama en PDF (2026-10-19) ───────────────────────────
+   "descargar pdf" = window.print() con estas reglas: hoja horizontal, fondo
+   blanco y texto oscuro. Solo aplican cuando el body lleva .imprimiendo-org
+   (lo pone el botón), así no alteran la impresión de otras páginas. */
+@media print {
+  @page { size: landscape; margin: 10mm; }
+  body.imprimiendo-org { background: #fff !important; color: #111 !important; }
+  body.imprimiendo-org .org-print * {
+    background: transparent !important;
+    color: #111 !important;
+    box-shadow: none !important;
+  }
+  /* la muestra de "manager principal" en la leyenda es un fondo, no un borde */
+  body.imprimiendo-org .org-print .bg-neutral-500 { background: #555 !important; }
+  body.imprimiendo-org .org-print .org-scroll { overflow: visible !important; }
+  /* el árbol se escala para caber a lo ancho de la hoja (--org-escala lo
+     calcula el botón con el ancho real del árbol) */
+  body.imprimiendo-org .org-print .org-arbol { zoom: var(--org-escala, 1); }
+  body.imprimiendo-org .org-print .orgchart li::before,
+  body.imprimiendo-org .org-print .orgchart li::after,
+  body.imprimiendo-org .org-print .orgchart ul ul::before { border-color: #555 !important; }
+  body.imprimiendo-org .org-print [data-testid="org-card"] {
+    border-color: #999 !important;
+    break-inside: avoid;
+  }
+}

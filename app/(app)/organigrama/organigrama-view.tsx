@@ -1,10 +1,12 @@
 import Link from 'next/link'
 import { AREAS_LABEL, AREAS_VALIDAS, AREA_COLOR, estaPausada } from '@/lib/peticiones'
 import { type NodoOrg, type PersonaConManagers, construirOrganigrama } from '@/lib/equipo'
+import BotonPdf from './boton-pdf'
 
 // Vista pura (server component): construye el árbol en vivo y lo pinta con el
 // árbol CSS de globals.css (.orgchart). Solo lectura — la edición vive en la
 // pestaña equipo. Móvil: el árbol scrollea horizontal dentro de su contenedor.
+// PDF: .org-print / .org-scroll / .org-arbol son los ganchos de @media print.
 
 function Tarjeta({ n }: { n: NodoOrg }) {
   const p = n.persona
@@ -66,16 +68,21 @@ export default function OrganigramaView({
   const { raices, sinAsignar } = construirOrganigrama(personas)
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-8">
+    <main className="org-print mx-auto max-w-6xl px-6 py-8 print:max-w-none print:p-0">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-mono text-lg font-bold tracking-tight text-neutral-100">organigrama</h1>
-          <p className="mt-1 max-w-xl text-[13px] text-neutral-400">
+          <h1 className="font-mono text-lg font-bold tracking-tight text-neutral-100">
+            organigrama<span className="hidden print:inline"> · MOVDI</span>
+          </h1>
+          <p data-testid="org-fecha-pdf" className="hidden font-mono text-[11px] print:block" />
+          <p className="mt-1 max-w-xl text-[13px] text-neutral-400 print:hidden">
             vista de solo lectura, generada en vivo desde el equipo. la jerarquía sale de
             {' '}<span className="text-neutral-300">manager principal</span> (línea sólida) y
             {' '}<span className="text-neutral-300">apoyo</span> (punteado). se edita en la pestaña equipo.
           </p>
         </div>
+        <div className="flex shrink-0 flex-wrap gap-2 print:hidden">
+        <BotonPdf />
         {puedeEditarEquipo && (
           <Link
             href="/equipo"
@@ -85,6 +92,7 @@ export default function OrganigramaView({
             editar en equipo →
           </Link>
         )}
+        </div>
       </div>
 
       {/* Leyenda */}
@@ -104,8 +112,8 @@ export default function OrganigramaView({
       </div>
 
       {/* Árbol — scroll horizontal en pantallas chicas */}
-      <div className="mt-6 overflow-x-auto pb-4">
-        <div className="flex min-w-max items-start justify-center gap-12">
+      <div className="org-scroll mt-6 overflow-x-auto pb-4">
+        <div className="org-arbol flex min-w-max items-start justify-center gap-12">
           {raices.map((r) => (
             <div key={r.persona.id} className="orgchart">
               <ul><Nodo n={r} /></ul>
@@ -115,7 +123,7 @@ export default function OrganigramaView({
       </div>
 
       {/* Sin asignar — detector de datos incompletos */}
-      <section className="mt-8 border-t border-neutral-800 pt-4">
+      <section className="mt-8 border-t border-neutral-800 pt-4 print:break-inside-avoid">
         <h2 className="font-mono text-xs uppercase tracking-wider text-neutral-400">sin asignar</h2>
         {sinAsignar.length === 0 ? (
           <p className="mt-2 text-[12px] text-movdi-verde">✓ todas las personas activas tienen manager principal.</p>

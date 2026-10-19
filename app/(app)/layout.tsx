@@ -53,7 +53,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     const { data: todosRows } = await supabase.from('personas').select('*')
     tengoGente = tengoSupervisadas(persona, (todosRows ?? []).map(mapPersonaRow))
   }
-  const veEquipo = !!persona && (persona.nivel === 'head' || esDir || tengoGente)
+  const veEquipo = !!persona && (persona.nivel === 'head' || persona.nivel === 'rh' || esDir || tengoGente)
   // organigrama (solo lectura): dirección, RH o área admi
   const veOrg = !!persona && veOrganigrama(persona)
   // catálogo de clientes: lo edita área admi + dirección (RLS); el resto
@@ -65,9 +65,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     : ''
 
   return (
-    <div className="min-h-screen bg-neutral-950">
-      {/* header pegajoso con glassmorphism (Paso B) */}
-      <div className="sticky top-0 z-40 border-b border-neutral-800 bg-neutral-950/80 px-6 py-2 backdrop-blur-md">
+    <div className="min-h-screen bg-neutral-950 print:bg-white">
+      {/* header pegajoso con glassmorphism (Paso B) — fuera de cualquier impresión */}
+      <div className="sticky top-0 z-40 border-b print:hidden border-neutral-800 bg-neutral-950/80 px-6 py-2 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           {/* nav accesible: 14px, alto contraste y área de toque generosa */}
           <nav className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
@@ -122,7 +122,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div
           data-testid="aviso-cuenta-incompleta"
           role="alert"
-          className="border-b border-movdi-naranja/40 bg-movdi-naranja/10 px-6 py-2 text-center font-mono text-xs text-movdi-naranja"
+          className="print:hidden border-b border-movdi-naranja/40 bg-movdi-naranja/10 px-6 py-2 text-center font-mono text-xs text-movdi-naranja"
         >
           {persona
             ? 'tu cuenta no está terminada de configurar — puedes ver la app, pero crear o editar va a fallar. avisa a dirección.'

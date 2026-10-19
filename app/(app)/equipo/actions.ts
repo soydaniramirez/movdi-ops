@@ -1,8 +1,10 @@
 'use server'
 
 // Server Actions de gestión de personas — el módulo más sensible.
-// TODAS re-validan DIRECCIÓN con la SESIÓN (además de la policy
-// personas_modify_admin). Datos derivados en servidor, nunca del cliente.
+// TODAS re-validan el rol con la SESIÓN (además de las policies
+// personas_insert_admin / personas_update_admin). Datos derivados en
+// servidor, nunca del cliente. Alta, edición y reenvío: dirección O rh
+// (2026-10-19, con candados); pausar/reanudar/reactivar/baja: solo dirección.
 
 import { createClient } from '@/lib/supabase/server'
 import { selectTodo } from '@/lib/supabase/select-todo'
@@ -16,7 +18,9 @@ type Resultado = { ok: true; aviso?: string } | { ok: false; error: string }
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const NIVELES = ['ejecutivo', 'head', 'ceo', 'rh'] as const
 
-async function getAdminContexto() {
+// alcance 'personas' = alta/edición/reenvío (dirección o rh);
+// alcance 'direccion' = pausar, reanudar, reactivar y baja (solo dirección).
+async function getAdminContexto(alcance: 'personas' | 'direccion' = 'direccion') {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user?.email) throw new Error('sin sesión')
@@ -25,13 +29,32 @@ async function getAdminContexto() {
   if (!row) throw new Error('tu cuenta no está ligada a una persona del equipo')
   const yo = mapPersonaRow(row)
   if (!yo.activo) throw new Error('cuenta archivada')
-  // gating server-side: solo ceo|head gestionan personas (paridad policy)
-  // 4.14: la gestión de personas queda SOLO en dirección; los heads pasan
-  // a modo panorama (ver + toque) en la pestaña equipo.
-  if (!esDireccion({ esDireccion: yo.esDireccion, nivel: yo.nivel })) {
-    throw new Error('solo dirección puede gestionar personas')
+  // 4.14: la gestión de personas es de dirección; los heads van en modo
+  // panorama (ver + toque). 2026-10-19: RH también da de alta y edita.
+  const dir = esDireccion({ esDireccion: yo.esDireccion, nivel: yo.nivel })
+  if (!dir && !(alcance === 'personas' && yo.nivel === 'rh')) {
+    throw new Error(alcance === 'personas'
+      ? 'solo dirección o RH pueden gestionar personas'
+      : 'solo dirección puede hacer esto')
   }
-  return { supabase, yo }
+  return { supabase, yo, dir }
+}
+
+// Candados de RH (espejo de la policy personas_update_admin): no toca filas
+// de dirección ni la suya (así no cambia su propio nivel ni sus áreas).
+function candadoRH(
+  yo: { id: string; email: string | null },
+  objetivo: { id: string; email?: string | null; nivel?: string | null; es_direccion?: boolean | null },
+): string | null {
+  if (objetivo.es_direccion === true || objetivo.nivel === 'ceo') {
+    return 'RH no puede editar a alguien de dirección'
+  }
+  const mismoEmail = !!yo.email && !!objetivo.email &&
+    yo.email.toLowerCase() === objetivo.email.toLowerCase()
+  if (objetivo.id === yo.id || mismoEmail) {
+    return 'tu propia ficha (nivel y áreas) la edita dirección'
+  }
+  return null
 }
 
 type DatosPersona = {
@@ -85,9 +108,10 @@ function payloadPersona(input: DatosPersona, areasExistentes?: string[]) {
 
 export async function crearPersona(input: DatosPersona): Promise<Resultado> {
   try {
-    const { supabase } = await getAdminContexto()
+    const { supabase, dir } = await getAdminContexto('personas')
     const err = validarDatos(input)
     if (err) return { ok: false, error: err }
+    if (!dir && input.nivel === 'ceo') return { ok: false, error: 'RH no puede dar de alta a alguien con nivel dirección' }
 
     const payload = payloadPersona(input)
     const { data: insertadas, error } = await supabase.from('personas').insert(payload).select()
@@ -123,7 +147,7 @@ export async function crearPersona(input: DatosPersona): Promise<Resultado> {
         // Vínculo auth_user_id INMEDIATO (bug Valeria 2026-07-15): sin esto,
         // la persona nueva entra con mi_nombre() = null y la RLS le rechaza
         // su primera petición. El update va con la SESIÓN de dirección
-        // (policy personas_modify_admin) — service_role sigue solo en el invite.
+        // (policy personas_update_admin, dirección o rh) — service_role sigue solo en el invite.
         if (invitado?.user?.id && nueva?.id) {
           const { error: eLink } = await supabase
             .from('personas').update({ auth_user_id: invitado.user.id }).eq('id', nueva.id)
@@ -143,13 +167,18 @@ export async function crearPersona(input: DatosPersona): Promise<Resultado> {
 
 export async function editarPersona(input: DatosPersona & { id: string }): Promise<Resultado> {
   try {
-    const { supabase } = await getAdminContexto()
+    const { supabase, yo, dir } = await getAdminContexto('personas')
     const err = validarDatos(input)
     if (err) return { ok: false, error: err }
 
     const { data: rows } = await supabase.from('personas').select('*').eq('id', input.id)
     const actual = rows?.[0]
     if (!actual) return { ok: false, error: 'persona no encontrada' }
+    if (!dir) {
+      const eRH = candadoRH(yo, actual)
+      if (eRH) return { ok: false, error: eRH }
+      if (input.nivel === 'ceo') return { ok: false, error: 'RH no puede poner a nadie con nivel dirección' }
+    }
 
     const payload = payloadPersona(input, actual.areas ?? [])
     const { data, error } = await supabase.from('personas').update(payload).eq('id', input.id).select()
@@ -167,10 +196,14 @@ export async function editarPersona(input: DatosPersona & { id: string }): Promi
 // mismo archivo. Si el usuario ya existe en Auth, liga el vínculo si falta.
 export async function reenviarInvitacion(input: { id: string }): Promise<Resultado> {
   try {
-    const { supabase } = await getAdminContexto()
+    const { supabase, yo, dir } = await getAdminContexto('personas')
     const { data: rows } = await supabase.from('personas').select('*').eq('id', input.id)
     const row = rows?.[0]
     if (!row) return { ok: false, error: 'persona no encontrada' }
+    if (!dir) {
+      const eRH = candadoRH(yo, row)
+      if (eRH) return { ok: false, error: eRH }
+    }
     if (!row.email) return { ok: false, error: 'esta persona no tiene correo — captúralo y guarda antes de invitar' }
 
     const admin = createAdminClient()
@@ -183,7 +216,7 @@ export async function reenviarInvitacion(input: { id: string }): Promise<Resulta
       }
       return { ok: false, error: `no se pudo enviar la invitación: ${eInvite.message}` }
     }
-    // liga el vínculo si estaba vacío (misma lógica del alta; sesión de dirección)
+    // liga el vínculo si estaba vacío (misma lógica del alta; sesión de dirección o rh)
     if (invitado?.user?.id && !row.auth_user_id) {
       await supabase.from('personas').update({ auth_user_id: invitado.user.id }).eq('id', input.id)
     }
@@ -195,7 +228,7 @@ export async function reenviarInvitacion(input: { id: string }): Promise<Resulta
 
 export async function pausarPersona(input: { id: string; hasta: string }): Promise<Resultado> {
   try {
-    const { supabase } = await getAdminContexto()
+    const { supabase } = await getAdminContexto('direccion')
     if (!/^\d{4}-\d{2}-\d{2}$/.test(input.hasta)) return { ok: false, error: 'usa AAAA-MM-DD (ej: 2026-06-15)' }
     const { data, error } = await supabase
       .from('personas').update({ pausada_hasta: input.hasta }).eq('id', input.id).select()
@@ -209,7 +242,7 @@ export async function pausarPersona(input: { id: string; hasta: string }): Promi
 
 export async function reanudarPersona(input: { id: string }): Promise<Resultado> {
   try {
-    const { supabase } = await getAdminContexto()
+    const { supabase } = await getAdminContexto('direccion')
     const { data, error } = await supabase
       .from('personas').update({ pausada_hasta: null }).eq('id', input.id).select()
     if (error) return { ok: false, error: error.message }
@@ -222,7 +255,7 @@ export async function reanudarPersona(input: { id: string }): Promise<Resultado>
 
 export async function reactivarPersona(input: { id: string }): Promise<Resultado> {
   try {
-    const { supabase } = await getAdminContexto()
+    const { supabase } = await getAdminContexto('direccion')
     const { data, error } = await supabase
       .from('personas').update({ activo: true }).eq('id', input.id).select()
     if (error) return { ok: false, error: error.message }
@@ -254,7 +287,7 @@ export async function desactivarConReasignacion(input: {
   cancelarRecurrentes?: boolean
 }): Promise<Resultado> {
   try {
-    const { supabase } = await getAdminContexto() // gating ceo|head también aquí
+    const { supabase } = await getAdminContexto('direccion') // solo dirección también aquí
 
     // pre-validaciones de UX (la RPC re-valida todo dentro de la transacción)
     const [{ data: persRows }, { data: petRows }, { data: recRows }] = await Promise.all([
