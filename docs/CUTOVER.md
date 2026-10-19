@@ -452,3 +452,28 @@ drop trigger if exists peticiones_guard_aprobacion on public.peticiones;
 drop function if exists public.peticiones_guard_aprobacion();
 alter table public.peticiones drop column if exists aprobada_en, drop column if exists aprobada_por;
 ```
+
+
+---
+
+## I. POST-CUTOVER — RH gestiona personas (2026-10-19)
+
+**Migración 13: `20261019120000_personas_modify_rh.sql` — ✅ APLICADA el 2026-10-19**
+(OK y ejecución de dirección a mano en el SQL Editor; por eso no queda anotada
+en `supabase_migrations`). Verificación: 5 filas exactas en `pg_policies` de
+personas — `personas_delete_admin` DELETE · `personas_insert_admin` INSERT ·
+`personas_select_all_auth` SELECT · `personas_self_link` UPDATE ·
+`personas_update_admin` UPDATE —, sin `personas_modify_admin`.
+
+Qué cambia: `personas_modify_admin` (`ALL`, `mi_nivel() in (ceo,head)`, nunca
+versionada) se reemplaza por insert/update para dirección O rh con candados
+(la fila resultante no queda como dirección; RH no toca filas de dirección ni
+la suya) y delete solo dirección. **Los heads pierden la escritura en
+personas a propósito**: antes podían crear, editar, borrar y ponerse nivel ceo
+por la API. La definición vieja exacta y el SQL de rollback están en el
+encabezado del archivo.
+
+**Registro (sin correr): `20261019115900_versionar_personas_select_self_link.sql`**
+— transcribe `personas_select_all_auth` y `personas_self_link` tal como están
+vivas; ya existían en producción, el archivo es solo para que el repo refleje
+la BD.

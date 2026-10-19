@@ -68,6 +68,9 @@ Este documento consolida: (A) el esquema/RLS/funciones/cron según las 18 migrac
 | 16 | `20260720120000_jerarquia_valeria_head_jefas_datos.sql` (62) | 2026-07-20 — cabecera dice "⏳ SIN APLICAR" (L2) pero CLAUDE.md y el PR #7 dicen ✅ APLICADA (ver hallazgo 6.1) | Datos de jerarquía | UPDATEs a personas: Valeria nivel='head' (L26-28), Brenda managers={} (L32-34), Fátima manager_principal='Zazil' + managers={Zazil,Gloria,Montserrat} (L39-42), Jimena manager_principal='Fernanda' defensivo (L45-47). Rollback comentado L55-61 |
 | 17 | `20260720120100_cutover_jefa_directa_rls.sql` (101) | 2026-07-20 — misma discrepancia de cabecera | RLS "jefa directa": quitar candado nivel='head' | Reemplaza peticiones_select (L23-37), recurrentes_select (L40-49), recurrentes_update (L54-61), recurrentes_delete (L64-71). Rollback comentado L76-100 |
 | 18 | `20260720130000_limpieza_managers_legacy_antonio_jimena.sql` (46) | 2026-07-20 — cabecera "⏳ SIN APLICAR"; PR #8 dice "Aplicada y verificada"; CLAUDE.md dice "NO limpiadas" (ver hallazgo 6.1) | Limpieza de managers legacy | UPDATEs personas: Antonio managers={Montserrat} (sale Dani, L26-28); Jimena managers={} (L32-34). Demian/Leonardo intactos a propósito (L13-15) |
+| — | _posteriores a la auditoría (agregadas 2026-10-19; las de 2026-07-20 15:00 a 2026-09-18 no se re-auditaron aquí)_ | | | |
+| + | `20261019115900_versionar_personas_select_self_link.sql` | registro 2026-10-19 (ya viva, no se corre) | Versionar policies base de personas | drop if exists + create de personas_select_all_auth y personas_self_link, idénticas a la BD viva |
+| + | `20261019120000_personas_modify_rh.sql` | ✅ aplicada 2026-10-19 (SQL Editor) | RH gestiona personas | DROP personas_modify_admin; CREATE personas_insert_admin / personas_update_admin (dirección o rh con candados) / personas_delete_admin (dirección) |
 
 ---
 
@@ -78,7 +81,7 @@ Convención: "(base no versionada)" = la tabla existe pero su CREATE TABLE no es
 ### personas (base NO versionada)
 - Columnas añadidas por migraciones: `ve_gamificacion_completa boolean not null default false` (20260705190000:24-25).
 - Columnas inferidas por uso (sin definición visible): `id uuid`, `nombre`, `apellido`, `email`, `rol`, `nivel` (con CHECK `personas_nivel_check` mencionado en 20260720120000:25), `areas text[]` (mi_tiene_area, 20260715120000:35), `es_direccion boolean`, `activo boolean`, `pausada_hasta date` (20260703230500:54), `manager_principal text`, `managers text[]` (20260705230000:41-42), `auth_user_id uuid` (todas las mi_*).
-- Policies (todas de esquema base, no versionadas — solo referenciadas): `personas_select_all_auth` (20260703220000:11), `personas_modify_admin` (20260704120000:14), `personas_self_link` (referida en app/(app)/layout.tsx:22, lib/supabase/vinculo.ts:13, docs/ONBOARDING.md:42 — **no existe en ningún .sql del repo**). Eliminada: `personas_select_anon` (20260703220000:16).
+- Policies — **actualización 2026-10-19: TODAS VERSIONADAS.** `personas_select_all_auth` y `personas_self_link` transcritas de la BD viva en `20261019115900_versionar_personas_select_self_link.sql`; `personas_modify_admin` (`ALL`, `mi_nivel() in (ceo,head)`) REEMPLAZADA por `personas_insert_admin` / `personas_update_admin` / `personas_delete_admin` en `20261019120000_personas_modify_rh.sql` (✅ aplicada). Eliminada: `personas_select_anon` (20260703220000:16). _(Texto original de la auditoría: las tres policies eran de esquema base, no versionadas — solo referenciadas.)_
 - Grants: `revoke select on personas from anon` (20260703220000:17).
 
 ### peticiones (base NO versionada)
@@ -154,12 +157,17 @@ Convención: "(base no versionada)" = la tabla existe pero su CREATE TABLE no es
 
 ## 4. Políticas RLS — estado FINAL según el repo (aplicando las 18 en orden)
 
-⚠️ Solo las policies definidas/alteradas en el repo. El resto del set base (personas_*, peticiones_insert/update/delete, recurrentes_insert, todos_*, anuncios_*, notif_select/update/delete, anuncios_vistos) NO está versionado → pendiente de validación.
+⚠️ Solo las policies definidas/alteradas en el repo. El resto del set base (peticiones_insert/update/delete, recurrentes_insert, todos_*, anuncios_*, notif_select/update/delete, anuncios_vistos) NO está versionado → pendiente de validación.
 
 ### personas
 - `personas_select_anon` — **ELIMINADA** (20260703220000:16).
 - REVOKE SELECT FROM anon (ibid:17).
-- Vigentes según referencias (no versionadas): personas_select_all_auth, personas_modify_admin, personas_self_link.
+- **Actualización 2026-10-19 — versionadas y verificadas contra la BD viva:**
+  - `personas_select_all_auth` (SELECT, authenticated) — `using (true)` (20261019115900).
+  - `personas_self_link` (UPDATE, authenticated) — using `auth_user_id is null and email = jwt.email`; with check `auth_user_id = auth.uid() and email = jwt.email` (20261019115900).
+  - `personas_insert_admin` (INSERT) / `personas_update_admin` (UPDATE) — dirección (`mi_es_direccion() or mi_nivel()='ceo'`) O rh con candados: la fila no queda como ceo/es_direccion/ve_gamificacion_completa, y RH no toca filas de dirección ni la suya (20261019120000).
+  - `personas_delete_admin` (DELETE) — solo dirección (20261019120000).
+  - `personas_modify_admin` — **ELIMINADA** (20261019120000). Era `ALL` con `mi_nivel() in (ceo,head)`: los heads podían escribir/borrar cualquier fila y ponerse nivel ceo por la API.
 
 ### peticiones
 - `peticiones_select` (SELECT, authenticated) — versión FINAL en 20260720120100:23-37: privada=true → creador/para; si no → creador/para OR mi_es_direccion() OR **es_de_mi_equipo(creado_por) OR es_de_mi_equipo(para)** (sin exigir nivel head). Reemplaza la de 20260705230000:51-67 (que exigía `mi_nivel()='head'` en la rama de equipo).
