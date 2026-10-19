@@ -220,6 +220,14 @@ function requester(req) {
   return email ? personaDe(email) : null
 }
 const esAdmin = (p) => p && (p.nivel === 'ceo' || p.nivel === 'head')
+// personas_insert_admin / personas_update_admin (2026-10-19): dirección O rh;
+// la rama rh no toca filas de dirección ni la suya, y la fila resultante no
+// puede quedar como dirección (nivel ceo / es_direccion / ve todo gamificación)
+const esDirPersona = (p) => p && (p.es_direccion === true || p.nivel === 'ceo')
+const rhPuedeTocar = (yo, r) =>
+  !esDirPersona(r) && r.ve_gamificacion_completa !== true &&
+  r.id !== yo.id && (r.email ?? '').toLowerCase() !== (yo.email ?? '').toLowerCase() &&
+  (r.auth_user_id == null || r.auth_user_id !== (yo.auth_uid ?? yo.auth_user_id))
 
 // ---- RLS simulada ----
 // Cutover 8 — visibilidad por equipos: ¿`nombre` reporta a `jefe`?
@@ -504,16 +512,18 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (tabla === 'personas') {
-      // RLS: SELECT autenticados · INSERT/UPDATE/DELETE solo ceo|head (personas_modify_admin)
+      // RLS: SELECT autenticados · INSERT/UPDATE dirección o rh con candados
+      // (personas_insert_admin / personas_update_admin)
       if (req.method === 'GET') {
         return representar(aplicarFiltros(db.personas, url.searchParams))
       }
       if (req.method === 'POST') {
-        if (!esAdmin(yo)) {
-          return json(403, { code: '42501', message: 'new row violates row-level security policy for table "personas"' })
-        }
         const input = JSON.parse(body || '[]')
         const filas = Array.isArray(input) ? input : [input]
+        const okIns = esDirPersona(yo) || (yo.nivel === 'rh' && filas.every((f) => rhPuedeTocar(yo, f)))
+        if (!okIns) {
+          return json(403, { code: '42501', message: 'new row violates row-level security policy for table "personas"' })
+        }
         for (const f of filas) {
           if (f.email && db.personas.some((p) => p.email === f.email)) {
             return json(409, { code: '23505', message: 'duplicate key value violates unique constraint "personas_email_key"' })
@@ -530,7 +540,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (req.method === 'PATCH') {
         const cambios = JSON.parse(body || '{}')
-        // personas_modify_admin (ceo|head) Ó personas_self_link: MI fila
+        // personas_update_admin (dirección o rh con candados) Ó personas_self_link: MI fila
         // (email del JWT), vínculo aún vacío y SOLO la columna auth_user_id
         // con MI uid. Filas que no pasan se omiten en silencio (0 updated),
         // igual que PostgREST con RLS.
@@ -539,7 +549,13 @@ const server = http.createServer(async (req, res) => {
           Object.keys(cambios).every((k) => k === 'auth_user_id') &&
           cambios.auth_user_id === (yo.auth_uid ?? yo.auth_user_id)
         const objetivo = aplicarFiltros(db.personas, url.searchParams)
-          .filter((r) => esAdmin(yo) || esSelfLink(r))
+          .filter((r) => esDirPersona(yo) || esSelfLink(r) ||
+            (yo.nivel === 'rh' && rhPuedeTocar(yo, r)))
+        // WITH CHECK de la rama rh: la fila nueva tampoco puede quedar como dirección
+        if (yo.nivel === 'rh' && !esDirPersona(yo) &&
+            objetivo.some((r) => !esSelfLink(r) && !rhPuedeTocar(yo, { ...r, ...cambios }))) {
+          return json(403, { code: '42501', message: 'new row violates row-level security policy for table "personas"' })
+        }
         objetivo.forEach((r) => Object.assign(r, cambios))
         if (prefer.includes('return=representation')) return representar(objetivo)
         return json(204, [])

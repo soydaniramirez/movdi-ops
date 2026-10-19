@@ -22,13 +22,13 @@ test.beforeEach(async () => {
 })
 
 // ------------------------------------------------------------
-test('pestañas por rol: rh solo rh/dirección · equipo solo heads/dirección · rutas redirigen', async ({ page, browser }) => {
-  // sarai (rh): ve rh, no equipo; /equipo la regresa a home
+test('pestañas por rol: rh solo rh/dirección · equipo heads/rh/dirección · rutas redirigen', async ({ page, browser }) => {
+  // sarai (rh): ve rh y, desde 2026-10-19, también equipo (gestiona personas)
   await login(page, 'sarai@movdi.mx')
   await expect(page.getByRole('link', { name: 'rh', exact: true })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'equipo' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'equipo' })).toBeVisible()
   await page.goto('/equipo')
-  await expect(page).toHaveURL(/\/$/)
+  await expect(page).toHaveURL(/\/equipo$/)
 
   // karla (head): ve equipo, no rh; /rh la regresa a home
   const ctx = await browser.newContext()

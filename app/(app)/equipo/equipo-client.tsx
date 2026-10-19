@@ -60,8 +60,11 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
   const [modalReasign, setModalReasign] = useState<PersonaConManagers | null>(null)
   const [modalToque, setModalToque] = useState<PersonaConManagers | null>(null)
 
-  // 4.14: gestión SOLO dirección; heads en modo panorama (ver + toque)
+  // 4.14: gestión de dirección; heads en modo panorama (ver + toque).
+  // 2026-10-19: RH también da de alta y edita (no a dirección ni a sí misma;
+  // el servidor y la RLS lo re-validan). Pausar/baja siguen solo dirección.
   const dir = esDireccion(yo)
+  const esRH = yo.nivel === 'rh'
 
   const recargar = useCallback(async () => {
     const sb = createClient()
@@ -81,11 +84,14 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
   useEffect(() => { void recargar() }, [recargar])
 
   // heads ven SOLO su equipo (manager principal o apoyo — como el semáforo);
-  // dirección ve a todos
+  // dirección y RH ven a todos
   const visibles = useMemo(() => (
-    dir ? personas : personas.filter((p) =>
+    dir || esRH ? personas : personas.filter((p) =>
       p.managerPrincipal === yo.nombre || (p.managers || []).includes(yo.nombre))
-  ), [dir, personas, yo])
+  ), [dir, esRH, personas, yo])
+
+  const puedoEditar = (p: PersonaConManagers) =>
+    dir || (esRH && !esDireccion(p) && p.id !== yo.id)
 
   const activas = visibles.filter((p) => p.activo !== false && !estaPausada(p))
   const pausadas = visibles.filter((p) => p.activo !== false && estaPausada(p))
@@ -170,7 +176,7 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
                 {activas.length} activas · {pausadas.length} pausadas · {inactivas.length} inactivas
               </p>
             </div>
-            {dir && (
+            {(dir || esRH) && (
               <button onClick={() => setModalPersona({ editar: null })} data-testid="btn-agregar-persona"
                 className="rounded-full bg-movdi-naranja px-4 py-2 text-sm font-medium hover:bg-movdi-naranja/85">
                 + agregar persona
@@ -241,6 +247,14 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
                         ⚡ toque
                       </button>
                     )}
+                  {/* RH: solo editar (pausar/baja/reactivar siguen siendo de dirección) */}
+                  {!dir && esRH && p.activo !== false && puedoEditar(p) && (
+                    <button data-testid="btn-editar-persona"
+                      onClick={() => setModalPersona({ editar: p })}
+                      className="border border-neutral-700 px-2 py-1 font-mono text-[10px] text-neutral-300">
+                      editar
+                    </button>
+                  )}
                   {dir && (
                     <div className="flex flex-wrap gap-1.5">
                       {p.activo !== false ? (
@@ -347,6 +361,7 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
         <ModalPersona
           editar={modalPersona.editar}
           personas={personas}
+          permiteDireccion={dir}
           onCerrar={() => setModalPersona(null)}
           onReenviar={modalPersona.editar
             ? () => accion(() => reenviarInvitacion({ id: modalPersona.editar!.id }))
@@ -385,9 +400,11 @@ export default function EquipoClient({ yo }: { yo: PersonaConManagers }) {
 }
 
 // ============================================================
-function ModalPersona({ editar, personas, onCerrar, onGuardar, onReenviar }: {
+function ModalPersona({ editar, personas, permiteDireccion, onCerrar, onGuardar, onReenviar }: {
   editar: PersonaConManagers | null
   personas: PersonaConManagers[]
+  // false para RH: no puede dar nivel dirección (el servidor también lo rechaza)
+  permiteDireccion: boolean
   onCerrar: () => void
   onGuardar: (d: {
     nombre: string; apellido: string; rol: string; email: string; area: string
@@ -454,7 +471,7 @@ function ModalPersona({ editar, personas, onCerrar, onGuardar, onReenviar }: {
               <select id="per-nivel" className={inputCls} value={nivel} onChange={(e) => setNivel(e.target.value as typeof nivel)}>
                 <option value="ejecutivo">ejecutivo</option>
                 <option value="head">head</option>
-                <option value="ceo">dirección</option>
+                {permiteDireccion && <option value="ceo">dirección</option>}
                 <option value="rh">RH</option>
               </select>
             </div>

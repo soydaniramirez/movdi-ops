@@ -21,12 +21,13 @@ export default async function EquipoPage() {
   }
 
   // 4.14 + jefa directa (2026-07-20): la pestaña equipo es de heads, dirección
-  // y jefas directas (ejecutivas con gente a cargo); el resto va a home.
+  // y jefas directas (ejecutivas con gente a cargo); 2026-10-19: también RH,
+  // que da de alta y edita personas. El resto va a home.
   const yo = mapPersonaConManagers(row)
   const esDir = yo.esDireccion || yo.nivel === 'ceo'
   const { data: allRows } = await supabase.from('personas').select('*')
   const tengoGente = tengoSupervisadas(yo, (allRows ?? []).map(mapPersonaConManagers))
-  if (yo.nivel !== 'head' && !esDir && !tengoGente) redirect('/')
+  if (yo.nivel !== 'head' && yo.nivel !== 'rh' && !esDir && !tengoGente) redirect('/')
 
   return <EquipoClient yo={yo} />
 }
