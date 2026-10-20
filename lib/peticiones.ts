@@ -357,6 +357,20 @@ export const tengoSupervisadas = (
 export const estaPausada = (p: Persona) => !!p.pausadaHasta && hoyISO() <= p.pausadaHasta
 export const personaDisponible = (p: Persona) => p.activo !== false && !estaPausada(p)
 
+// Solicitante dado de baja (2026-10-19, peticiones de Isaac): solo el creador
+// puede eliminar una petición (RLS), así que si quien la pidió ya salió de
+// MOVDI se queda abierta para siempre en el tablero de quien la recibe.
+// "Ya no está" = NINGUNA persona ACTIVA coincide con creado_por (por nombre de
+// pila, como toda la app: si hay dos "Diana" y una sigue activa, NO cuenta
+// como fuera). Pausada ≠ fuera. Sin lista de personas no se afirma nada.
+export function solicitanteYaNoEsta(
+  t: Pick<Peticion, 'creadoPor'>,
+  personas: Pick<Persona, 'nombre' | 'activo'>[],
+): boolean {
+  if (!personas.length || !t.creadoPor) return false
+  return !personas.some((p) => p.activo !== false && matchNombre(t.creadoPor, p.nombre))
+}
+
 export const normalizarTexto = (s: string) =>
   (s || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '')
 export const matchNombre = (a: string | null, b: string | null) =>
