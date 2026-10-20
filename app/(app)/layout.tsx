@@ -7,6 +7,7 @@ import { calcularGamePersona, mesActualStr } from '@/lib/gamificacion'
 import { asegurarVinculoAuth } from '@/lib/supabase/vinculo'
 import { selectTodo } from '@/lib/supabase/select-todo'
 import Campana from './campana'
+import SelectorTema from '../selector-tema'
 
 // Barra superior compartida de las rutas protegidas: navegación + XP global
 // (gamificación visible en toda la app, Fase 4.7) + chip de perfil + campana.
@@ -112,6 +113,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 </span>
               </span>
             )}
+            <SelectorTema />
             {persona && <Campana nombre={persona.nombre} />}
           </div>
         </div>

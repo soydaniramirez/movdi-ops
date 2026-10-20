@@ -381,7 +381,7 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
                 if (f === 'por_aprobar') setTab('pedi')
                 else if (tab === 'atorado') setTab('general')
               }}
-              className={`card-hover rounded-2xl px-4 py-3.5 text-left ${bloque} ${filtro === f ? 'ring-2 ring-white/60' : ''}`}>
+              className={`card-hover rounded-2xl px-4 py-3.5 text-left ${bloque} ${filtro === f ? 'ring-2 ring-neutral-100/60' : ''}`}>
               <div className="font-mono text-[10px] uppercase tracking-wider opacity-70">{lab}</div>
               <div className="text-3xl font-bold tracking-tight">{val}</div>
             </button>
