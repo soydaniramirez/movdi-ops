@@ -216,11 +216,15 @@ tr:hover .reveal-acciones,
 /* En claro, el amarillo y el verde de marca como TEXTO no se leen sobre
    blanco: solo para texto se usan tonos más profundos (fondos y bordes
    conservan la paleta exacta). */
-:root[data-theme="light"] .text-movdi-amarillo { color: #a87408; }
-:root[data-theme="light"] .text-movdi-verde { color: #00894f; }
+/* (incluye las variantes con opacidad, p.ej. el aviso "fecha movida" usa
+   text-movdi-amarillo/90 y su raya border-movdi-amarillo/50) */
+:root[data-theme="light"] :is(.text-movdi-amarillo, .text-movdi-amarillo\/90) { color: #a87408; }
+:root[data-theme="light"] :is(.text-movdi-verde, .text-movdi-verde\/90, .text-movdi-verde\/80) { color: #00894f; }
+:root[data-theme="light"] .border-movdi-amarillo\/50 { border-color: rgb(168 116 8 / 0.6); }
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme]) .text-movdi-amarillo { color: #a87408; }
-  :root:not([data-theme]) .text-movdi-verde { color: #00894f; }
+  :root:not([data-theme]) :is(.text-movdi-amarillo, .text-movdi-amarillo\/90) { color: #a87408; }
+  :root:not([data-theme]) :is(.text-movdi-verde, .text-movdi-verde\/90, .text-movdi-verde\/80) { color: #00894f; }
+  :root:not([data-theme]) .border-movdi-amarillo\/50 { border-color: rgb(168 116 8 / 0.6); }
 }
 
 /* En claro, los tonos pastel de etiquetas (áreas: IMKT rosa, P.Mgrs azul,
