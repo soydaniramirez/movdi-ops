@@ -16,7 +16,7 @@ import { MSG_CUENTA_SIN_VINCULO, asegurarVinculoAuth } from '@/lib/supabase/vinc
 import {
   AREAS_VALIDAS, MODOS_ADMIN, ORIGENES_VALIDOS, type ModoAsignacion,
   destinatariosPorModo, estaCerrada, fechaCorta, hoyISO, isAdmin,
-  mapPersonaRow, matchNombre, personaDisponible, type Persona,
+  mapPersonaRow, matchNombre, personaDisponible, solicitanteYaNoEsta, type Persona,
 } from '@/lib/peticiones'
 import {
   type Detalle, areaTieneTipos, fechaPorSLA, sanitizarDetalle, tipoDe,
@@ -351,6 +351,42 @@ export async function agregarNotaAvance(input: {
       .from('peticiones').update({ descripcion }).eq('id', input.id).select('id')
     if (error) return { ok: false, error: error.message }
     if (!data?.length) return { ok: false, error: 'no se pudo guardar la nota' }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }
+  }
+}
+
+// Cancelar cuando el solicitante ya no está (2026-10-19): la cierra QUIEN LA
+// RECIBE (único con UPDATE por RLS además del creador, y único que ve las
+// privadas). Mismo cierre neutro que la baja de personas: estatus 'cancelada',
+// fecha_entrega null y línea de rastro en descripcion. Sin notificación: no
+// hay a quién avisar. Se puede "reabrir" si se canceló de más.
+export async function cancelarSolicitanteFuera(input: { id: string }): Promise<Resultado> {
+  try {
+    const { supabase, yo } = await getContexto()
+    const { data: rows, error: e0 } = await supabase.from('peticiones').select('*').eq('id', input.id)
+    const t = rows?.[0]
+    if (e0 || !t) return { ok: false, error: 'petición no encontrada' }
+    if (!matchNombre(t.para, yo.nombre)) {
+      return { ok: false, error: 'solo quien recibe la petición puede cancelarla' }
+    }
+    if (estaCerrada({ estatus: t.estatus })) return { ok: false, error: 'esta petición ya está cerrada' }
+
+    const { data: personasRows } = await supabase.from('personas').select('nombre, activo')
+    if (!solicitanteYaNoEsta({ creadoPor: t.creado_por }, (personasRows ?? []) as Pick<Persona, 'nombre' | 'activo'>[])) {
+      return { ok: false, error: `${t.creado_por} sigue en el equipo — pídele que la elimine o la cierre` }
+    }
+
+    const linea = `✕ cancelada (${fechaCorta(hoyISO())}, ${yo.nombre}): ${t.creado_por} (solicitante) ya no está en MOVDI`
+    const descripcion = t.descripcion ? `${t.descripcion}\n${linea}` : linea
+    const { data, error } = await supabase
+      .from('peticiones')
+      .update({ estatus: 'cancelada', fecha_entrega: null, descripcion })
+      .eq('id', input.id)
+      .select('id')
+    if (error) return { ok: false, error: error.message }
+    if (!data?.length) return { ok: false, error: 'no se pudo cancelar esta petición' }
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'error inesperado' }

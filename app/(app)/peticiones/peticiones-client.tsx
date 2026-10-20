@@ -10,7 +10,7 @@ import {
   esCompromisoPropio, esperaAprobacion, estaAbierta, estaAprobada, estaCerrada,
   estadoMovimiento, fechaCorta, isAdmin, labelFecha, mapPeticionRow,
   margenPeticion, matchNombre, personaDisponible, puedoVerPeticion,
-  requiereAprobacion, tengoSupervisadas,
+  requiereAprobacion, solicitanteYaNoEsta, tengoSupervisadas,
 } from '@/lib/peticiones'
 import { type Recurrente, mapRecurRow, obtenerInstanciasRecur } from '@/lib/recurrentes'
 import {
@@ -28,7 +28,7 @@ import {
 import { type Cliente, mapClienteRow } from '@/lib/clientes'
 import {
   agregarNotaAvance, aprobarEntrega, cambiarEstatus, cambiarFecha, crearCompromiso,
-  crearPeticion, desocultarPeticion, eliminarPeticion, entregarPeticion,
+  cancelarSolicitanteFuera, crearPeticion, desocultarPeticion, eliminarPeticion, entregarPeticion,
   guardarClienteAlCatalogo, moverInstancia, ocultarEntregadas, ocultarPeticion,
   pedirCambios,
 } from './actions'
@@ -630,6 +630,11 @@ export default function PeticionesClient({ yo }: { yo: PersonaConManagers }) {
                         admin={admin}
                         esAdmi={esAdmi}
                         resaltada={t.id === resaltada}
+                        solicitanteFuera={solicitanteYaNoEsta(t, personas)}
+                        onCancelarHuerfana={async () => {
+                          if (!confirm(`${t.creadoPor} ya no está en MOVDI. ¿cancelar esta petición? sale de tus pendientes y no cuenta en contra; queda registro y la puedes reabrir.`)) return
+                          await accion(() => cancelarSolicitanteFuera({ id: t.id }))
+                        }}
                         onGuardarCliente={() => accion(() => guardarClienteAlCatalogo({ peticionId: t.id }))}
                         onEstatus={(nuevo) => accion(() => cambiarEstatus({ id: t.id, estatus: nuevo }))}
                         onEntregar={() => setModalEntrega(t)}
@@ -866,12 +871,14 @@ function BannerPodio({ yo, historial }: {
 // ============================================================
 // Fila de la tabla (paridad renderFila del SPA: petición · de → para ·
 // área · fecha · prio · estatus · acciones)
-function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEstatus, onEntregar, onAprobar, onPedirCambios, onCambiarFecha, onMover, onNota, onEliminar, onOcultar, onDesocultar }: {
+function FilaPeticion({ t, yo, admin, esAdmi, resaltada, solicitanteFuera, onCancelarHuerfana, onGuardarCliente, onEstatus, onEntregar, onAprobar, onPedirCambios, onCambiarFecha, onMover, onNota, onEliminar, onOcultar, onDesocultar }: {
   t: Peticion
   yo: Persona
   admin: boolean
   esAdmi: boolean
   resaltada?: boolean
+  solicitanteFuera: boolean
+  onCancelarHuerfana: () => void
   onGuardarCliente: () => void
   onEstatus: (n: 'pendiente' | 'proceso') => void
   onEntregar: () => void
@@ -1124,6 +1131,15 @@ function FilaPeticion({ t, yo, admin, esAdmi, resaltada, onGuardarCliente, onEst
               <button onClick={onMover} data-testid="btn-mover-instancia"
                 className={`${btn} border-movdi-amarillo/50 text-movdi-amarillo hover:bg-movdi-amarillo/10`}>
                 mover instancia
+              </button>
+            )}
+            {/* quien la pidió ya salió de MOVDI y nadie más puede eliminarla:
+                el destinatario la cierra como cancelada (2026-10-19) */}
+            {soyDest && !soyCreador && solicitanteFuera && estaAbierta(t) && (
+              <button onClick={onCancelarHuerfana} data-testid="btn-cancelar-huerfana"
+                title={`${t.creadoPor} ya no está en MOVDI · cancelarla deja registro y no cuenta en contra`}
+                className={`${btn} border-movdi-naranja/40 text-movdi-naranja hover:bg-movdi-naranja/10`}>
+                ✕ cancelar (ya no está)
               </button>
             )}
             {soyCreador && (
