@@ -222,3 +222,38 @@ tr:hover .reveal-acciones,
   :root:not([data-theme]) .text-movdi-amarillo { color: #a87408; }
   :root:not([data-theme]) .text-movdi-verde { color: #00894f; }
 }
+
+/* En claro, los tonos pastel de etiquetas (áreas: IMKT rosa, P.Mgrs azul,
+   Legal morado, Admi turquesa, Ventas lima, Digital cian, RH rosa fuerte; y
+   tipos de anuncio) se perdían sobre blanco. Solo en claro, esos tonos de
+   la paleta de Tailwind se cambian por versiones intensas (≈700 para texto,
+   ≈600 para bordes). El tema oscuro no cambia. El rosa de marca como TEXTO
+   también se intensifica (como fondo se queda exacto). */
+:root[data-theme="light"] {
+  --color-pink-300: #be185d;   --color-pink-400: #db2777;
+  --color-rose-300: #be123c;   --color-rose-400: #e11d48;
+  --color-sky-300: #0369a1;    --color-sky-400: #0284c7;
+  --color-cyan-300: #0e7490;   --color-cyan-400: #0891b2;
+  --color-violet-300: #6d28d9; --color-violet-400: #7c3aed;
+  --color-purple-400: #9333ea;
+  --color-teal-300: #0f766e;   --color-teal-400: #0d9488;
+  --color-lime-300: #4d7c0f;   --color-lime-400: #65a30d;
+  --color-red-400: #dc2626;
+  --color-amber-400: #d97706;
+}
+:root[data-theme="light"] .text-movdi-rosa { color: #c2185b; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --color-pink-300: #be185d;   --color-pink-400: #db2777;
+    --color-rose-300: #be123c;   --color-rose-400: #e11d48;
+    --color-sky-300: #0369a1;    --color-sky-400: #0284c7;
+    --color-cyan-300: #0e7490;   --color-cyan-400: #0891b2;
+    --color-violet-300: #6d28d9; --color-violet-400: #7c3aed;
+    --color-purple-400: #9333ea;
+    --color-teal-300: #0f766e;   --color-teal-400: #0d9488;
+    --color-lime-300: #4d7c0f;   --color-lime-400: #65a30d;
+    --color-red-400: #dc2626;
+    --color-amber-400: #d97706;
+  }
+  :root:not([data-theme]) .text-movdi-rosa { color: #c2185b; }
+}
