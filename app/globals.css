@@ -261,3 +261,39 @@ tr:hover .reveal-acciones,
   }
   :root:not([data-theme]) .text-movdi-rosa { color: #c2185b; }
 }
+
+/* ── Quién hace qué (2026-10-26): color por área ───────────────
+   Cada bloque de área pone --ac (relleno de marca exacto), --ac-ink (texto
+   sobre ese relleno) y --ac-line (bordes, puntos y barras). En claro, las
+   líneas de gris, amarillo y rosa usan tonos más profundos (los mismos del
+   ajuste de texto de arriba) para no perderse sobre blanco; el relleno
+   sólido del chip "dueño" conserva la paleta exacta. */
+.qhq-dir { --ac: #dbd9d6; --ac-ink: #000; --ac-line: #dbd9d6; }
+.qhq-ven { --ac: #f5bd47; --ac-ink: #000; --ac-line: #f5bd47; }
+.qhq-pm  { --ac: #ff4612; --ac-ink: #000; --ac-line: #ff4612; }
+.qhq-imk { --ac: #0055b8; --ac-ink: #fff; --ac-line: #3d86e0; }
+.qhq-dig { --ac: #f7acb8; --ac-ink: #000; --ac-line: #f7acb8; }
+:root[data-theme="light"] .qhq-dir { --ac-line: #8f8d8a; }
+:root[data-theme="light"] .qhq-ven { --ac-line: #a87408; }
+:root[data-theme="light"] .qhq-imk { --ac-line: #0055b8; }
+:root[data-theme="light"] .qhq-dig { --ac-line: #c2185b; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .qhq-dir { --ac-line: #8f8d8a; }
+  :root:not([data-theme]) .qhq-ven { --ac-line: #a87408; }
+  :root:not([data-theme]) .qhq-imk { --ac-line: #0055b8; }
+  :root:not([data-theme]) .qhq-dig { --ac-line: #c2185b; }
+}
+/* chips de papel: dueño = relleno · hace = borde 2px + tenue · apoya =
+   punteado · se entera = punto + texto tenue */
+.qhq-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 9999px; font-size: 12px; line-height: 1.2; white-space: nowrap; }
+.qhq-chip-dueno { background: var(--ac); color: var(--ac-ink); font-weight: 700; padding: 5px 11px; }
+.qhq-chip-hace { border: 2px solid var(--ac-line); background: color-mix(in srgb, var(--ac) 16%, transparent); color: var(--n-100); font-weight: 700; padding: 3px 10px; }
+.qhq-chip-apoya { border: 1.5px dashed var(--ac-line); color: var(--n-100); font-weight: 600; padding: 3.5px 10px; }
+.qhq-chip-entera { color: var(--n-400); font-weight: 500; padding: 5px 4px; }
+.qhq-chip-entera::before { content: ''; width: 6px; height: 6px; border-radius: 9999px; background: var(--ac-line); }
+.qhq-dim { opacity: 0.2; }
+@media (prefers-reduced-motion: no-preference) {
+  .qhq-fade { transition: opacity 0.2s ease; }
+}
+/* paso compartido "PM o IMKT": barra partida naranja/azul */
+.qhq-split { background: linear-gradient(90deg, #ff4612 50%, #0055b8 50%); }
