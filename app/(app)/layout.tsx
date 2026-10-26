@@ -81,6 +81,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             {([
               ['/peticiones', 'peticiones'], ['/recurrentes', 'recurrentes'], ['/anuncios', 'anuncios'],
               ['/todos', 'to-dos'], ['/estrellas', 'estrellas'], ['/feedback', 'feedback'], ['/progreso', 'progreso'],
+              ['/quien-hace-que', 'quién hace qué'],
               ...(veEquipo ? [['/equipo', 'equipo']] : []),
               ...(veOrg ? [['/organigrama', 'organigrama']] : []),
               ...(veClientes ? [['/clientes', 'clientes']] : []),
