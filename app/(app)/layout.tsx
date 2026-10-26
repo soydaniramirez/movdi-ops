@@ -68,10 +68,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen bg-neutral-950 print:bg-white">
       {/* header pegajoso con glassmorphism (Paso B) — fuera de cualquier impresión */}
-      <div className="sticky top-0 z-40 border-b print:hidden border-neutral-800 bg-neutral-950/80 px-6 py-2 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+      <div className="sticky top-0 z-40 border-b print:hidden border-neutral-800 bg-neutral-950/80 px-4 py-2 backdrop-blur-md sm:px-6">
+        {/* en celular la nav ocupa su propia fila (pills en línea) y el grupo
+            XP/tema/campana baja a la siguiente: antes se quedaban lado a lado,
+            la nav se apilaba un link por línea y el grupo desbordaba a 467px */}
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-2">
           {/* nav accesible: 14px, alto contraste y área de toque generosa */}
-          <nav className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+          <nav className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-medium max-sm:basis-full">
             <Link href="/" className="rounded-full px-3 py-1.5 font-mono font-bold tracking-tight text-neutral-100 transition-colors hover:bg-movdi-naranja hover:text-black">
               MOVDI·ops<span aria-hidden className="ml-1">→</span>
             </Link>
@@ -89,7 +92,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               </Link>
             ))}
           </nav>
-          <div className="flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-3">
             {game && (
               <Link href="/progreso" data-testid="xp-header" title={`${game.nivelNombre} · ${game.progresoNivel}% al siguiente nivel`}
                 className="group flex items-center gap-2 border border-neutral-800 px-2.5 py-1 hover:border-movdi-naranja/60">
