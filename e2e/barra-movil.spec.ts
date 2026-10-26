@@ -20,7 +20,7 @@ test.beforeEach(async () => {
 test('barra superior: a 390px no hay scroll horizontal y todo cabe', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await login(page, 'antonio@movdi.mx')
-  for (const ruta of ['/', '/peticiones']) {
+  for (const ruta of ['/', '/peticiones', '/quien-hace-que']) {
     await page.goto(ruta)
     await expect(page.getByTestId('xp-header')).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
